@@ -1,5 +1,6 @@
 ### PUNKS CEO (and "Cigarette" token)
 
+![Preview](cig-preview.png)
 
 WEB: https://punksceo.com
 
