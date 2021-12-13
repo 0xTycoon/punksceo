@@ -1,6 +1,10 @@
-pragma solidity ^0.7.6;
+// SPDX-License-Identifier: MIT
+// Author: 0xTycoon
+// Repo: github.com/0xTycoon/punksceo
 
-import "./safemath.sol";
+pragma solidity ^0.8.10;
+
+//import "./safemath.sol"; // don't need it
 
 /**
 * "Non fungible CEO"
@@ -15,38 +19,74 @@ import "./safemath.sol";
 *
 */
 contract NonFungibleCEO {
-    address private cigToken;
-    address public admin;
-    string private assetURL;
-    constructor() {
-        admin = msg.sender;
+    ICigToken private cigToken;
+    address public owner;
+    string private metadataURI;
+
+    constructor(string memory _uri) {
+        metadataURI = _uri;
+        emit BaseURI(_uri);
+        _transferOwnership(msg.sender);
     }
-    modifier onlyAdmin {
+
+    modifier onlyOwner {
         require(
-            msg.sender == admin,
+            msg.sender == owner,
             "only admin can call this"
         );
         _;
     }
-    function _onlyCig() internal view {
-        require(cigToken == msg.sender, 'must be called from cigtoken');
-    }
     /**
-    * @dev burnAdmin burns the admin key
+    * @dev onlyCig ensures only the cig token contract can use it
     */
-    function burnAdmin() external onlyAdmin {
-        admin = 0x0000000000000000000000000000000000000000;
+    modifier onlyCig {
+        require(address(cigToken) == msg.sender, 'must be called from cigtoken');
+        _;
+    }
+
+    /**
+    * @dev onlyCEO ensures that only the CEO can use it
+    */
+    modifier onlyCEO {
+        require(cigToken.The_CEO() == msg.sender, 'must be called by CEO');
+        _;
+    }
+
+    function baseTokenURI() public view returns (string memory) {
+        return metadataURI;
+    }
+
+
+    /**
+    * @dev renounceOwnership burns the admin key
+    */
+    function renounceOwnership() external onlyOwner {
+        _transferOwnership(address(0));
+    }
+
+    /**
+     * @dev Transfers ownership of the contract to a new account (`newOwner`).
+     * Can only be called by the current owner.
+     */
+    function transferOwnership(address newOwner) external  onlyOwner {
+        _transferOwnership(newOwner);
+    }
+
+    /**
+     * @dev Transfers ownership of the contract to a new account (`newOwner`).
+     * Internal function without access restriction.
+     */
+    function _transferOwnership(address newOwner) internal virtual {
+        address oldOwner = owner;
+        owner = newOwner;
+        emit OwnershipTransferred(oldOwner, newOwner);
     }
     /**
     * @dev setCigToken sets the address to the cig token
     * @param _addr address to the cig token
     */
-    function setCigToken(address _addr) external onlyAdmin {
-        cigToken = _addr;
-    }
-
-    function setAssetURL(string memory _url) external onlyAdmin {
-        assetURL = _url;
+    function setCigToken(address _addr) external onlyOwner {
+        cigToken = ICigToken(_addr);
     }
 
     /***
@@ -54,12 +94,14 @@ contract NonFungibleCEO {
     */
     address private holder; // the NFT owner
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    event BaseURI(string);
+    event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
 
-    function totalSupply() external view returns (uint256) {
+    function totalSupply() external pure returns (uint256) {
         return 1;
     }
 
-    function tokenByIndex(uint256 _index) external view returns (uint256) {
+    function tokenByIndex(uint256 _index) external pure returns (uint256) {
         if (_index == 0) {return 0; }
         revert("404");
     }
@@ -78,21 +120,25 @@ contract NonFungibleCEO {
         return 0;
     }
 
-    function name() public view returns (string memory) {
+    function name() public pure returns (string memory) {
         return "CEO of Cryptopunks";
     }
 
-    function symbol() public view returns (string memory) {
-        return "PNKCEO";
+    function symbol() public pure returns (string memory) {
+        return "CEO";
+    }
+
+    /**
+    * @dev setBaseURI sets the baseURI value
+    */
+    function setBaseURI(string memory _uri) external onlyCEO {
+        metadataURI = _uri;
+        emit BaseURI(_uri);
     }
 
     function tokenURI(uint256 _tokenId) public view returns (string memory) {
         if (_tokenId != 0) revert("404");
-        return assetURL;
-    }
-
-    function _baseURI() internal view virtual returns (string memory) {
-        return "";
+        return string(abi.encodePacked(metadataURI, "/0.json"));
     }
 
     function ownerOf(uint256 _tokenId) public view returns (address) {
@@ -100,40 +146,34 @@ contract NonFungibleCEO {
         return holder;
     }
 
-    function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes memory data) external {
-        _onlyCig();
+    function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes memory data) external onlyCig {
         _transfer(_from, _to, _tokenId);
     }
 
-    function safeTransferFrom(address _from, address _to, uint256 _tokenId) external {
-        _onlyCig();
+    function safeTransferFrom(address _from, address _to, uint256 _tokenId) external onlyCig {
         _transfer(_from, _to, _tokenId);
     }
 
-    function transferFrom(address _from, address _to, uint256 _tokenId) external {
-        _onlyCig();
+    function transferFrom(address _from, address _to, uint256 _tokenId) external onlyCig {
         _transfer(_from, _to, _tokenId);
     }
 
-    function approve(address _approved, uint256 _tokenId) external {
-        _onlyCig();
+    function approve(address _approved, uint256 _tokenId) external onlyCig {
     }
 
-    function setApprovalForAll(address _operator, bool _approved) external {
-        _onlyCig();
+    function setApprovalForAll(address _operator, bool _approved) external onlyCig {
     }
 
     function getApproved(uint256 _tokenId) public view returns (address) {
-        _onlyCig();
-        return address(0);
+        return address(cigToken);
     }
 
-    function isApprovedForAll(address _owner, address _operator) public view returns (bool) {
-        _onlyCig();
+    function isApprovedForAll(address _owner, address _operator) public pure returns (bool) {
+
         return false;
     }
 
-    function supportsInterface(bytes4 interfaceId) public view returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {
         return
         interfaceId == type(IERC721).interfaceId ||
         interfaceId == type(IERC721Metadata).interfaceId ||
@@ -144,13 +184,11 @@ contract NonFungibleCEO {
 
     function _transfer(address _from, address _to, uint256 _tokenId) internal {
         require(_tokenId == 0, "404");
-        //balances[_from] -= 1; // there are no other holders, see balanceOf implementation
-        //_balances[_to] += 1;
         holder = _to;
         emit Transfer(_from, _to, _tokenId);
     }
 
-    function onERC721Received(address _operator, address _from, uint256 _tokenId, bytes memory _data) external returns (bytes4) {
+    function onERC721Received(address _operator, address _from, uint256 _tokenId, bytes memory _data) external pure returns (bytes4) {
         revert("nope");
         return bytes4(keccak256("nope"));
     }
@@ -378,4 +416,8 @@ interface ERC721Enumerable /* is ERC721 */ {
     /// @return The token identifier for the `_index`th NFT assigned to `_owner`,
     ///   (sort order not specified)
     function tokenOfOwnerByIndex(address _owner, uint256 _index) external view returns (uint256);
+}
+
+interface ICigToken {
+    function The_CEO() external  returns (address);
 }
