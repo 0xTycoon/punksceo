@@ -37,13 +37,13 @@ contract PoolTokenMock {
 
     constructor(address _addr) {
         //tester = _addr;
-        balanceOf[_addr] = balanceOf[_addr].add(5 ether);
-        totalSupply = totalSupply.add(5 ether);
+        balanceOf[_addr] = balanceOf[_addr] + 5 ether;
+        totalSupply = totalSupply + 5 ether;
     }
 
     function mint(address _to, uint256 _amount) public {
-        totalSupply = totalSupply.add(_amount);
-        balanceOf[_to] = balanceOf[_to].add(_amount);
+        totalSupply = totalSupply + _amount;
+        balanceOf[_to] = balanceOf[_to] + _amount;
         emit Transfer(address(0), _to, _amount);
     }
 
@@ -54,8 +54,8 @@ contract PoolTokenMock {
 */
     function transfer(address _to, uint256 _value) public returns (bool) {
         // require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
-        balanceOf[msg.sender] = balanceOf[msg.sender].sub(_value);
-        balanceOf[_to] = balanceOf[_to].add(_value);
+        balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
+        balanceOf[_to] = balanceOf[_to] + _value;
         emit Transfer(msg.sender, _to, _value);
         return true;
     }
@@ -77,8 +77,8 @@ contract PoolTokenMock {
     {
         //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
         require(_value <= allowance[_from][msg.sender], "not approved");
-        balanceOf[_from] = balanceOf[_from].sub(_value);
-        balanceOf[_to] = balanceOf[_to].add(_value);
+        balanceOf[_from] = balanceOf[_from] - _value;
+        balanceOf[_to] = balanceOf[_to] + _value;
         emit Transfer(_from, _to, _value);
         return true;
     }
