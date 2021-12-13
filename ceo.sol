@@ -138,7 +138,7 @@ contract NonFungibleCEO {
 
     function tokenURI(uint256 _tokenId) public view returns (string memory) {
         if (_tokenId != 0) revert("404");
-        return string(abi.encodePacked(metadataURI, "/0.json"));
+        return string(abi.encodePacked(metadataURI, "0.json"));
     }
 
     function ownerOf(uint256 _tokenId) public view returns (address) {
