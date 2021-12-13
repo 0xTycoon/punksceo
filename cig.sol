@@ -1,12 +1,16 @@
-pragma solidity ^0.7.6;
+// SPDX-License-Identifier: MIT
+// Author: 0xTycoon
+// Repo: github.com/0xTycoon/punksceo
+
+pragma solidity ^0.8.10;
 
 import "./safemath.sol";
 import "./ceo.sol";
 /*
 
 PUNKS CEO (and "Cigarette" token)
-WEB: https://punksceo.com
-IPFS: punksCEO.eth
+WEB: https://punksceo.eth.limo
+IPFS: See content hash record for punksceo.eth
 Token Address: cigtoken.eth
 
 ### THE RULES
@@ -52,7 +56,7 @@ Credits:
 */
 
 contract Cig {
-    using SafeMath for uint256;
+    //using SafeMath for uint256; // no need since Solidity 0.8
     // ERC20 stuff
     string public constant name = "Cigarette Token";
     string public constant symbol = "CIG";
@@ -69,7 +73,7 @@ contract Cig {
     }
     mapping(address => UserInfo) public userInfo; // keeps track of UserInfo for each staking address
     address public admin;                         // admin is used for deployment, burned after
-    IERC20 public lpToken;                        // lpToken is the address of LP token contract that's being staked.
+    ILiquidityPoolERC20 public lpToken;                        // lpToken is the address of LP token contract that's being staked.
     uint256 public lastRewardBlock;               // Last block number that cigarettes distribution occurs.
     uint256 public accCigPerShare;                // Accumulated cigarettes per share, times 1e12. See below.
     uint256 public cigPerBlock;                   // CIGs per-block rewarded and split with LPs
@@ -115,6 +119,7 @@ contract Cig {
         );
         _;
     }
+    IRouterV2 private immutable V2ROUTER;    // address of router used to get the price quote
     ICEOERC721 private immutable The_NFT;    // reference to the CEO NFT token
     address private immutable MASTERCHEF_V2; // address pointing to SushiSwap's MasterChefv2 contract
     /**
@@ -136,7 +141,8 @@ contract Cig {
         uint256 _CEO_price,
         address _MASTERCHEF_V2,
         bytes32 _graffiti,
-        address _NFT
+        address _NFT,
+        address _V2ROUTER
     ) {
         lastRewardBlock = _startBlock;
         cigPerBlock = _cigPerBlock;
@@ -148,13 +154,14 @@ contract Cig {
         MASTERCHEF_V2 = _MASTERCHEF_V2;
         graffiti = _graffiti;
         The_NFT = ICEOERC721(_NFT);
+        V2ROUTER = IRouterV2(_V2ROUTER);
     }
 
     /**
-    * @dev burnAdmin burns the admin key
+    * @dev renounceOwnership burns the admin key, so this contract is unruggable
     */
-    function changeAdmin(address _address) external onlyAdmin {
-        admin = _address;
+    function renounceOwnership() external onlyAdmin {
+        admin = address(0);
     }
 
     /**
@@ -169,7 +176,7 @@ contract Cig {
     /**
     * @dev setPool address to an LP pool. Only Admin. (used only in testing/deployment)
     */
-    function setPool(IERC20 _addr) external onlyAdmin {
+    function setPool(ILiquidityPoolERC20 _addr) external onlyAdmin {
         require(address(lpToken) == address(0), "pool already set");
         lpToken = _addr;
     }
@@ -195,9 +202,9 @@ contract Cig {
             // Auction state. The price goes down 10% every `CEO_auction_blocks` blocks
             CEO_price = _calcDiscount();
         }
-        require (_new_price >= MIN_PRICE, "price 2 smol");                  // price cannot be under 0.000001 CIG
+        require (_new_price >= MIN_PRICE, "price 2 smol");                 // price cannot be under 0.000001 CIG
         require (_punk_index <= 9999, "invalid punk");                     // validate the punk index
-        require (_tax_amount >= _new_price.div(1000), "insufficient tax" );// at least %1 fee paid for 1 epoch
+        require (_tax_amount >= _new_price / 1000, "insufficient tax" );   // at least %0.1 fee paid for 1 epoch
         transfer(address(this), CEO_price);                                // pay for the CEO title
         burn(address(this), CEO_price);                                    // burn the revenue
         emit RevenueBurned(msg.sender, CEO_price);
@@ -231,8 +238,8 @@ contract Cig {
         if (_amount == 0) {
             return;
         }
-        balanceOf[address(this)] = balanceOf[address(this)].sub(_amount);
-        balanceOf[_to] = balanceOf[_to].add(_amount);
+        balanceOf[address(this)] = balanceOf[address(this)] - _amount;
+        balanceOf[_to] = balanceOf[_to] + _amount;
         emit Transfer(address(this), _to, _amount);
         //CEO_tax_balance = 0; // can be omitted since value gets overwritten by caller
     }
@@ -255,7 +262,7 @@ contract Cig {
         if (CEO_state == 1) {
             if (_amount > 0) {
                 transfer(address(this), _amount);                   // place the tax on deposit
-                CEO_tax_balance = CEO_tax_balance.add(_amount);     // record the balance
+                CEO_tax_balance = CEO_tax_balance + _amount;        // record the balance
                 emit TaxDeposit(msg.sender, _amount);
             }
             if (taxBurnBlock != block.number) {
@@ -287,15 +294,15 @@ contract Cig {
     */
     function _burnTax() internal {
         // calculate tax per block (tpb)
-        uint256 tpb = CEO_price.div(1000).div(CEO_epoch_blocks); // 0.1% per epoch
-        uint256 debt = block.number.sub(taxBurnBlock).mul(tpb);
+        uint256 tpb = CEO_price / 1000 / CEO_epoch_blocks;       // 0.1% per epoch
+        uint256 debt = (block.number - taxBurnBlock) * tpb;
         if (CEO_tax_balance !=0 && CEO_tax_balance >= debt) {    // Does CEO have enough deposit to pay debt?
-            CEO_tax_balance = CEO_tax_balance.sub(debt);         // deduct tax
+            CEO_tax_balance = CEO_tax_balance - debt;            // deduct tax
             burn(address(this), debt);                           // burn the tax
             emit TaxBurned(msg.sender, debt);
         } else {
             // CEO defaulted
-            uint256 default_amount = debt.sub(CEO_tax_balance);  // calculate how much defaulted
+            uint256 default_amount = debt - CEO_tax_balance;     // calculate how much defaulted
             burn(address(this), CEO_tax_balance);                // burn the tax
             emit TaxBurned(msg.sender, CEO_tax_balance);
             CEO_state = 2;                                       // initiate a Dutch auction.
@@ -314,7 +321,7 @@ contract Cig {
     function setPrice(uint256 _price) external onlyCEO  {
         require(CEO_state == 1, "No CEO in charge");
         require (_price >= MIN_PRICE, "price 2 smol");
-        require (CEO_tax_balance >= _price.div(1000), "price would default"); // need at least 0.01% for tax
+        require (CEO_tax_balance >= _price / 1000, "price would default"); // need at least 0.1% for tax
         if (block.number != taxBurnBlock) {
             _burnTax();
             taxBurnBlock = block.number;
@@ -333,13 +340,13 @@ contract Cig {
     */
     function rewardUp() external onlyCEO returns (uint256)  {
         require(CEO_state == 1, "No CEO in charge");
-        require(block.number > rewardsChangedBlock.add(CEO_epoch_blocks*2), "wait more blocks");
+        require(block.number > rewardsChangedBlock + (CEO_epoch_blocks*2), "wait more blocks");
         require (cigPerBlock <= MAX_REWARD, "reward already max");
         rewardsChangedBlock = block.number;
-        uint256 _amount = cigPerBlock.div(5);                // %20
-        uint256 _new_reward = cigPerBlock.add(_amount);
+        uint256 _amount = cigPerBlock / 5;                // %20
+        uint256 _new_reward = cigPerBlock + _amount;
         if (_new_reward > MAX_REWARD) {
-            _amount = MAX_REWARD.sub(cigPerBlock);
+            _amount = MAX_REWARD - cigPerBlock;
             _new_reward = MAX_REWARD; // cap
         }
         cigPerBlock = _new_reward;
@@ -353,13 +360,13 @@ contract Cig {
     */
     function rewardDown() external onlyCEO returns (uint256) {
         require(CEO_state == 1, "No CEO in charge");
-        require(block.number > rewardsChangedBlock.add(CEO_epoch_blocks*2), "wait more blocks");
+        require(block.number > rewardsChangedBlock + (CEO_epoch_blocks*2), "wait more blocks");
         require(cigPerBlock >= MIN_REWARD, "reward already low");
         rewardsChangedBlock = block.number;
-        uint256 _amount = cigPerBlock.div(5);            // %20
-        uint256 _new_reward = cigPerBlock.sub(_amount);
+        uint256 _amount = cigPerBlock / 5;            // %20
+        uint256 _new_reward = cigPerBlock - _amount;
         if (_new_reward < MIN_REWARD) {
-            _amount = cigPerBlock.sub(MIN_REWARD);
+            _amount = cigPerBlock - MIN_REWARD;
             _new_reward = MIN_REWARD;
         }
         cigPerBlock = _new_reward;
@@ -371,14 +378,14 @@ contract Cig {
     * @dev _calcDiscount calculates the discount for the CEO title based on how many blocks passed
     */
     function _calcDiscount() internal view returns (uint256) {
-        uint256 d = CEO_price.div(10)           // 10% discount
+        uint256 d = (CEO_price / 10)           // 10% discount
         // multiply by the number of discounts accrued
-        .mul(block.number.sub(taxBurnBlock).div(CEO_auction_blocks));
+        * (block.number - taxBurnBlock) / CEO_auction_blocks;
         if (d > CEO_price) {
-            // overflow
+            // cannot let it go under the MIN_PRICE
             return MIN_PRICE;
         }
-        uint256 price = CEO_price.sub(d);
+        uint256 price = CEO_price - d;
         if (price < MIN_PRICE) {
             price = MIN_PRICE;
         }
@@ -388,14 +395,15 @@ contract Cig {
     /**
     * @dev getStats helps to fetch some stats for the GUI in a single web3 call
     * @param _user the address to return the report for
-    * @return uint256[16] the stats
+    * @return uint256[22] the stats
     * @return address of the current CEO
-    * @return bytes32 address
+    * @return bytes32 Current graffiti
     */
-    function getStats(address _user) external view returns(uint256[] memory, address, bytes32) {
-        uint[] memory ret = new uint[](18);
-        uint256 tpb = CEO_price.div(1000).div(CEO_epoch_blocks); // 0.1% per epoch
-        uint256 debt = block.number.sub(taxBurnBlock).mul(tpb);
+    function getStats(address _user) external view returns(uint256[] memory, address, bytes32, uint112[] memory) {
+        uint[] memory ret = new uint[](20);
+        uint112[] memory reserves = new uint112[](2);
+        uint256 tpb = (CEO_price / 1000) / (CEO_epoch_blocks); // 0.1% per epoch
+        uint256 debt = (block.number - taxBurnBlock) * tpb;
         uint256 price = CEO_price;
         UserInfo memory info = userInfo[_user];
         if (CEO_state == 2) {
@@ -413,7 +421,18 @@ contract Cig {
             ret[8] = lpToken.balanceOf(address(this)); // Total LP staking
             ret[16] = lpToken.balanceOf(_user);        // not staked by user
             ret[17] = pendingCig(_user);               // pending harvest
+            (reserves[0], reserves[1], ) = lpToken.getReserves();        // uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast
+            ret[18] = V2ROUTER.getAmountOut(1 ether, uint(reserves[0]), uint(reserves[1])); // CIG price in ETH
+            if (isContract(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2))) { // are we on mainnet?
+                ILiquidityPoolERC20 ethusd = ILiquidityPoolERC20(address(0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f));  // sushi DAI-WETH pool
+                uint112 r0;
+                uint112 r1;
+                (r0, r1, ) = ethusd.getReserves();
+                // get the price of ETH in USD
+                ret[19] =  V2ROUTER.getAmountOut(1 ether, uint(r0), uint(r1));      // ETH price in USD
+            }
         }
+
         ret[9] = block.number;                     // current block number
         ret[10] = tpb;                             // "tax per block" (tpb)
         ret[11] = debt;                            // tax debt accrued
@@ -421,7 +440,7 @@ contract Cig {
         ret[13] = info.deposit;                    // amount of LP tokens staked by user
         ret[14] = info.rewardDebt;                 // amount of rewards paid out
         ret[15] = balanceOf[_user];                // amount of CIG held by user
-        return (ret, The_CEO, graffiti);
+        return (ret, The_CEO, graffiti, reserves);
     }
 
     /*
@@ -460,10 +479,10 @@ contract Cig {
             return;
         }
         // mint some new cigarette rewards to be distributed
-        uint256 cigReward = block.number.sub(lastRewardBlock).mul(cigPerBlock);
+        uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
         mint(address(this), cigReward);
-        accCigPerShare = accCigPerShare.add(
-            cigReward.mul(1e12).div(lpSupply)
+        accCigPerShare = accCigPerShare + (
+            cigReward * 1e12 / lpSupply
         );
         lastRewardBlock = block.number;
     }
@@ -478,12 +497,12 @@ contract Cig {
         UserInfo storage user = userInfo[_user];
         uint256 lpSupply = lpToken.balanceOf(address(this));
         if (block.number > lastRewardBlock && lpSupply != 0) {
-            uint256 cigReward = block.number.sub(lastRewardBlock).mul(cigPerBlock);
-            _acps = _acps.add(
-                cigReward.mul(1e12).div(lpSupply)
+            uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
+            _acps = _acps + (
+                cigReward * 1e12 / lpSupply
             );
         }
-        return user.deposit.mul(_acps).div(1e12).sub(user.rewardDebt);
+        return (user.deposit * _acps / 1e12) - user.rewardDebt;
     }
 
     /**
@@ -495,9 +514,7 @@ contract Cig {
         update();
         if (user.deposit > 0) {
             uint256 pending =
-            user.deposit.mul(accCigPerShare).div(1e12).sub(
-                user.rewardDebt
-            );
+            (user.deposit * (accCigPerShare) / 1e12) - user.rewardDebt;
             safeSendPayout(msg.sender, pending);
         }
         if (_amount > 0) {
@@ -506,10 +523,10 @@ contract Cig {
                 address(this),
                 _amount
             );
-            user.deposit = user.deposit.add(_amount);
+            user.deposit = user.deposit + _amount;
             emit Deposit(msg.sender, _amount);
         }
-        user.rewardDebt = user.deposit.mul(accCigPerShare).div(1e12);
+        user.rewardDebt = user.deposit * accCigPerShare / 1e12;
     }
 
     /**
@@ -520,13 +537,10 @@ contract Cig {
         UserInfo storage user = userInfo[msg.sender];
         require(user.deposit >= _amount, "withdraw: not good");
         update();
-        uint256 pending =
-        user.deposit.mul(accCigPerShare).div(1e12).sub(
-            user.rewardDebt
-        );
+        uint256 pending = (user.deposit * accCigPerShare / 1e12) - user.rewardDebt;
         safeSendPayout(msg.sender, pending);
-        user.deposit = user.deposit.sub(_amount);
-        user.rewardDebt = user.deposit.mul(accCigPerShare).div(1e12);
+        user.deposit = user.deposit - _amount;
+        user.rewardDebt = user.deposit * accCigPerShare / 1e12;
         lpToken.transfer(address(msg.sender), _amount);
         emit Withdraw(msg.sender, _amount);
     }
@@ -552,8 +566,8 @@ contract Cig {
         if (_amount > cigBal) {
             _amount = cigBal;
         }
-        balanceOf[address(this)] = balanceOf[address(this)].sub(_amount);
-        balanceOf[_to] = balanceOf[_to].add(_amount);
+        balanceOf[address(this)] = balanceOf[address(this)] - _amount;
+        balanceOf[_to] = balanceOf[_to] + _amount;
         emit Transfer(address(this), _to, _amount);
     }
 
@@ -567,8 +581,8 @@ contract Cig {
     * @param _amount The amount to burn
     */
    function burn(address _from, uint256 _amount) internal {
-       balanceOf[_from] = balanceOf[_from].sub(_amount);
-       totalSupply = totalSupply.sub(_amount);
+       balanceOf[_from] = balanceOf[_from] - _amount;
+       totalSupply = totalSupply - _amount;
        emit Transfer(_from, address(0), _amount);
    }
 
@@ -579,8 +593,8 @@ contract Cig {
    */
     function mint(address _to, uint256 _amount) internal {
         require(_to != address(0), "ERC20: mint to the zero address");
-        totalSupply = totalSupply.add(_amount);
-        balanceOf[_to] = balanceOf[_to].add(_amount);
+        totalSupply = totalSupply + _amount;
+        balanceOf[_to] = balanceOf[_to] + _amount;
         emit Transfer(address(0), _to, _amount);
     }
 
@@ -591,8 +605,8 @@ contract Cig {
     */
     function transfer(address _to, uint256 _value) public returns (bool) {
         // require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
-        balanceOf[msg.sender] = balanceOf[msg.sender].sub(_value);
-        balanceOf[_to] = balanceOf[_to].add(_value);
+        balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
+        balanceOf[_to] = balanceOf[_to] + _value;
         emit Transfer(msg.sender, _to, _value);
         return true;
     }
@@ -613,8 +627,8 @@ contract Cig {
     {
         //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
         require(_value <= allowance[_from][msg.sender], "not approved");
-        balanceOf[_from] = balanceOf[_from].sub(_value);
-        balanceOf[_to] = balanceOf[_to].add(_value);
+        balanceOf[_from] = balanceOf[_from] - _value;
+        balanceOf[_to] = balanceOf[_to] + _value;
         emit Transfer(_from, _to, _value);
         return true;
     }
@@ -644,14 +658,11 @@ contract Cig {
         UserInfo storage user = userInfo[_user];
         update();
         if (user.deposit > 0) {
-            uint256 pending =
-            user.deposit.mul(accCigPerShare).div(1e12).sub(
-                user.rewardDebt
-            );
+            uint256 pending = (user.deposit * accCigPerShare / 1e12) - user.rewardDebt;
             safeSendPayout(_to, pending);
         }
         user.deposit = _newLpAmount;
-        user.rewardDebt = user.deposit.mul(accCigPerShare).div(1e12);
+        user.rewardDebt = user.deposit * accCigPerShare / 1e12;
     }
 
     /**
@@ -673,7 +684,30 @@ contract Cig {
         );
         _;
     }
+
+    /**
+     * @dev Returns true if `account` is a contract.
+     *
+     * credits https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Address.sol
+     */
+    function isContract(address account) internal view returns (bool) {
+        uint256 size;
+        assembly {
+            size := extcodesize(account)
+        }
+        return size > 0;
+    }
 }
+
+/**
+* @dev sushi router 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F
+*/
+interface IRouterV2 {
+    function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) external pure returns(uint256 amountOut);
+
+}
+
+
 
 interface ICryptoPunk {
     //function balanceOf(address account) external view returns (uint256);
@@ -759,4 +793,11 @@ interface IERC20 is IRewarder {
      * a call to {approve}. `value` is the new allowance.
      */
     event Approval(address indexed owner, address indexed spender, uint256 value);
+}
+
+/**
+* @dev from UniswapV2Pair.sol
+*/
+interface ILiquidityPoolERC20 is IERC20 {
+    function getReserves() external view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast);
 }
