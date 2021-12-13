@@ -1,6 +1,10 @@
-pragma solidity ^0.7.6;
+// SPDX-License-Identifier: MIT
+// Author: 0xTycoon
+// Repo: github.com/0xTycoon/punksceo
 
-import "./safemath.sol";
+pragma solidity ^0.8.10;
+
+//import "./safemath.sol";
 
 // a mock contract used for testing
 contract PunkMock {
@@ -20,7 +24,7 @@ contract PunkMock {
 
 // PoolTokenMock is a mock contract for testing
 contract PoolTokenMock {
-    using SafeMath for uint256;
+    //using SafeMath for uint256;
     string public name = "CIG-ETH-V2";
     string public symbol = "CIGETH";
     uint8 public decimals = 18;
@@ -91,4 +95,18 @@ contract PoolTokenMock {
         return true;
     }
 
+    function getReserves() public view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast) {
+         _reserve0 = 69;
+         _reserve1 = 420;
+        _blockTimestampLast = 69420;
+    }
+
+}
+
+contract V2RouterMock {
+    constructor() {
+    }
+    function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) external pure returns(uint256 amountOut) {
+        amountOut = 4206969;
+    }
 }
