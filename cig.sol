@@ -148,17 +148,19 @@ contract Cig {
         address _NFT,
         address _V2ROUTER
     ) {
-        lastRewardBlock = _startBlock;
-        cigPerBlock = _cigPerBlock;
-        admin = msg.sender; // the admin key will be burned after deployment
-        punks = ICryptoPunk(_punks);
-        CEO_epoch_blocks = _CEO_epoch_blocks;
+        lastRewardBlock    = _startBlock;
+        cigPerBlock        = _cigPerBlock;
+        admin              = msg.sender;                 // the admin key will be burned after deployment
+        punks              = ICryptoPunk(_punks);
+        CEO_epoch_blocks   = _CEO_epoch_blocks;
         CEO_auction_blocks = _CEO_auction_blocks;
-        CEO_price = _CEO_price;
-        MASTERCHEF_V2 = _MASTERCHEF_V2;
-        graffiti = _graffiti;
-        The_NFT = ICEOERC721(_NFT);
-        V2ROUTER = IRouterV2(_V2ROUTER);
+        CEO_price          = _CEO_price;
+        MASTERCHEF_V2      = _MASTERCHEF_V2;
+        graffiti           = _graffiti;
+        The_NFT            = ICEOERC721(_NFT);
+        V2ROUTER           = IRouterV2(_V2ROUTER);
+        // mint the tokens for the airdrop and place them in the CryptoPunks contract.
+        mint(_punks, CLAIM_AMOUNT * 10000);
     }
 
     /**
@@ -457,13 +459,16 @@ contract Cig {
     * Claim claims the initial CIG airdrop using a punk
     * @param _punkIndex the index of the punk, number between 0-9999
     */
-    function claim(uint256 _punkIndex) public {
+    function claim(uint256 _punkIndex) external returns(bool) {
         require (_punkIndex <= 9999, "invalid punk");
         require(claims[_punkIndex] == false, "punk already claimed");
         require(msg.sender == punks.punkIndexToAddress(_punkIndex), "punk 404");
         claims[_punkIndex] = true;
-        mint(msg.sender, CLAIM_AMOUNT);
+        balanceOf[address(punks)] = balanceOf[address(punks)] - CLAIM_AMOUNT; // deduct from the punks contract
+        balanceOf[msg.sender] = balanceOf[msg.sender] + CLAIM_AMOUNT;         // deposit to the caller
+        emit Transfer(address(punks), msg.sender, CLAIM_AMOUNT);
         emit Claim(msg.sender, _punkIndex, CLAIM_AMOUNT);
+        return true;
     }
 
     /**
