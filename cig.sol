@@ -4,16 +4,20 @@
 
 pragma solidity ^0.8.10;
 
-import "./safemath.sol";
-import "./ceo.sol";
+//import "./safemath.sol"; // don't need since v0.8
+//import "./ceo.sol";
 /*
 
 PUNKS CEO (and "Cigarette" token)
-WEB: https://punksceo.eth.limo
+WEB: https://punksceo.eth.limo / https://punksceo.eth.link
 IPFS: See content hash record for punksceo.eth
 Token Address: cigtoken.eth
 
-### THE RULES
+There is NO trade tax or any other fee in the standard ERC20 methods of this token.
+
+The "CEO of CryptoPunks" game element is optional and implemented for your entertainment.
+
+### THE RULES OF THE GAME
 
 1. Anybody can buy the CEO title at any time using Cigarettes. (The CEO of all cryptopunks)
 2. When buying the CEO title, you must nominate a punk, set the price and pre-pay the tax.
@@ -106,7 +110,7 @@ contract Cig {
     uint256 rewardsChangedBlock;                  // which block was the last reward increase / decrease
     uint256 private immutable CEO_epoch_blocks;   // secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
     uint256 private immutable CEO_auction_blocks; // 3600 blocks
-    event NewCEO(address indexed user, uint punk_id, uint256 new_price, bytes32 graffiti); // when a CEO is bought
+    event NewCEO(address indexed user, uint indexed punk_id, uint256 new_price, bytes32 graffiti); // when a CEO is bought
     event TaxDeposit(address indexed user,  uint256 amount);                               // when tax is deposited
     event RevenueBurned(address indexed user,  uint256 amount);                            // when tax is burned
     event TaxBurned(address indexed user,  uint256 amount);                                // when tax is burned
@@ -307,7 +311,7 @@ contract Cig {
             emit TaxBurned(msg.sender, CEO_tax_balance);
             CEO_state = 2;                                       // initiate a Dutch auction.
             CEO_tax_balance = 0;
-            _transferNFT(The_CEO, address(this));                // This contract hold the title temporarily
+            _transferNFT(The_CEO, address(this));                // This contract holds the NFT temporarily
             The_CEO = address(this);                             // This contract is the "interim CEO"
             mint(msg.sender, default_amount);                    // reward the caller for reporting tax default
             emit CEODefaulted(msg.sender, default_amount);
@@ -378,18 +382,20 @@ contract Cig {
     * @dev _calcDiscount calculates the discount for the CEO title based on how many blocks passed
     */
     function _calcDiscount() internal view returns (uint256) {
-        uint256 d = (CEO_price / 10)           // 10% discount
-        // multiply by the number of discounts accrued
-        * (block.number - taxBurnBlock) / CEO_auction_blocks;
-        if (d > CEO_price) {
-            // cannot let it go under the MIN_PRICE
-            return MIN_PRICE;
-        }
-        uint256 price = CEO_price - d;
-        if (price < MIN_PRICE) {
-            price = MIN_PRICE;
-        }
+        unchecked {
+            uint256 d = (CEO_price / 10)           // 10% discount
+            // multiply by the number of discounts accrued
+            * (block.number - taxBurnBlock) / CEO_auction_blocks;
+            if (d > CEO_price) {
+                // overflow assumed, reset to MIN_PRICE
+                return MIN_PRICE;
+            }
+            uint256 price = CEO_price - d;
+            if (price < MIN_PRICE) {
+                price = MIN_PRICE;
+            }
         return price;
+        }
     }
 
     /**
