@@ -121,7 +121,7 @@ contract NonFungibleCEO {
     }
 
     function name() public pure returns (string memory) {
-        return "CEO of Cryptopunks";
+        return "CEO of CryptoPunks";
     }
 
     function symbol() public pure returns (string memory) {
