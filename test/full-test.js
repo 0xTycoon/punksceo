@@ -20,6 +20,7 @@ describe("Cig", function () {
     let CEO_BUY_PRICE = '50000';
     let CEO_TAX_DEPOSIT = '5000';
     let CLAIM_AMOUNT = '100000';
+    let MINT_SUPPLY = (parseInt(CLAIM_AMOUNT) * 10000) + '';
     let graffiti = "hello world";
     let graff32 = new Uint8Array(32);
     // MasterChefV2 contract
@@ -30,7 +31,7 @@ describe("Cig", function () {
     let feth = utils.formatEther;
     let peth = utils.parseEther;
 
-    let ASSET_URL = "ipfs://2727838744/something/238374";
+    let ASSET_URL = "ipfs://2727838744/something/238374/";
 
     before(async function () {
 
@@ -95,7 +96,8 @@ describe("Cig", function () {
         it("Should use a punk to claim some coins", async function () {
             // test if we claim
             expect(await cig.claim(4513))
-                .to.emit(cig, 'Claim').withArgs(owner.address, 4513, utils.parseEther(CLAIM_AMOUNT));
+                .to.emit(cig, 'Claim').withArgs(owner.address, 4513, utils.parseEther(CLAIM_AMOUNT))
+                .to.emit(cig, 'Transfer').withArgs(pm.address, owner.address, utils.parseEther(CLAIM_AMOUNT));
             expect(await cig.balanceOf(owner.address)).to.equal(utils.parseEther(CLAIM_AMOUNT));
             // cannot claim a punk twice
             await expect(cig.claim(4513))
@@ -137,7 +139,7 @@ describe("Cig", function () {
             ;
             expect(await nft.ownerOf(0)).to.be.equal(owner.address); // check NFT transferred
 
-            expect(await nft.tokenURI(0)).to.equal(ASSET_URL);
+            expect(await nft.tokenURI(0)).to.equal(ASSET_URL + "0.json");
 
             let expectedSupply = totalSupply.sub(peth(CEO_BUY_PRICE));
             // check the total supply, an amount of CEO_BUY_PRICE should be burned
@@ -153,7 +155,7 @@ describe("Cig", function () {
             expect(stats[4]).to.be.equal(peth(CEO_BUY_PRICE)); // CEO_price
             expect(stats[5]).to.be.equal(4513); // CEO_punk_index
             expect(stats[6]).to.be.equal(peth(BLOCK_REWARD)); // cigPerBlock
-            expect(stats[7]).to.be.equal(peth(CLAIM_AMOUNT).sub(peth(CEO_BUY_PRICE))); // totalSupply
+            expect(stats[7]).to.be.equal(peth(MINT_SUPPLY).sub(peth(CEO_BUY_PRICE))); // MINT_SUPPLY minus what was burned
             expect(stats[8]).to.be.equal(0); // lpToken.balanceOf
             expect(graff).to.be.equal(BigNumber.from(graff32));
             // 9 - block.number
