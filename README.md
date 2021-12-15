@@ -55,13 +55,17 @@ Besides, CEOs are usually appointed by the board.
 
 1 billion CIG will be minted at deployment and sent to the autonomous CryptoPunks contract, ready for claiming.
 
-When claiming the airdrop, 100K CIG will be sent from the CryptoPunks contract to the claimant.
+When claiming the airdrop, 100K CIG will be sent from the CryptoPunks contract to each claimant.
 
 There will be no time limit for the airdop.
 
 The issuance will be 1000 CIG per block at the beginning. The CEO will be able to change it by 20% after
 every 14400 blocks. The result of the change must always be between 1000 and 0.0001 CIG. This means
 that the issuance can never be more than 1000 per block, or less than 0.0001 CIG per block.
+
+There is no tax or fee on transfers or trading. The game element is completely optional.
+
+No Admin keys / "team allocations" / VCs. (The Admin keys are used for deployment and burned after)
 
 ### Credits
 - LP Staking based on code from SushiSwap's MasterChef.sol
