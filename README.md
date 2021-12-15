@@ -45,11 +45,24 @@ END
 * 1 = CEO reigning
 * 2 = Dutch auction
 
-Notes:
+### Notes
+
 It was decided that whoever buys the CEO title does not have to hold a punk and can nominate any punk they wish.
 This is because some may hold their punks in cold storage, plus checking ownership costs additional gas.
 Besides, CEOs are usually appointed by the board.
 
-Credits:
+### Tokenmics and issuance: 
+
+1 billion CIG will be minted at deployment and sent to the autonomous CryptoPunks contract, ready for claiming.
+
+When claiming the airdrop, 100K CIG will be sent from the CryptoPunks contract to the claimant.
+
+There will be no time limit for the airdop.
+
+The issuance will be 1000 CIG per block at the beginning. The CEO will be able to change it by 20% after
+every 14400 blocks. The result of the change must always be between 1000 and 0.0001 CIG. This means
+that the issuance can never be more than 1000 per block, or less than 0.0001 CIG per block.
+
+### Credits
 - LP Staking based on code from SushiSwap's MasterChef.sol
-- ERC20 & SafeMath based on lib from OpenZeppelin
+- ERC20 & SafeMath based on lib from OpenZeppelin 
