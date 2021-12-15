@@ -45,7 +45,7 @@ END
 * 1 = CEO reigning
 * 2 = Dutch auction
 
-### Notes
+Notes
 
 It was decided that whoever buys the CEO title does not have to hold a punk and can nominate any punk they wish.
 This is because some may hold their punks in cold storage, plus checking ownership costs additional gas.
