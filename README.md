@@ -8,7 +8,7 @@ Optionally, there is a DeFi farm, where you can earn CIG rewards by supplying li
 
 ![Preview](cig-preview.png)
 
-WEB: https://punksceo.com
+WEB: not yet
 
 IPFS: punksCEO.eth
 
