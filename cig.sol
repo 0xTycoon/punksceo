@@ -77,7 +77,7 @@ contract Cig {
     }
     mapping(address => UserInfo) public userInfo; // keeps track of UserInfo for each staking address
     address public admin;                         // admin is used for deployment, burned after
-    ILiquidityPoolERC20 public lpToken;                        // lpToken is the address of LP token contract that's being staked.
+    ILiquidityPoolERC20 public lpToken;           // lpToken is the address of LP token contract that's being staked.
     uint256 public lastRewardBlock;               // Last block number that cigarettes distribution occurs.
     uint256 public accCigPerShare;                // Accumulated cigarettes per share, times 1e12. See below.
     uint256 public cigPerBlock;                   // CIGs per-block rewarded and split with LPs
@@ -104,10 +104,10 @@ contract Cig {
     address public The_CEO;                       // address of CEO
     uint public CEO_punk_index;                   // which punk id the CEO is using
     uint256 public CEO_price = 50000 ether;       // price to buy the CEO title
-    uint256 CEO_state;                            // state has 3 states, described above.
-    uint256 CEO_tax_balance;                      // deposit to be used to pay the CEO tax
-    uint256 taxBurnBlock;                         // The last block when the tax was burned
-    uint256 rewardsChangedBlock;                  // which block was the last reward increase / decrease
+    uint256 public CEO_state;                     // state has 3 states, described above.
+    uint256 public CEO_tax_balance;               // deposit to be used to pay the CEO tax
+    uint256 public taxBurnBlock;                  // The last block when the tax was burned
+    uint256 public rewardsChangedBlock;           // which block was the last reward increase / decrease
     uint256 private immutable CEO_epoch_blocks;   // secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
     uint256 private immutable CEO_auction_blocks; // 3600 blocks
     event NewCEO(address indexed user, uint indexed punk_id, uint256 new_price, bytes32 graffiti); // when a CEO is bought
@@ -196,11 +196,19 @@ contract Cig {
 
     /**
     * @dev buyCEO allows anybody to be the CEO
+    * @param _max_spend the total CIG that can be spent
     * @param _new_price the new price for the punk (in CIG)
     * @param _tax_amount how much to pay in advance (in CIG)
     * @param _punk_index the id of the punk 0-9999
+    * @param _graffiti a little message / ad from the buyer
     */
-    function buyCEO(uint256 _new_price, uint256 _tax_amount, uint256 _punk_index, bytes32 _graffiti) external  {
+    function buyCEO(
+        uint256 _max_spend,
+        uint256 _new_price,
+        uint256 _tax_amount,
+        uint256 _punk_index,
+        bytes32 _graffiti
+    ) external  {
         if (CEO_state == 1 && (taxBurnBlock != block.number)) {
             _burnTax();                                                    // _burnTax can change CEO_state to 2
         }
@@ -208,6 +216,7 @@ contract Cig {
             // Auction state. The price goes down 10% every `CEO_auction_blocks` blocks
             CEO_price = _calcDiscount();
         }
+        require (CEO_price + _tax_amount <= _max_spend, "overpaid");        // prevent CEO over-payment
         require (_new_price >= MIN_PRICE, "price 2 smol");                 // price cannot be under 0.000001 CIG
         require (_punk_index <= 9999, "invalid punk");                     // validate the punk index
         require (_tax_amount >= _new_price / 1000, "insufficient tax" );   // at least %0.1 fee paid for 1 epoch
@@ -265,16 +274,15 @@ contract Cig {
     * @param _amount amount of tax to pre-pay
     */
     function depositTax(uint256 _amount) external onlyCEO {
-        if (CEO_state == 1) {
-            if (_amount > 0) {
-                transfer(address(this), _amount);                   // place the tax on deposit
-                CEO_tax_balance = CEO_tax_balance + _amount;        // record the balance
-                emit TaxDeposit(msg.sender, _amount);
-            }
-            if (taxBurnBlock != block.number) {
-                _burnTax();                                         // settle any tax debt
-                taxBurnBlock = block.number;
-            }
+        require (CEO_state == 1, "no CEO");
+        if (_amount > 0) {
+            transfer(address(this), _amount);                   // place the tax on deposit
+            CEO_tax_balance = CEO_tax_balance + _amount;        // record the balance
+            emit TaxDeposit(msg.sender, _amount);
+        }
+        if (taxBurnBlock != block.number) {
+            _burnTax();                                         // settle any tax debt
+            taxBurnBlock = block.number;
         }
     }
 
