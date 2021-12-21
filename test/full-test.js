@@ -122,16 +122,18 @@ describe("Cig", function () {
             // buy the CEO title (reverts due to insufficient tax)
             let tax = peth(CEO_BUY_PRICE).div(tax_denominator)
             let insufficient = tax.sub("1");
-            await expect(cig.buyCEO(peth(CEO_BUY_PRICE), insufficient, 4513, graff32))
+            let max_spend = stats[4].add(insufficient);
+            await expect(cig.buyCEO(max_spend, peth(CEO_BUY_PRICE), insufficient, 4513, graff32))
                 .to.be.revertedWith("insufficient tax");
 
             // buy the CEO title (reverts due to price being under)
-            await expect(cig.buyCEO(peth('0.0000009'), tax, 4513, graff32))
+            max_spend = stats[4].add(tax);
+            await expect(cig.buyCEO(max_spend, peth('0.0000009'), tax, 4513, graff32))
                 .to.be.revertedWith("price 2 smol");
             // buy the CEO title
             console.log("total supply before:" + feth(totalSupply));
-
-            expect(await cig.buyCEO(peth(CEO_BUY_PRICE), peth(CEO_TAX_DEPOSIT), 4513, graff32))
+            max_spend = stats[4].add(peth(CEO_TAX_DEPOSIT));
+            expect(await cig.buyCEO(max_spend, peth(CEO_BUY_PRICE), peth(CEO_TAX_DEPOSIT), 4513, graff32))
                 .to.emit(cig, "NewCEO").withArgs(owner.address, 4513, peth(CEO_BUY_PRICE), BigNumber.from(graff32))
                 .to.emit(cig, "TaxDeposit").withArgs(owner.address, peth(CEO_TAX_DEPOSIT))
                 .to.emit(cig, "Transfer").withArgs(cig.address, "0x0000000000000000000000000000000000000000", peth(CEO_BUY_PRICE))
@@ -327,8 +329,9 @@ describe("Cig", function () {
                                    await expect(cig.transfer(elizabeth.address, stats[15]))
                                        .to.emit(cig, "Transfer").withArgs(owner.address, elizabeth.address, stats[15]);
                                    // elizabeth will become the CEO
+                                   let max_spend = stats[4].add(stats[15].sub(peth("1")));
                                    await expect(cig.connect(elizabeth)
-                                       .buyCEO(peth("1"), stats[15].sub(peth("1")), 6942, graff32))
+                                       .buyCEO(max_spend, peth("1"), stats[15].sub(peth("1")), 6942, graff32))
                                        .to.emit(cig, "NewCEO").withArgs(elizabeth.address, 6942, peth("1"), BigNumber.from(graff32))
                                        .to.emit(cig, "TaxDeposit")
                                    ;
@@ -349,8 +352,9 @@ describe("Cig", function () {
 
                                    [stats] = await cig.getStats(simp.address);
                                    console.log("it should burn " + feth("5000000000000000") + " but we have " + feth(stats[10]))
+                                   max_spend = stats[4].add(stats[15].sub(peth("1")));
                                    await expect(cig.connect(simp)
-                                       .buyCEO(peth("1"), stats[15].sub(peth("1")), 6942, graff32))
+                                       .buyCEO(max_spend, peth("1"), stats[15].sub(peth("1")), 6942, graff32))
                                        .to.emit(cig, "NewCEO").withArgs(simp.address, 6942, peth("1"), BigNumber.from(graff32))
                                        // return previous ceo's tac deposit
                                        .to.emit(cig, "Transfer").withArgs(cig.address, elizabeth.address, elizabethExpectedRefund)
@@ -471,7 +475,12 @@ describe("Cig", function () {
                                            await expect(cig.setPool(pt.address)).to.be.revertedWith("Only admin can call this");
 
                                        });
-                       //        */
+/*
+        it("should test transfer overflow", async function () {
+            await expect(cig.transfer(pt.address, peth(""))).to.be.revertedWith("Error: value out-of-bounds (argument=\"_value\", value={\"type\":\"BigNumber\",\"hex\":\"0x0de0b6b3a763fffffffffffffffffffffffffffffffffffffffffffffffffffff21f494c589c0000\"}, code=INVALID_ARGUMENT, version=abi/5.4.1)\n");
+
+        });
+  */                     //        */
     });
 
 
