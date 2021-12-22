@@ -2,7 +2,7 @@
 // Author: 0xTycoon
 // Repo: github.com/0xTycoon/punksceo
 
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.11;
 
 //import "./safemath.sol"; // don't need since v0.8
 //import "./ceo.sol";
@@ -416,7 +416,7 @@ contract Cig {
     * @return bytes32 Current graffiti
     */
     function getStats(address _user) external view returns(uint256[] memory, address, bytes32, uint112[] memory) {
-        uint[] memory ret = new uint[](20);
+        uint[] memory ret = new uint[](22);
         uint112[] memory reserves = new uint112[](2);
         uint256 tpb = (CEO_price / 1000) / (CEO_epoch_blocks); // 0.1% per epoch
         uint256 debt = (block.number - taxBurnBlock) * tpb;
@@ -456,6 +456,9 @@ contract Cig {
         ret[13] = info.deposit;                    // amount of LP tokens staked by user
         ret[14] = info.rewardDebt;                 // amount of rewards paid out
         ret[15] = balanceOf[_user];                // amount of CIG held by user
+        ret[20] = balanceOf[address(0)];           // amount of CIG burned
+        ret[21] = balanceOf[address(punks)];       // amount of CIG to be claimed
+
         return (ret, The_CEO, graffiti, reserves);
     }
 
