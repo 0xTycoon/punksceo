@@ -6,7 +6,7 @@ If you have a punk, then use it to claim 100,000 Cigarettes. These can be used t
 
 Optionally, there is a DeFi farm, where you can earn CIG rewards by supplying liquidity for the CIG token on a decentralized exchange.
 
-![Preview](cig-preview.png)
+![Preview](cig-preview.jpg)
 
 WEB: not yet
 
