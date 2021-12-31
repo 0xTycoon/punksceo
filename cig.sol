@@ -125,7 +125,6 @@ contract Cig {
     }
     IRouterV2 private immutable V2ROUTER;    // address of router used to get the price quote
     ICEOERC721 private immutable The_NFT;    // reference to the CEO NFT token
-    address private immutable MASTERCHEF_V2; // address pointing to SushiSwap's MasterChefv2 contract
     /**
     * @dev constructor
     * @param _startBlock starting block when rewards start
@@ -143,7 +142,6 @@ contract Cig {
         uint _CEO_epoch_blocks,
         uint _CEO_auction_blocks,
         uint256 _CEO_price,
-        address _MASTERCHEF_V2,
         bytes32 _graffiti,
         address _NFT,
         address _V2ROUTER
@@ -155,7 +153,6 @@ contract Cig {
         CEO_epoch_blocks   = _CEO_epoch_blocks;
         CEO_auction_blocks = _CEO_auction_blocks;
         CEO_price          = _CEO_price;
-        MASTERCHEF_V2      = _MASTERCHEF_V2;
         graffiti           = _graffiti;
         The_NFT            = ICEOERC721(_NFT);
         V2ROUTER           = IRouterV2(_V2ROUTER);
@@ -231,8 +228,8 @@ contract Cig {
         CEO_punk_index = _punk_index;                                      // store the punk id
         The_CEO = msg.sender;                                              // store the CEO's address
         taxBurnBlock = block.number;                                       // store the block number
-                                                                           // (tax may not have been burned if the
-                                                                           // previous state was 0)
+        // (tax may not have been burned if the
+        // previous state was 0)
         CEO_state = 1;
         graffiti = _graffiti;
         emit TaxDeposit(msg.sender, _tax_amount);
@@ -392,20 +389,20 @@ contract Cig {
     * @dev _calcDiscount calculates the discount for the CEO title based on how many blocks passed
     */
     function _calcDiscount() internal view returns (uint256) {
-        unchecked {
-            uint256 d = (CEO_price / 10)           // 10% discount
-            // multiply by the number of discounts accrued
-            * (block.number - taxBurnBlock) / CEO_auction_blocks;
-            if (d > CEO_price) {
-                // overflow assumed, reset to MIN_PRICE
-                return MIN_PRICE;
-            }
-            uint256 price = CEO_price - d;
-            if (price < MIN_PRICE) {
-                price = MIN_PRICE;
-            }
-        return price;
+    unchecked {
+        uint256 d = (CEO_price / 10)           // 10% discount
+        // multiply by the number of discounts accrued
+        * (block.number - taxBurnBlock) / CEO_auction_blocks;
+        if (d > CEO_price) {
+            // overflow assumed, reset to MIN_PRICE
+            return MIN_PRICE;
         }
+        uint256 price = CEO_price - d;
+        if (price < MIN_PRICE) {
+            price = MIN_PRICE;
+        }
+        return price;
+    }
     }
 
     /**
@@ -504,7 +501,7 @@ contract Cig {
         uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
         mint(address(this), cigReward);
         accCigPerShare = accCigPerShare + (
-            cigReward * 1e12 / lpSupply
+        cigReward * 1e12 / lpSupply
         );
         lastRewardBlock = block.number;
     }
@@ -521,7 +518,7 @@ contract Cig {
         if (block.number > lastRewardBlock && lpSupply != 0) {
             uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
             _acps = _acps + (
-                cigReward * 1e12 / lpSupply
+            cigReward * 1e12 / lpSupply
             );
         }
         return (user.deposit * _acps / 1e12) - user.rewardDebt;
@@ -602,14 +599,14 @@ contract Cig {
     * @param _from The address to burn from
     * @param _amount The amount to burn
     */
-   function burn(address _from, uint256 _amount) internal {
-       balanceOf[_from] = balanceOf[_from] - _amount;
-       totalSupply = totalSupply - _amount;
-       emit Transfer(_from, address(0), _amount);
-   }
+    function burn(address _from, uint256 _amount) internal {
+        balanceOf[_from] = balanceOf[_from] - _amount;
+        totalSupply = totalSupply - _amount;
+        emit Transfer(_from, address(0), _amount);
+    }
 
-   /**
-   * @dev mint new tokens
+    /**
+    * @dev mint new tokens
    * @param _to The address to mint to.
    * @param _amount The amount to be minted.
    */
@@ -667,46 +664,6 @@ contract Cig {
         return true;
     }
 
-    /********************************************************************
-    * @dev onSushiReward IRewarder methods to be called by the SushSwap MasterChefV2 contract
-    */
-
-    function onSushiReward (
-        uint256 /* pid */,
-        address _user,
-        address _to,
-        uint256 /* sushiAmount*/,
-        uint256 _newLpAmount)  external onlyMCV2 {
-        UserInfo storage user = userInfo[_user];
-        update();
-        if (user.deposit > 0) {
-            uint256 pending = (user.deposit * accCigPerShare / 1e12) - user.rewardDebt;
-            safeSendPayout(_to, pending);
-        }
-        user.deposit = _newLpAmount;
-        user.rewardDebt = user.deposit * accCigPerShare / 1e12;
-    }
-
-    /**
-    * pendingTokens returns the number of pending CIG rewards, implementing IRewarder
-    * @param user it is the only parameter we look at
-    */
-    function pendingTokens(uint256 pid, address user, uint256 sushiAmount) external view returns (IERC20[] memory, uint256[] memory) {
-        IERC20[] memory _rewardTokens = new IERC20[](1);
-        _rewardTokens[0] = IERC20(address(this));
-        uint256[] memory _rewardAmounts = new uint256[](1);
-        _rewardAmounts[0] = pendingCig(user);
-        return (_rewardTokens, _rewardAmounts);
-    }
-    // onlyMCV2 ensures only the MasterChefV2 contract can call this
-    modifier onlyMCV2 {
-        require(
-            msg.sender == MASTERCHEF_V2,
-            "Only MCV2"
-        );
-        _;
-    }
-
     /**
      * @dev Returns true if `account` is a contract.
      *
@@ -741,13 +698,6 @@ interface ICryptoPunk {
 
 interface ICEOERC721 {
     function transferFrom(address _from, address _to, uint256 _tokenId) external payable;
-}
-
-// IRewarder allows the contract to be called by SushSwap MasterChefV2
-// example impl https://etherscan.io/address/0x7519c93fc5073e15d89131fd38118d73a72370f8/advanced#code
-interface IRewarder {
-    function onSushiReward(uint256 pid, address user, address recipient, uint256 sushiAmount, uint256 newLpAmount) external;
-    function pendingTokens(uint256 pid, address user, uint256 sushiAmount) external view returns (IERC20[] memory, uint256[] memory);
 }
 
 /*
