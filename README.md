@@ -77,5 +77,5 @@ This repository contains vulnerability discovered and disclosed by twitter.com/a
 
 The `cigtoken-deployed-contract` branch contains the old cig.sol version which was deployed.
 
-Fortunatelly, the deployed cigtoken.eth contract is not exploitable, 
+Fortunately, the deployed cigtoken.eth contract is not exploitable, 
 however care should be taken that you do not use that branch if you fork it.
