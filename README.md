@@ -70,3 +70,12 @@ No Admin keys / "team allocations" / VCs. (The Admin keys are used for deploymen
 ### Credits
 - LP Staking based on code from SushiSwap's MasterChef.sol
 - ERC20 & SafeMath based on lib from OpenZeppelin 
+
+### Versions and disclosure
+
+This repository contains vulnerability discovered and disclosed by twitter.com/alphasoups (The vulnerability was with the MasterChefV2 callback implementation)
+
+The `cigtoken-deployed-contract` branch contains the old cig.sol version which was deployed.
+
+Fortunatelly, the deployed cigtoken.eth contract is not exploitable, 
+however care should be taken that you do not use that branch if you fork it.
