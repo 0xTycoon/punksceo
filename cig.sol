@@ -62,7 +62,7 @@ Credits:
 contract Cig {
     //using SafeMath for uint256; // no need since Solidity 0.8
     // ERC20 stuff
-    string public constant name = "Cigarette Token";
+    string public constant name = "Cigarette Token V2";
     string public constant symbol = "CIG";
     uint8 public constant decimals = 18;
     uint256 public totalSupply = 0;
