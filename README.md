@@ -79,3 +79,11 @@ The `cigtoken-deployed-contract` branch contains the old cig.sol version which w
 
 Fortunately, the deployed cigtoken.eth contract is not exploitable,
 however care should be taken that you do not use that branch if you fork it.
+
+# Dev notes
+
+To run tests
+
+``` 
+$ npm install --save-dev hardhat
+```
