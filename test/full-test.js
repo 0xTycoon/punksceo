@@ -59,7 +59,7 @@ describe("Cig", function () {
         nft = await NFTMock.deploy(ASSET_URL);
         await nft.deployed();
 
-        CigToken = await ethers.getContractFactory("Cig");
+        CigToken = await ethers.getContractFactory("OldCig");
         cig = await CigToken.deploy(
             100,
             utils.parseEther(BLOCK_REWARD),

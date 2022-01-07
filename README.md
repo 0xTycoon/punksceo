@@ -86,4 +86,19 @@ To run tests
 
 ``` 
 $ npm install --save-dev hardhat
+$ npx hardhat test
 ```
+
+Using node 17 and getting a strange 'envelope' error?
+
+```
+export NODE_OPTIONS=--openssl-legacy-provider
+```
+
+To run migration tests only
+
+```
+npx hardhat test test/migration-test.js
+```
+
+end
