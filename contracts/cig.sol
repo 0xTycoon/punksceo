@@ -296,7 +296,7 @@ contract Cig {
     }
 
     /**
-    * @dev get the distance between issu
+    * @dev get the distance between issuance of both old and new contracts
     */
     function _dist() internal view returns (uint256) {
         uint256 a = OC.cigPerBlock();
@@ -528,12 +528,12 @@ contract Cig {
     /**
     * @dev getStats helps to fetch some stats for the GUI in a single web3 call
     * @param _user the address to return the report for
-    * @return uint256[22] the stats
+    * @return uint256[25] the stats
     * @return address of the current CEO
     * @return bytes32 Current graffiti
     */
     function getStats(address _user) external view returns(uint256[] memory, address, bytes32, uint112[] memory) {
-        uint[] memory ret = new uint[](24);
+        uint[] memory ret = new uint[](25);
         uint112[] memory reserves = new uint112[](2);
         uint256 tpb = (CEO_price / 1000) / (CEO_epoch_blocks); // 0.1% per epoch
         uint256 debt = (block.number - taxBurnBlock) * tpb;
@@ -577,7 +577,7 @@ contract Cig {
         ret[21] = balanceOf[address(punks)];       // amount of CIG to be claimed
         ret[22] = farmers[_user].deposit;
         ret[23] = farmers[_user].rewardDebt;
-
+        ret[24] = lpToken.totalSupply();
         return (ret, The_CEO, graffiti, reserves);
     }
 
