@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Author: 0xTycoon
+// Version 2.0
+// Author: 0xTycoon & contributors
 // Repo: github.com/0xTycoon/punksceo
 
 pragma solidity ^0.8.11;
@@ -13,9 +14,18 @@ WEB: https://punksceo.eth.limo / https://punksceo.eth.link
 IPFS: See content hash record for punksceo.eth
 Token Address: cigtoken.eth
 
-There is NO trade tax or any other fee in the standard ERC20 methods of this token.
+         , - ~ ~ ~ - ,
+     , '               ' ,
+   ,                    🚬  ,
+  ,                     🚬   ,
+ ,                      🚬    ,
+ ,                      🚬    ,
+ ,         =============     ,
+  ,                   ||█   ,
+   ,       =============   ,
+     ,                  , '
+       ' - , _ _ _ ,  '
 
-The "CEO of CryptoPunks" game element is optional and implemented for your entertainment.
 
 ### THE RULES OF THE GAME
 
@@ -62,8 +72,7 @@ Credits:
 
 contract Cig {
     //using SafeMath for uint256; // no need since Solidity 0.8
-    // ERC20 stuff
-    string public constant name = "Cigarette Token V2";
+    string public constant name = "Cigarette Token";
     string public constant symbol = "CIG";
     uint8 public constant decimals = 18;
     uint256 public totalSupply = 0;
@@ -76,7 +85,7 @@ contract Cig {
         uint256 deposit;    // How many LP tokens the user has deposited.
         uint256 rewardDebt; // keeps track of how much reward was paid out
     }
-    mapping(address => UserInfo) public farmers; // keeps track of UserInfo for each staking address
+    mapping(address => UserInfo) public farmers;  // keeps track of UserInfo for each staking address
     mapping(address => uint256) public wBal;      // keeps tracked of wrapped old cig
     address public admin;                         // admin is used for deployment, burned after
     ILiquidityPoolERC20 public lpToken;           // lpToken is the address of LP token contract that's being staked.
@@ -103,7 +112,7 @@ contract Cig {
     uint256 constant CLAIM_AMOUNT = 100000 ether; // claim amount for each punk
     uint256 constant MIN_REWARD = 1e14;           // minimum block reward of 0.0001 CIG (1e14 wei)
     uint256 constant MAX_REWARD = 1000 ether;     // maximum block reward of 1000 CIG
-    uint256 constant MIN_DIST = 100 ether;        // minimum distance cigPerBlock during migration
+    uint256 constant MAX_DIST = 100 ether;        // minimum distance cigPerBlock during migration
     uint256 constant STARTING_REWARDS = 512 ether;// starting rewards at end of migration
     address public The_CEO;                       // address of CEO
     uint public CEO_punk_index;                   // which punk id the CEO is using
@@ -114,11 +123,17 @@ contract Cig {
     uint256 public rewardsChangedBlock;           // which block was the last reward increase / decrease
     uint256 private immutable CEO_epoch_blocks;   // secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
     uint256 private immutable CEO_auction_blocks; // 3600 blocks
+    // NewCEO 0x09b306c6ea47db16bdf4cc36f3ea2479af494cd04b4361b6485d70f088658b7e
     event NewCEO(address indexed user, uint indexed punk_id, uint256 new_price, bytes32 graffiti); // when a CEO is bought
+    // TaxDeposit 0x2ab3b3b53aa29a0599c58f343221e29a032103d015c988fae9a5cdfa5c005d9d
     event TaxDeposit(address indexed user,  uint256 amount);                               // when tax is deposited
+    // RevenueBurned 0x1b1be00a9ca19f9c14f1ca5d16e4aba7d4dd173c2263d4d8a03484e1c652c898
     event RevenueBurned(address indexed user,  uint256 amount);                            // when tax is burned
+    // TaxBurned 0x9ad3c710e1cc4e96240264e5d3cd5aeaa93fd8bd6ee4b11bc9be7a5036a80585
     event TaxBurned(address indexed user,  uint256 amount);                                // when tax is burned
+    // CEODefaulted b69f2aeff650d440d3e7385aedf764195cfca9509e33b69e69f8c77cab1e1af1
     event CEODefaulted(address indexed called_by,  uint256 reward);                        // when CEO defaulted on tax
+    // CEOPriceChange 0x10c342a321267613a25f77d4273d7f2688bef174a7214bc3dde44b31c5064ff6
     event CEOPriceChange(uint256 price);                                                   // when CEO changed price
     modifier onlyCEO {
         require(
@@ -157,7 +172,7 @@ contract Cig {
     ) {
         lastRewardBlock    = _startBlock;
         cigPerBlock        = _cigPerBlock;
-        admin              = msg.sender;                 // the admin key will be burned after deployment
+        admin              = msg.sender;             // the admin key will be burned after deployment
         punks              = ICryptoPunk(_punks);
         CEO_epoch_blocks   = _CEO_epoch_blocks;
         CEO_auction_blocks = _CEO_auction_blocks;
@@ -168,7 +183,7 @@ contract Cig {
         OC                 = IOldCigtoken(_OC);
         lastRewardBlock = block.number + (7200 * 7); // migration at least 7 epochs
 
-        CEO_state = 3;                             // begin in migration state
+        CEO_state = 3;                               // begin in migration state
     }
 
     /**
@@ -209,8 +224,8 @@ contract Cig {
         require (CEO_state == 3);
         require (OC.CEO_state() == 2);
         require (block.number > lastRewardBlock, "cannot end migration yet");
-        CEO_state = 2;
-        // copy the state over to this contract
+        CEO_state = 2;                         // CEO is in charge state
+        /* copy the state over to this contract */
         mint(address(punks), OC.balanceOf(address(punks))); // CIG to be set aside for the remaining airdrop
         uint256 taxDeposit = OC.CEO_tax_balance();
         if (taxDeposit > 0) {                  // copy the CEO's outstanding tax
@@ -223,6 +238,38 @@ contract Cig {
         CEO_punk_index = OC.CEO_punk_index();
         cigPerBlock = STARTING_REWARDS;        // set special rewards
         lastRewardBlock = OC.lastRewardBlock();// start rewards
+        /* Historical records */
+        _transferNFT(
+            address(0),
+            address(0x1e32a859d69dde58d03820f8f138c99b688d132f)
+        );
+        emit NewCEO(
+            address(0x1e32a859d69dde58d03820f8f138c99b688d132f),
+            0x00000000000000000000000000000000000000000000000000000000000015c9,
+            0x000000000000000000000000000000000000000000007618fa42aac317900000,
+            0x41732043454f2049206465636c617265204465632032322050756e6b20446179
+        );
+        _transferNFT(
+            address(0x1e32a859d69dde58d03820f8f138c99b688d132f),
+            address(0x72014b4eedee216e47786c4ab27cc6344589950d)
+        );
+        emit NewCEO(
+            address(0x72014b4eedee216e47786c4ab27cc6344589950d),
+            0x0000000000000000000000000000000000000000000000000000000000000343,
+            0x00000000000000000000000000000000000000000001a784379d99db42000000,
+            0x40617a756d615f626974636f696e000000000000000000000000000000000000
+        );
+        _transferNFT(
+            address(0x72014b4eedee216e47786c4ab27cc6344589950d),
+            address(0x4947DA4bEF9D79bc84bD584E6c12BfFa32D1bEc8)
+        );
+        emit NewCEO(
+            address(0x4947DA4bEF9D79bc84bD584E6c12BfFa32D1bEc8),
+            0x00000000000000000000000000000000000000000000000000000000000007fa,
+            0x00000000000000000000000000000000000000000014adf4b7320334b9000000,
+            0x46697273742070756e6b7320746f6b656e000000000000000000000000000000
+        );
+
     }
 
     /**
@@ -231,7 +278,7 @@ contract Cig {
     */
     function wrap(uint256 _value) external {
         require (CEO_state == 3);
-        require (_dist() <= MIN_DIST);                       // issuance distance in range
+        require (_dist() <= MAX_DIST);                       // issuance distance in range
         OC.transferFrom(msg.sender, address(this), _value);  // transfer old cig to here
         mint(msg.sender, _value);                            // give user new cig
         wBal[msg.sender] = wBal[msg.sender] + _value;        // record increase of wrapped old cig for caller
@@ -242,7 +289,7 @@ contract Cig {
     */
     function unwrap(uint256 _value) external {
         require (CEO_state == 3);
-        require (_dist() <= MIN_DIST);                      // issuance distance in range
+        require (_dist() <= MAX_DIST);                      // issuance distance in range
         burn(msg.sender, _value);                           // burn new cig
         OC.transfer(msg.sender, _value);                    // give back old cig
         wBal[msg.sender] = wBal[msg.sender] - _value;       // record decrease of wrapped old cig for caller
@@ -251,7 +298,7 @@ contract Cig {
     /**
     * @dev get the distance between issu
     */
-    function _dist() internal returns (uint256) {
+    function _dist() internal view returns (uint256) {
         uint256 a = OC.cigPerBlock();
         uint256 b = cigPerBlock;
         if (a == b) {
