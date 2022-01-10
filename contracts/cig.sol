@@ -791,8 +791,12 @@ contract Cig {
     public
     returns (bool)
     {
+        uint256 a = allowance[_from][msg.sender]; // read allowance
         //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
-        require(_value <= allowance[_from][msg.sender], "not approved");
+        if (a != uint256(-1)) {                                         // not infinite approval
+            require(_value <= a, "not approved");
+            allowance[_from][msg.sender] = a - _value;
+        }
         balanceOf[_from] = balanceOf[_from] - _value;
         balanceOf[_to] = balanceOf[_to] + _value;
         emit Transfer(_from, _to, _value);
@@ -830,7 +834,6 @@ contract Cig {
 */
 interface IRouterV2 {
     function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) external pure returns(uint256 amountOut);
-
 }
 
 
