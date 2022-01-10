@@ -168,7 +168,8 @@ contract Cig {
         bytes32 _graffiti,
         address _NFT,
         address _V2ROUTER,
-        address _OC
+        address _OC,
+        uint256 _migration_epochs
     ) {
         lastRewardBlock    = _startBlock;
         cigPerBlock        = _cigPerBlock;
@@ -181,7 +182,7 @@ contract Cig {
         The_NFT            = ICEOERC721(_NFT);
         V2ROUTER           = IRouterV2(_V2ROUTER);
         OC                 = IOldCigtoken(_OC);
-        lastRewardBlock = block.number + (7200 * 7); // migration at least 7 epochs
+        lastRewardBlock = block.number + (CEO_epoch_blocks * _migration_epochs); // set the migration window end
 
         CEO_state = 3;                               // begin in migration state
     }
