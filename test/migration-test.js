@@ -146,7 +146,15 @@ describe("Migration", function () {
         });
 
         it("should get the old cig tokens back from new cig", async function () {
-
+            let bal = await cig.wBal(owner.address);
+            expect(await cig.unwrap(bal))
+                // new cig gets burned
+                .to.emit(cig, "Transfer").withArgs(owner.address, burner, bal)
+                // old cig gets given back
+                .to.emit(oldCig, "Transfer").withArgs(cig.address, owner.address, bal);
+            expect(await cig.totalSupply()).to.be.equal(0); // ensure supply decreased back to 0
+            expect(await cig.wBal(owner.address)).to.be.equal(0); // ensure deposit was cleared
+            await expect( cig.unwrap(1)).to.be.reverted // cannot withdraw what we do not have (overflow_
         });
 
 
