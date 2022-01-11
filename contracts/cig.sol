@@ -147,7 +147,6 @@ contract Cig {
     IOldCigtoken private immutable OC;       // Old Contract
     /**
     * @dev constructor
-    * @param _startBlock starting block when rewards start
     * @param _cigPerBlock Number of CIG tokens rewarded per block
     * @param _punks address of the cryptopunks contract
     * @param _CEO_epoch_blocks how many blocks between each epochs
@@ -159,7 +158,6 @@ contract Cig {
     * @param _OC address pointing to the original Cig Token contract
     */
     constructor(
-        uint256 _startBlock,
         uint256 _cigPerBlock,
         address _punks,
         uint _CEO_epoch_blocks,
@@ -171,7 +169,6 @@ contract Cig {
         address _OC,
         uint256 _migration_epochs
     ) {
-        lastRewardBlock    = _startBlock;
         cigPerBlock        = _cigPerBlock;
         admin              = msg.sender;             // the admin key will be burned after deployment
         punks              = ICryptoPunk(_punks);
@@ -221,7 +218,7 @@ contract Cig {
     /**
     * @dev migrationComplete completes the migration
     */
-    function migrationComplete() external onlyAdmin {
+    function migrationComplete() external  {
         require (CEO_state == 3);
         require (OC.CEO_state() == 2);
         require (block.number > lastRewardBlock, "cannot end migration yet");
@@ -793,7 +790,7 @@ contract Cig {
     {
         uint256 a = allowance[_from][msg.sender]; // read allowance
         //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
-        if (a != uint256(-1)) {                                         // not infinite approval
+        if (a != type(uint256).max) {                                         // not infinite approval
             require(_value <= a, "not approved");
             allowance[_from][msg.sender] = a - _value;
         }
