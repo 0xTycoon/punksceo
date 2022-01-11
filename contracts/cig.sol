@@ -7,6 +7,7 @@ pragma solidity ^0.8.11;
 
 //import "./safemath.sol"; // don't need since v0.8
 //import "./ceo.sol";
+//import "hardhat/console.sol";
 /*
 
 PUNKS CEO (and "Cigarette" token)
@@ -220,17 +221,17 @@ contract Cig {
     */
     function migrationComplete() external  {
         require (CEO_state == 3);
-        require (OC.CEO_state() == 2);
+        require (OC.CEO_state() == 1);
         require (block.number > lastRewardBlock, "cannot end migration yet");
-        CEO_state = 2;                         // CEO is in charge state
+        CEO_state = 1;                         // CEO is in charge state
         /* copy the state over to this contract */
         mint(address(punks), OC.balanceOf(address(punks))); // CIG to be set aside for the remaining airdrop
         uint256 taxDeposit = OC.CEO_tax_balance();
+        The_CEO = OC.The_CEO();                // copy the CEO
         if (taxDeposit > 0) {                  // copy the CEO's outstanding tax
             mint(The_CEO, taxDeposit);
             CEO_tax_balance =  taxDeposit;
         }
-        The_CEO = OC.The_CEO();                // copy the CEO
         taxBurnBlock = OC.taxBurnBlock();
         CEO_price = OC.CEO_price();
         CEO_punk_index = OC.CEO_punk_index();
@@ -526,12 +527,12 @@ contract Cig {
     /**
     * @dev getStats helps to fetch some stats for the GUI in a single web3 call
     * @param _user the address to return the report for
-    * @return uint256[25] the stats
+    * @return uint256[26] the stats
     * @return address of the current CEO
     * @return bytes32 Current graffiti
     */
     function getStats(address _user) external view returns(uint256[] memory, address, bytes32, uint112[] memory) {
-        uint[] memory ret = new uint[](25);
+        uint[] memory ret = new uint[](26);
         uint112[] memory reserves = new uint112[](2);
         uint256 tpb = (CEO_price / 1000) / (CEO_epoch_blocks); // 0.1% per epoch
         uint256 debt = (block.number - taxBurnBlock) * tpb;
@@ -573,9 +574,10 @@ contract Cig {
         ret[15] = balanceOf[_user];                // amount of CIG held by user
         ret[20] = accCigPerShare;                  // Accumulated cigarettes per share
         ret[21] = balanceOf[address(punks)];       // amount of CIG to be claimed
-        ret[22] = farmers[_user].deposit;
+        ret[22] = farmers[_user].deposit;          // LP staking deposit
         ret[23] = farmers[_user].rewardDebt;
-        ret[24] = lpToken.totalSupply();
+        ret[24] = lpToken.totalSupply();           // total supply
+        ret[25] = wBal[_user];                     // wrapped cig balance
         return (ret, The_CEO, graffiti, reserves);
     }
 

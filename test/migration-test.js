@@ -44,6 +44,7 @@ describe("Migration", function () {
     }
     const unlimited = BigNumber.from("2").pow(BigNumber.from("256")).sub(BigNumber.from("1")); // 2**256 - 1
     const burner = "0x0000000000000000000000000000000000000000";
+    let migrationStartedAt;
 
     before(async function () {
 
@@ -138,8 +139,7 @@ describe("Migration", function () {
                  // mint new cig
                 .to.emit(cig, "Transfer").withArgs(burner, owner.address, val)
                  // transfer new cig to new cig contract
-                .to.emit(oldCig, "Transfer").withArgs(owner.address, cig.address, val)
-            ;
+                .to.emit(oldCig, "Transfer").withArgs(owner.address, cig.address, val);
              expect(await cig.totalSupply()).to.be.equal(val); // ensure supply increased
              expect(await cig.wBal(owner.address)).to.be.equal(val); // ensure deposit is recorded
             await expect(cig.wrap(unlimited)).to.be.revertedWith(""); // overflow
@@ -156,6 +156,33 @@ describe("Migration", function () {
             expect(await cig.wBal(owner.address)).to.be.equal(0); // ensure deposit was cleared
             await expect( cig.unwrap(1)).to.be.reverted // cannot withdraw what we do not have (overflow_
         });
+
+        it("claims disabled in migration", async function () {
+            await expect(cig.claim(69)).to.be.revertedWith("invalid state");
+        });
+
+        it("trigger migration", async function () {
+
+            // deposit old cig for migration
+            expect(await cig.wrap(balances.owner))
+                // mint new cig
+                .to.emit(cig, "Transfer").withArgs(burner, owner.address, balances.owner)
+                // transfer new cig to new cig contract
+                .to.emit(oldCig, "Transfer").withArgs(owner.address, cig.address, balances.owner);
+
+            let start = await cig.lastRewardBlock();
+            let b = await ethers.provider.getBlockNumber();
+            let toWait = start.sub(b);
+            console.log("blocks to wait: " + toWait);
+            for (let i = 0; i < toWait; i++) {
+                console.log(i);
+                await expect(cig.migrationComplete()).to.be.revertedWith("cannot end migration yet");
+            }
+            expect(await cig.migrationComplete()).to.emit(nft, "Transfer").withArgs(burner, "0x1e32a859d69dde58d03820F8f138C99B688D132F", 0);
+
+            // todo inspect state to ensure all migrated
+        })
+
 
 
 
