@@ -13,10 +13,8 @@ describe("Migration", function () {
     let PunkMock;
     let punks;
     let owner, simp, elizabeth;
-
     let NFTMock;
     let nft, oldNft;
-
     const BLOCK_REWARD = '5';
     const CEO_EPOCH_BLOCKS = 10;
     const CEO_AUCTION_BLOCKS = 5;
@@ -47,17 +45,11 @@ describe("Migration", function () {
     const PUNKS_ADDRESS = "0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb";
 
     before(async function () {
-
         [owner, simp, elizabeth] = await ethers.getSigners();
-
         oldCig =  await hre.ethers.getContractAt("OldCig", OLD_CIG);
-
         let oldCigPerBlock = await oldCig.cigPerBlock();
         console.log("old issuance is "+ feth(oldCigPerBlock));
-
-
         punks = await hre.ethers.getContractAt(PUNKS_ABI,  PUNKS_ADDRESS);
-
         // deploy the NFT contract
         NFTMock = await ethers.getContractFactory("NonFungibleCEO");
         nft = await NFTMock.deploy(ASSET_URL);
@@ -77,20 +69,14 @@ describe("Migration", function () {
             MIGRATION_EPOCHS
         );
         await cig.deployed();
-
         // tell the NFT contract about the cig token
         await nft.setCigToken(cig.address);
         //await nft.setBaseURI(ASSET_URL); // onlyCEO
-
         // test burning of keys
         await nft.renounceOwnership();
-
         await expect(nft.setBaseURI(ASSET_URL)).to.be.revertedWith('must be called by CEO');
-
-
         // owner will buy some old CIG from the pool for testing
         router =  await hre.ethers.getContractAt(v2RouterABI, v2RouterAddress);
-
         await router.swapExactETHForTokens(
             peth("10"), // amountOutMin
             [WETH_Address, oldCig.address],
@@ -102,21 +88,15 @@ describe("Migration", function () {
         );
         balances.owner = await oldCig.balanceOf(owner.address);
         console.log("owner scored "+ feth(balances.owner)+ " CIG from Sushi!");
-
     });
 
     describe("Deployment", function () {
-
         it("Should be in migration state", async function () {
             expect(await cig.CEO_state()).to.be.equal("3");
-
             // 13974859 is the block we forked from
-            let expected = 13974859 + (CEO_EPOCH_BLOCKS * MIGRATION_EPOCHS) + 2; // 5
+            let expected = 13974859 + (CEO_EPOCH_BLOCKS * MIGRATION_EPOCHS) + 2; // plus how many tx already
             expect(await cig.lastRewardBlock()).to.be.equal(expected);
-
         });
-
-
         it("should mint new cig tokens when old cig is wrapped", async function () {
             await expect (cig.wrap(balances.owner)).to.be.revertedWith("not approved");
             await oldCig.approve(cig.address, unlimited);
@@ -148,37 +128,27 @@ describe("Migration", function () {
         });
 
         it("create and seed the new cig pool", async function () {
-
             factory =  await hre.ethers.getContractAt(v2FactoryABI, v2FactoryAddress);
             let tx = await factory.createPair(
                 WETH_Address,
                 cig.address
-
             );
             const res = await tx.wait();
             pair = res.events[0].args[2]; // the pair is returned as an event
-
             console.log("created pair:" + pair);
-
             await cig.setPool(pair);
             expect(await cig.lpToken()).to.equal(pair);
-
             let [stats, The_CEO, graff] = await oldCig.getStats(owner.address); // use stats to get the price of CIG
-
             // deposit old cig for migration
             expect(await cig.wrap(balances.owner))
                 // mint new cig
                 .to.emit(cig, "Transfer").withArgs(burner, owner.address, balances.owner)
                 // transfer new cig to new cig contract
                 .to.emit(oldCig, "Transfer").withArgs(owner.address, cig.address, balances.owner);
-
             // approve new cig to router
             expect(await cig.approve(router.address, unlimited)).to.emit(cig, "Approval");
-
             let ethAmount = balances.owner.mul(stats[18]).div("1000000000000000000");
-
             console.log("ba: " + feth(balances.owner) + " Eth amount:" + feth(ethAmount) + " p:" +  feth(stats[18]));
-
             tx = await router.addLiquidityETH(
                 cig.address,
                 balances.owner,
@@ -190,18 +160,15 @@ describe("Migration", function () {
             );
             let result = await tx.wait();
            //console.log("LP receipt: " + JSON.stringify(result));
-
             lp = await hre.ethers.getContractAt(LP_ABI, pair);
             let bal = await lp.balanceOf(owner.address);
             console.log("LP balance: " + feth(bal));
-
             expect(await lp.approve(cig.address, unlimited)).to.emit(lp, "Approval");
             expect(await cig.deposit(bal)).to.emit(cig, "Deposit"); // shot deposit
             expect(await cig.deposit(BigNumber.from("0"))).to.emit(cig, "Transfer", BigNumber.from("0")); // no rewards
         });
 
         it("trigger migration", async function () {
-
             let start = await cig.lastRewardBlock();
             let b = await ethers.provider.getBlockNumber();
             let toWait = start.sub(b);
@@ -216,10 +183,8 @@ describe("Migration", function () {
             expect(await cig.migrationComplete())
                 .to.emit(nft, "Transfer").withArgs(burner, "0x1e32a859d69dde58d03820F8f138C99B688D132F", 0)
                 .to.emit(cig, "Transfer");
-
             let [oldStats, oldThe_CEO, oldGraff] = await oldCig.getStats(owner.address);
             let [newStats, newThe_CEO, newGraff] = await cig.getStats(owner.address);
-
             expect(oldGraff).to.be.equal(newGraff);
             expect(oldThe_CEO).to.be.equal(newThe_CEO);
             expect(oldStats[0]).to.be.equal(newStats[0]);
@@ -231,11 +196,40 @@ describe("Migration", function () {
             expect(oldStats[6]).to.be.not.equal(newStats[6]); // cig per block
             expect(oldStats[16]).to.be.equal(newStats[16]);
             expect(oldStats[21]).to.be.equal(newStats[21]);
-
             // todo inspect state to ensure all migrated
             expect(await cig.balanceOf(punks.address)).to.be.equal(oldBal); // claim balance transferred
+        });
+        it("should claim punks", async function () {
 
-        })
+            let punksBought = [];
+            // buy some punks first
+            for (let i = 8000; i < 8050; i++) {
+                let result = await  punks.punksOfferedForSale(i);
+                //console.log(result);
+                if (result["isForSale"] === true && result["onlySellTo"] === "0x0000000000000000000000000000000000000000" ) {
+                    console.log(feth(result["minValue"]));
+                    if (result["minValue"].lte(peth("300"))) {
+                        isClaimed = await oldCig.claims(i);
+                        if (!isClaimed) {
+                            console.log("punk not claimed");
+                            await punks.buyPunk(i, {value : result["minValue"] });
+                            expect(await cig.claim(i)).to.emit(cig, "Claim");
+                            break;
+                        }
+                    }
+                } else {
+                    console.log("punk nfs");
+                }
+            }
+        });
+
+        it("should farm", async function () {
+
+        });
+
+        it("should buy ceo", async function () {
+
+        });
 
     });
 
