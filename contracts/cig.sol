@@ -563,6 +563,7 @@ contract Cig {
                 // get the price of ETH in USD
                 ret[19] =  V2ROUTER.getAmountOut(1 ether, uint(r0), uint(r1));      // ETH price in USD
             }
+            ret[24] = lpToken.totalSupply();       // total supply
         }
 
         ret[9] = block.number;                     // current block number
@@ -576,7 +577,7 @@ contract Cig {
         ret[21] = balanceOf[address(punks)];       // amount of CIG to be claimed
         ret[22] = farmers[_user].deposit;          // LP staking deposit
         ret[23] = farmers[_user].rewardDebt;
-        ret[24] = lpToken.totalSupply();           // total supply
+
         ret[25] = wBal[_user];                     // wrapped cig balance
         return (ret, The_CEO, graffiti, reserves);
     }
@@ -921,6 +922,7 @@ interface IERC20 {
 */
 interface ILiquidityPoolERC20 is IERC20 {
     function getReserves() external view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast);
+    function totalSupply() external view returns(uint);
 }
 
 interface IOldCigtoken is IERC20 {
