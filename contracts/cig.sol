@@ -234,9 +234,12 @@ contract Cig {
         }
         taxBurnBlock = OC.taxBurnBlock();
         CEO_price = OC.CEO_price();
+        graffiti = OC.graffiti();
         CEO_punk_index = OC.CEO_punk_index();
         cigPerBlock = STARTING_REWARDS;        // set special rewards
         lastRewardBlock = OC.lastRewardBlock();// start rewards
+        taxBurnBlock = OC.taxBurnBlock();
+        rewardsChangedBlock = OC.rewardsChangedBlock();
         /* Historical records */
         _transferNFT(
             address(0),
@@ -527,12 +530,12 @@ contract Cig {
     /**
     * @dev getStats helps to fetch some stats for the GUI in a single web3 call
     * @param _user the address to return the report for
-    * @return uint256[26] the stats
+    * @return uint256[24] the stats
     * @return address of the current CEO
     * @return bytes32 Current graffiti
     */
     function getStats(address _user) external view returns(uint256[] memory, address, bytes32, uint112[] memory) {
-        uint[] memory ret = new uint[](26);
+        uint[] memory ret = new uint[](24);
         uint112[] memory reserves = new uint112[](2);
         uint256 tpb = (CEO_price / 1000) / (CEO_epoch_blocks); // 0.1% per epoch
         uint256 debt = (block.number - taxBurnBlock) * tpb;
@@ -563,7 +566,7 @@ contract Cig {
                 // get the price of ETH in USD
                 ret[19] =  V2ROUTER.getAmountOut(1 ether, uint(r0), uint(r1));      // ETH price in USD
             }
-            ret[24] = lpToken.totalSupply();       // total supply
+            ret[22] = lpToken.totalSupply();       // total supply
         }
 
         ret[9] = block.number;                     // current block number
@@ -575,10 +578,7 @@ contract Cig {
         ret[15] = balanceOf[_user];                // amount of CIG held by user
         ret[20] = accCigPerShare;                  // Accumulated cigarettes per share
         ret[21] = balanceOf[address(punks)];       // amount of CIG to be claimed
-        ret[22] = farmers[_user].deposit;          // LP staking deposit
-        ret[23] = farmers[_user].rewardDebt;
-
-        ret[25] = wBal[_user];                     // wrapped cig balance
+        ret[23] = wBal[_user];                     // wrapped cig balance
         return (ret, The_CEO, graffiti, reserves);
     }
 
@@ -936,4 +936,5 @@ interface IOldCigtoken is IERC20 {
     function CEO_tax_balance() external view returns (uint256);
     function taxBurnBlock() external view returns (uint256);
     function lastRewardBlock() external view returns (uint256);
+    function rewardsChangedBlock() external view returns (uint256);
 }
