@@ -87,7 +87,8 @@ contract Cig {
         uint256 deposit;    // How many LP tokens the user has deposited.
         uint256 rewardDebt; // keeps track of how much reward was paid out
     }
-    mapping(address => UserInfo) public farmers;  // keeps track of UserInfo for each staking address
+    mapping(address => UserInfo) public farmers;  // keeps track of UserInfo for each staking address with own pool
+    mapping(address => UserInfo) public farmersMasterchef;  // keeps track of UserInfo for each staking address with masterchef pool
     mapping(address => uint256) public wBal;      // keeps tracked of wrapped old cig
     address public admin;                         // admin is used for deployment, burned after
     ILiquidityPoolERC20 public lpToken;           // lpToken is the address of LP token contract that's being staked.
@@ -146,6 +147,7 @@ contract Cig {
     }
     IRouterV2 private immutable V2ROUTER;    // address of router used to get the price quote
     ICEOERC721 private immutable The_NFT;    // reference to the CEO NFT token
+    address private immutable MASTERCHEF_V2; // address pointing to SushiSwap's MasterChefv2 contract
     IOldCigtoken private immutable OC;       // Old Contract
     /**
     * @dev constructor
@@ -158,6 +160,7 @@ contract Cig {
     * @param _NFT address pointing to the NFT contract
     * @param _V2ROUTER address pointing to the SushiSwap router
     * @param _OC address pointing to the original Cig Token contract
+    * @param _MASTERCHEF_V2 address pointing to the original Cig Token contract
     */
     constructor(
         uint256 _cigPerBlock,
@@ -169,7 +172,8 @@ contract Cig {
         address _NFT,
         address _V2ROUTER,
         address _OC,
-        uint256 _migration_epochs
+        uint256 _migration_epochs,
+        address _MASTERCHEF_V2
     ) {
         cigPerBlock        = _cigPerBlock;
         admin              = msg.sender;             // the admin key will be burned after deployment
@@ -182,7 +186,7 @@ contract Cig {
         V2ROUTER           = IRouterV2(_V2ROUTER);
         OC                 = IOldCigtoken(_OC);
         lastRewardBlock = block.number + (CEO_epoch_blocks * _migration_epochs); // set the migration window end
-
+        MASTERCHEF_V2 = _MASTERCHEF_V2;
         CEO_state = 3;                               // begin in migration state
     }
 
@@ -671,12 +675,11 @@ contract Cig {
     function userInfo(uint256 _pid, address _user) view external returns (uint256, uint256) {
         return (farmers[_user].deposit, farmers[_user].rewardDebt);
     }
-
     /**
     * @dev deposit deposits LP tokens to be staked. It also harvests rewards.
     * @param _amount the amount of LP tokens to deposit. Assumes this contract has been approved for the _amount.
     */
-    function deposit(uint256 _amount) public {
+    function deposit(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
         update();
         if (user.deposit > 0) {
@@ -702,6 +705,10 @@ contract Cig {
     */
     function withdraw(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
+        _withdraw(user, _amount);
+    }
+
+    function _withdraw(UserInfo storage user, uint256 _amount) internal {
         require(user.deposit >= _amount, "withdraw: not good");
         update();
         uint256 pending = (user.deposit * accCigPerShare / 1e12) - user.rewardDebt;
@@ -711,18 +718,7 @@ contract Cig {
         lpToken.transfer(address(msg.sender), _amount);
         emit Withdraw(msg.sender, _amount);
     }
-    /**
-    * @dev emergencyWithdraw does a withdraw without caring about rewards. EMERGENCY ONLY.
-    */
-    function emergencyWithdraw() external {
-        UserInfo storage user = farmers[msg.sender];
-        uint256 amount = user.deposit;
-        user.deposit = 0;
-        user.rewardDebt = 0;
-        lpToken.transfer(address(msg.sender), amount);
-        emit EmergencyWithdraw(msg.sender, amount);
-
-    }
+    
     /**
     * @dev safeSendPayout, just in case if rounding error causes pool to not have enough CIGs.
     * @param _to recipient address
@@ -804,16 +800,40 @@ contract Cig {
         return true;
     }
 
+    function onSushiReward (
+        uint256 /* pid */,
+        address _user,
+        address _to,
+        uint256 /* sushiAmount*/,
+        uint256 _newLpAmount)  external onlyMCV2 {
+        UserInfo storage user = farmersMasterchef[_user];
+        if(user.deposit > _newLpAmount) {
+            _withdraw(user, user.deposit - _newLpAmount);
+        }
+        else if(user.deposit < _newLpAmount){
+            user.deposit = user.deposit + _newLpAmount;
+            user.rewardDebt = user.deposit * accCigPerShare / 1e12;
+        }
+    }
 
     /**
     * @dev Approve tokens of mount _value to be spent by _spender
     * @param _spender address The spender
     * @param _value the stipend to spend
     */
-    function approve(address _spender, uint256 _value) public returns (bool) {
+    function approve(address _spender, uint256 _value) external returns (bool) {
         allowance[msg.sender][_spender] = _value;
         emit Approval(msg.sender, _spender, _value);
         return true;
+    }
+
+    // onlyMCV2 ensures only the MasterChefV2 contract can call this
+    modifier onlyMCV2 {
+        require(
+            msg.sender == MASTERCHEF_V2,
+            "Only MCV2"
+        );
+        _;
     }
 
     /**
