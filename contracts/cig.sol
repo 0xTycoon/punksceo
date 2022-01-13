@@ -114,7 +114,6 @@ contract Cig {
     uint256 constant CLAIM_AMOUNT = 100000 ether; // claim amount for each punk
     uint256 constant MIN_REWARD = 1e14;           // minimum block reward of 0.0001 CIG (1e14 wei)
     uint256 constant MAX_REWARD = 1000 ether;     // maximum block reward of 1000 CIG
-    uint256 constant MAX_DIST = 100 ether;        // minimum distance cigPerBlock during migration
     uint256 constant STARTING_REWARDS = 512 ether;// starting rewards at end of migration
     address public The_CEO;                       // address of CEO
     uint public CEO_punk_index;                   // which punk id the CEO is using
@@ -281,7 +280,6 @@ contract Cig {
     */
     function wrap(uint256 _value) external {
         require (CEO_state == 3);
-        require (_dist() <= MAX_DIST);                       // issuance distance in range
         OC.transferFrom(msg.sender, address(this), _value);  // transfer old cig to here
         mint(msg.sender, _value);                            // give user new cig
         wBal[msg.sender] = wBal[msg.sender] + _value;        // record increase of wrapped old cig for caller
@@ -292,26 +290,12 @@ contract Cig {
     */
     function unwrap(uint256 _value) external {
         require (CEO_state == 3);
-        require (_dist() <= MAX_DIST);                      // issuance distance in range
         burn(msg.sender, _value);                           // burn new cig
         OC.transfer(msg.sender, _value);                    // give back old cig
         wBal[msg.sender] = wBal[msg.sender] - _value;       // record decrease of wrapped old cig for caller
     }
 
-    /**
-    * @dev get the distance between issuance of both old and new contracts
-    */
-    function _dist() internal view returns (uint256) {
-        uint256 a = OC.cigPerBlock();
-        uint256 b = cigPerBlock;
-        if (a == b) {
-            return 0;
-        }
-        if (a > b) {
-            return a - b;
-        }
-        return b - a;
-    }
+
 
     /**
     * @dev buyCEO allows anybody to be the CEO
