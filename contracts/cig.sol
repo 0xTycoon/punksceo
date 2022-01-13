@@ -229,7 +229,7 @@ contract Cig {
         uint256 taxDeposit = OC.CEO_tax_balance();
         The_CEO = OC.The_CEO();                // copy the CEO
         if (taxDeposit > 0) {                  // copy the CEO's outstanding tax
-            mint(The_CEO, taxDeposit);
+            mint(address(this), taxDeposit);
             CEO_tax_balance =  taxDeposit;
         }
         taxBurnBlock = OC.taxBurnBlock();

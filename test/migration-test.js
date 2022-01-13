@@ -16,9 +16,9 @@ describe("Migration", function () {
     let NFTMock;
     let nft, oldNft;
     const BLOCK_REWARD = '5';
-    const CEO_EPOCH_BLOCKS = 10;
+    const CEO_EPOCH_BLOCKS = 5000;
     const CEO_AUCTION_BLOCKS = 5;
-    const MIGRATION_EPOCHS = 2;
+    const MIGRATION_EPOCHS = 1;
     let CEO_BUY_PRICE = '50000';
     let CEO_TAX_DEPOSIT = '5000';
     let CLAIM_AMOUNT = '100000';
@@ -211,8 +211,8 @@ describe("Migration", function () {
                     if (result["minValue"].lte(peth("300"))) {
                         isClaimed = await oldCig.claims(i);
                         if (!isClaimed) {
-                            console.log("punk not claimed");
-                            await punks.buyPunk(i, {value : result["minValue"] });
+                            console.log("punk not claimed yet");
+                            await punks.buyPunk(i, {value : result["minValue"]});
                             expect(await cig.claim(i)).to.emit(cig, "Claim");
                             break;
                         }
@@ -224,10 +224,33 @@ describe("Migration", function () {
         });
 
         it("should farm", async function () {
+            let a = await cig.balanceOf(owner.address);
+            console.log((a));
+            await expect( cig.deposit('0')).to.emit(cig, "Transfer");
+            let b = await cig.balanceOf(owner.address);
+            expect(b.gt(a)).to.be.equal(true);
 
+            // send some cig to ceo
+            let ceo = await cig.The_CEO();
+            await expect(cig.transfer(ceo, b)).to.emit(cig, "Transfer");
         });
 
         it("should buy ceo", async function () {
+
+            let ceo = await cig.The_CEO();
+            await hre.network.provider.request({
+                method: "hardhat_impersonateAccount",
+                params: [ceo],
+            });
+
+            let signer = await ethers.provider.getSigner(
+                ceo
+            );
+
+            console.log("ceo has:" + feth(await(cig.balanceOf(ceo))));
+            console.log("ceo deposit:" + feth(await(cig.balanceOf(ceo))));
+
+            await expect(cig.connect(signer).setPrice(peth("100"))).to.emit(cig, "CEOPriceChange");
 
         });
 
