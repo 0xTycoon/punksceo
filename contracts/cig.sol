@@ -515,12 +515,12 @@ contract Cig {
     /**
     * @dev getStats helps to fetch some stats for the GUI in a single web3 call
     * @param _user the address to return the report for
-    * @return uint256[24] the stats
+    * @return uint256[27] the stats
     * @return address of the current CEO
     * @return bytes32 Current graffiti
     */
     function getStats(address _user) external view returns(uint256[] memory, address, bytes32, uint112[] memory) {
-        uint[] memory ret = new uint[](24);
+        uint[] memory ret = new uint[](27);
         uint112[] memory reserves = new uint112[](2);
         uint256 tpb = (CEO_price / 1000) / (CEO_epoch_blocks); // 0.1% per epoch
         uint256 debt = (block.number - taxBurnBlock) * tpb;
@@ -554,16 +554,19 @@ contract Cig {
             ret[22] = lpToken.totalSupply();       // total supply
         }
 
-        ret[9] = block.number;                     // current block number
-        ret[10] = tpb;                             // "tax per block" (tpb)
-        ret[11] = debt;                            // tax debt accrued
-        ret[12] = lastRewardBlock;                 // the block of the last staking rewards payout update
-        ret[13] = info.deposit;                    // amount of LP tokens staked by user
-        ret[14] = info.rewardDebt;                 // amount of rewards paid out
-        ret[15] = balanceOf[_user];                // amount of CIG held by user
-        ret[20] = accCigPerShare;                  // Accumulated cigarettes per share
-        ret[21] = balanceOf[address(punks)];       // amount of CIG to be claimed
-        ret[23] = wBal[_user];                     // wrapped cig balance
+        ret[9] = block.number;                       // current block number
+        ret[10] = tpb;                               // "tax per block" (tpb)
+        ret[11] = debt;                              // tax debt accrued
+        ret[12] = lastRewardBlock;                   // the block of the last staking rewards payout update
+        ret[13] = info.deposit;                      // amount of LP tokens staked by user
+        ret[14] = info.rewardDebt;                   // amount of rewards paid out
+        ret[15] = balanceOf[_user];                  // amount of CIG held by user
+        ret[20] = accCigPerShare;                    // Accumulated cigarettes per share
+        ret[21] = balanceOf[address(punks)];         // amount of CIG to be claimed
+        ret[23] = wBal[_user];                       // wrapped cig balance
+        ret[24] = OC.balanceOf(_user);               // balance of old cig in old isContract
+        ret[25] = OC.allowance(_user, address(this));// is old contract approved
+        (ret[26], ) = OC.userInfo(_user);            // old contract stake bal
         return (ret, The_CEO, graffiti, reserves);
     }
 
@@ -924,4 +927,5 @@ interface IOldCigtoken is IERC20 {
     function taxBurnBlock() external view returns (uint256);
     function lastRewardBlock() external view returns (uint256);
     function rewardsChangedBlock() external view returns (uint256);
+    function userInfo(address) external view returns (uint256, uint256);
 }
