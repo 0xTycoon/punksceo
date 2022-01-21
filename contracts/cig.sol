@@ -778,9 +778,11 @@ contract Cig {
     {
         uint256 a = allowance[_from][msg.sender]; // read allowance
         //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
-        if (a != type(uint256).max) {                                         // not infinite approval
+        if (a != type(uint256).max) {                                   // not infinite approval
             require(_value <= a, "not approved");
-            allowance[_from][msg.sender] = a - _value;
+            unchecked {
+                allowance[_from][msg.sender] = a - _value;
+            }
         }
         balanceOf[_from] = balanceOf[_from] - _value;
         balanceOf[_to] = balanceOf[_to] + _value;
