@@ -94,11 +94,12 @@ contract Cig {
     ILiquidityPoolERC20 public lpToken;           // lpToken is the address of LP token contract that's being staked.
     uint256 public lastRewardBlock;               // Last block number that cigarettes distribution occurs.
     uint256 public accCigPerShare;                // Accumulated cigarettes per share, times 1e12. See below.
+    uint256 public masterchefDeposits;                 // How much has been deposited onto the masterchef contract
     uint256 public cigPerBlock;                   // CIGs per-block rewarded and split with LPs
     bytes32 public graffiti;                      // a 32 character graffiti set when buying a CEO
     ICryptoPunk public punks;                     // a reference to the CryptoPunks contract
     event Deposit(address indexed user, uint256 amount);           // when depositing LP tokens to stake, or harvest
-    event Withdraw(address indexed user, uint256 amount);          // when withdrawing LP tokens form staking
+    event Harvest(address indexed user, address indexed to, uint256 amount);          // when withdrawing LP tokens form staking
     event EmergencyWithdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
     event RewardUp(uint256 reward, uint256 upAmount);              // when cigPerBlock is increased
     event RewardDown(uint256 reward, uint256 downAmount);          // when cigPerBlock is decreased
@@ -641,6 +642,7 @@ contract Cig {
             lastRewardBlock = block.number;
             return;
         }
+        lpSupply += masterchefDeposits;
         // mint some new cigarette rewards to be distributed
         uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
         mint(address(this), cigReward);
@@ -673,30 +675,24 @@ contract Cig {
     * @dev userInfo1 is added for compatibility with the MasterChef interface
     */
     function userInfo(uint256 _pid, address _user) view external returns (uint256, uint256) {
-        return (farmers[_user].deposit, farmers[_user].rewardDebt);
+        return (farmers[_user].deposit + farmersMasterchef[_user].deposit, farmers[_user].rewardDebt + farmersMasterchef[_user].rewardDebt);
     }
     /**
-    * @dev deposit deposits LP tokens to be staked. It also harvests rewards.
+    * @dev deposit deposits LP tokens to be staked.
     * @param _amount the amount of LP tokens to deposit. Assumes this contract has been approved for the _amount.
     */
     function deposit(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
         update();
-        if (user.deposit > 0) {
-            uint256 pending =
-            (user.deposit * (accCigPerShare) / 1e12) - user.rewardDebt;
-            safeSendPayout(msg.sender, pending);
-        }
-        if (_amount > 0) {
-            lpToken.transferFrom(
+        
+        user.deposit += _amount;
+        user.rewardDebt += _amount * accCigPerShare / 1e12;
+
+        require(lpToken.transferFrom(
                 address(msg.sender),
                 address(this),
                 _amount
-            );
-            user.deposit = user.deposit + _amount;
-            emit Deposit(msg.sender, _amount);
-        }
-        user.rewardDebt = user.deposit * accCigPerShare / 1e12;
+            ));
     }
 
     /**
@@ -705,10 +701,9 @@ contract Cig {
     */
     function withdraw(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
-        if(user.deposit > amount)
-        {
-            
-        }
+        require(user.deposit < _amount, "Balance is too low");
+        user.deposit -= _amount;
+        user.rewardDebt -= _amount * accCigPerShare / 1e12;
     }
 
     /**
@@ -716,17 +711,27 @@ contract Cig {
     */
     function harvest() external {
         UserInfo storage user = farmers[msg.sender];
-        _harvest(user, 0);
+        _harvestSafe(user, msg.sender);
     }
-    function _harvest(UserInfo storage user, uint256 _amount) internal {
-        require(user.deposit >= _amount, "withdraw: not good");
+
+    /**
+    * @dev Internal harvest
+    * @param _to the amount to harvest+
+    */
+    function _harvestSafe(UserInfo storage _user, address _to) internal {
+        _giveHarvestOnly(_user, _to);
+        _user.rewardDebt = _user.deposit * accCigPerShare / 1e12;
+    }
+    /**
+    * @dev Internal harvest that doesn't update the users balance afterward
+    * @param _to the amount to harvest+
+    */
+    function _giveHarvestOnly(UserInfo storage _user, address _to) internal {
         update();
-        uint256 pending = (user.deposit * accCigPerShare / 1e12) - user.rewardDebt;
-        safeSendPayout(msg.sender, pending);
-        user.deposit = user.deposit - _amount;
-        user.rewardDebt = user.deposit * accCigPerShare / 1e12;
-        lpToken.transfer(address(msg.sender), _amount);
-        emit Withdraw(msg.sender, _amount);
+        uint256 potentialValue = (_user.deposit * accCigPerShare / 1e12);
+        uint256 delta = potentialValue - _user.rewardDebt;
+        safeSendPayout(_to, delta);
+        emit Harvest(msg.sender, _to, delta);
     }
     
     /**
@@ -817,16 +822,31 @@ contract Cig {
         uint256 /* sushiAmount*/,
         uint256 _newLpAmount)  external onlyMCV2 {
         UserInfo storage user = farmersMasterchef[_user];
+        // I'm thinking we could turn it into an int that underflows/underflows and make the logic much simpler rather than two codepaths, but would need to check gas costs.
+        uint256 delta;
+
+        // Give them their rewards up to this point, after this we'll be able to safely modify their debt
+        // Using harvest only doesn't modify their reward debt, to gas optimize as we don't need to update it twice.
+        _giveHarvestOnly(user, _to);
+
+        // User is withdrawing from the contract
         if(user.deposit > _newLpAmount) {
-            _harvest(user, user.deposit - _newLpAmount);
+            delta = user.deposit - _newLpAmount;
+            masterchefDeposits -= delta;
+            user.deposit -= delta;
+            user.rewardDebt = (user.deposit * accCigPerShare) / 1e12;
         }
+        // User is depositing into the contract
         else if(user.deposit < _newLpAmount){
-            user.deposit = _newLpAmount;
-            user.rewardDebt = _newLpAmount * accCigPerShare / 1e12;
+            delta = _newLpAmount - user.deposit;
+            masterchefDeposits += delta;
+            user.deposit += delta;
+            user.rewardDebt = (user.deposit * accCigPerShare) / 1e12;
         }
+
     }
 
-    /**
+    /** 
     * @dev Approve tokens of mount _value to be spent by _spender
     * @param _spender address The spender
     * @param _value the stipend to spend
