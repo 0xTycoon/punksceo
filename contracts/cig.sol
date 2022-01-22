@@ -700,15 +700,25 @@ contract Cig {
     }
 
     /**
-    * @dev withdraw takes out the LP tokens and pending rewards
-    * @param _amount the amount to withdraw
+    * @dev withdraw takes out the LP tokens
+    * @param _amount the amount to harvest+
     */
     function withdraw(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
-        _withdraw(user, _amount);
+        if(user.deposit > amount)
+        {
+            
+        }
     }
 
-    function _withdraw(UserInfo storage user, uint256 _amount) internal {
+    /**
+    * @dev harvest redeems only pending rewards
+    */
+    function harvest() external {
+        UserInfo storage user = farmers[msg.sender];
+        _harvest(user, 0);
+    }
+    function _harvest(UserInfo storage user, uint256 _amount) internal {
         require(user.deposit >= _amount, "withdraw: not good");
         update();
         uint256 pending = (user.deposit * accCigPerShare / 1e12) - user.rewardDebt;
@@ -808,11 +818,11 @@ contract Cig {
         uint256 _newLpAmount)  external onlyMCV2 {
         UserInfo storage user = farmersMasterchef[_user];
         if(user.deposit > _newLpAmount) {
-            _withdraw(user, user.deposit - _newLpAmount);
+            _harvest(user, user.deposit - _newLpAmount);
         }
         else if(user.deposit < _newLpAmount){
-            user.deposit = user.deposit + _newLpAmount;
-            user.rewardDebt = user.deposit * accCigPerShare / 1e12;
+            user.deposit = _newLpAmount;
+            user.rewardDebt = _newLpAmount * accCigPerShare / 1e12;
         }
     }
 
