@@ -119,7 +119,6 @@ contract Cig {
     uint256 constant CLAIM_AMOUNT = 100000 ether; // claim amount for each punk
     uint256 constant MIN_REWARD = 1e14;           // minimum block reward of 0.0001 CIG (1e14 wei)
     uint256 constant MAX_REWARD = 1000 ether;     // maximum block reward of 1000 CIG
-    uint256 constant MAX_DIST = 100 ether;        // minimum distance cigPerBlock during migration
     uint256 constant STARTING_REWARDS = 512 ether;// starting rewards at end of migration
     address public The_CEO;                       // address of CEO
     uint public CEO_punk_index;                   // which punk id the CEO is using
@@ -289,7 +288,6 @@ contract Cig {
     */
     function wrap(uint256 _value) external {
         require (CEO_state == 3);
-        require (_dist() <= MAX_DIST);                       // issuance distance in range
         OC.transferFrom(msg.sender, address(this), _value);  // transfer old cig to here
         _mint(msg.sender, _value);                            // give user new cig
         wBal[msg.sender] = wBal[msg.sender] + _value;        // record increase of wrapped old cig for caller
@@ -306,20 +304,7 @@ contract Cig {
         wBal[msg.sender] = wBal[msg.sender] - _value;       // record decrease of wrapped old cig for caller
     }
 
-    /**
-    * @dev get the distance between issuance of both old and new contracts
-    */
-    function _dist() internal view returns (uint256) {
-        uint256 a = OC.cigPerBlock();
-        uint256 b = cigPerBlock;
-        if (a == b) {
-            return 0;
-        }
-        if (a > b) {
-            return a - b;
-        }
-        return b - a;
-    }
+
 
     /**
     * @dev buyCEO allows anybody to be the CEO
@@ -537,12 +522,12 @@ contract Cig {
     /**
     * @dev getStats helps to fetch some stats for the GUI in a single web3 call
     * @param _user the address to return the report for
-    * @return uint256[24] the stats
+    * @return uint256[27] the stats
     * @return address of the current CEO
     * @return bytes32 Current graffiti
     */
     function getStats(address _user) external view returns(uint256[] memory, address, bytes32, uint112[] memory) {
-        uint[] memory ret = new uint[](24);
+        uint[] memory ret = new uint[](27);
         uint112[] memory reserves = new uint112[](2);
         uint256 tpb = (CEO_price / 1000) / (CEO_epoch_blocks); // 0.1% per epoch
         uint256 debt = (block.number - taxBurnBlock) * tpb;
@@ -576,16 +561,19 @@ contract Cig {
             ret[22] = lpToken.totalSupply();       // total supply
         }
 
-        ret[9] = block.number;                     // current block number
-        ret[10] = tpb;                             // "tax per block" (tpb)
-        ret[11] = debt;                            // tax debt accrued
-        ret[12] = lastRewardBlock;                 // the block of the last staking rewards payout update
-        ret[13] = info.deposit;                    // amount of LP tokens staked by user
-        ret[14] = info.rewardDebt;                 // amount of rewards paid out
-        ret[15] = balanceOf[_user];                // amount of CIG held by user
-        ret[20] = accCigPerShare;                  // Accumulated cigarettes per share
-        ret[21] = balanceOf[address(punks)];       // amount of CIG to be claimed
-        ret[23] = wBal[_user];                     // wrapped cig balance
+        ret[9] = block.number;                       // current block number
+        ret[10] = tpb;                               // "tax per block" (tpb)
+        ret[11] = debt;                              // tax debt accrued
+        ret[12] = lastRewardBlock;                   // the block of the last staking rewards payout update
+        ret[13] = info.deposit;                      // amount of LP tokens staked by user
+        ret[14] = info.rewardDebt;                   // amount of rewards paid out
+        ret[15] = balanceOf[_user];                  // amount of CIG held by user
+        ret[20] = accCigPerShare;                    // Accumulated cigarettes per share
+        ret[21] = balanceOf[address(punks)];         // amount of CIG to be claimed
+        ret[23] = wBal[_user];                       // wrapped cig balance
+        ret[24] = OC.balanceOf(_user);               // balance of old cig in old isContract
+        ret[25] = OC.allowance(_user, address(this));// is old contract approved
+        (ret[26], ) = OC.userInfo(_user);            // old contract stake bal
         return (ret, The_CEO, graffiti, reserves);
     }
 
@@ -834,16 +822,19 @@ contract Cig {
     returns (bool)
     {
         uint256 a = allowance[_from][msg.sender]; // read allowance
+
         require(_value <= balanceOf[_from], "value exceeds balance");
         if (a != type(uint256).max) {             // not infinite approval
             require(_value <= a, "not approved");
             unchecked {
                 allowance[_from][msg.sender] = a - _value;
             }
+
         }
         unchecked {
             balanceOf[_from] = balanceOf[_from] - _value;
             balanceOf[_to] = balanceOf[_to] + _value;
+
         }
         emit Transfer(_from, _to, _value);
         return true;
@@ -1037,4 +1028,5 @@ interface IOldCigtoken is IERC20 {
     function taxBurnBlock() external view returns (uint256);
     function lastRewardBlock() external view returns (uint256);
     function rewardsChangedBlock() external view returns (uint256);
+    function userInfo(address) external view returns (uint256, uint256);
 }
