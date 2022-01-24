@@ -107,7 +107,7 @@ contract Cig {
     mapping(uint => bool) public claims;                           // keep track of claimed punks
     modifier onlyAdmin {
         require(
-            msg.sender == admin,
+            msg.sender == admin && msg.sender != address(0), // hey..you never know.
             "Only admin can call this"
         );
         _;
