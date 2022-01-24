@@ -234,11 +234,11 @@ contract Cig {
         require (block.number > lastRewardBlock, "cannot end migration yet");
         CEO_state = 1;                         // CEO is in charge state
         /* copy the state over to this contract */
-        mint(address(punks), OC.balanceOf(address(punks))); // CIG to be set aside for the remaining airdrop
+        _mint(address(punks), OC.balanceOf(address(punks))); // CIG to be set aside for the remaining airdrop
         uint256 taxDeposit = OC.CEO_tax_balance();
         The_CEO = OC.The_CEO();                // copy the CEO
         if (taxDeposit > 0) {                  // copy the CEO's outstanding tax
-            mint(The_CEO, taxDeposit);
+            _mint(The_CEO, taxDeposit);
             CEO_tax_balance =  taxDeposit;
         }
         taxBurnBlock = OC.taxBurnBlock();
@@ -291,7 +291,7 @@ contract Cig {
         require (CEO_state == 3);
         require (_dist() <= MAX_DIST);                       // issuance distance in range
         OC.transferFrom(msg.sender, address(this), _value);  // transfer old cig to here
-        mint(msg.sender, _value);                            // give user new cig
+        _mint(msg.sender, _value);                            // give user new cig
         wBal[msg.sender] = wBal[msg.sender] + _value;        // record increase of wrapped old cig for caller
     }
 
@@ -301,7 +301,7 @@ contract Cig {
     function unwrap(uint256 _value) external {
         require (CEO_state == 3);
         require (_dist() <= MAX_DIST);                      // issuance distance in range
-        burn(msg.sender, _value);                           // burn new cig
+        _burn(msg.sender, _value);                           // burn new cig
         OC.transfer(msg.sender, _value);                    // give back old cig
         wBal[msg.sender] = wBal[msg.sender] - _value;       // record decrease of wrapped old cig for caller
     }
@@ -349,7 +349,7 @@ contract Cig {
         require (_punk_index <= 9999, "invalid punk");                     // validate the punk index
         require (_tax_amount >= _new_price / 1000, "insufficient tax" );   // at least %0.1 fee paid for 1 epoch
         transfer(address(this), CEO_price);                                // pay for the CEO title
-        burn(address(this), CEO_price);                                    // burn the revenue
+        _burn(address(this), CEO_price);                                    // burn the revenue
         emit RevenueBurned(msg.sender, CEO_price);
         _returnDeposit(The_CEO, CEO_tax_balance);                          // return deposited tax back to old CEO
         transfer(address(this), _tax_amount);                              // deposit tax (reverts if not enough)
@@ -391,9 +391,7 @@ contract Cig {
     * @dev transfer the NFT to a new wallet
     */
     function _transferNFT(address _oldCEO, address _newCEO) internal {
-        if (_oldCEO != _newCEO) {
-            The_NFT.transferFrom(_oldCEO, _newCEO, 0);
-        }
+        The_NFT.transferFrom(_oldCEO, _newCEO, 0);
     }
 
     /**
@@ -440,18 +438,18 @@ contract Cig {
         uint256 debt = (block.number - taxBurnBlock) * tpb;
         if (CEO_tax_balance !=0 && CEO_tax_balance >= debt) {    // Does CEO have enough deposit to pay debt?
             CEO_tax_balance = CEO_tax_balance - debt;            // deduct tax
-            burn(address(this), debt);                           // burn the tax
+            _burn(address(this), debt);                           // burn the tax
             emit TaxBurned(msg.sender, debt);
         } else {
             // CEO defaulted
             uint256 default_amount = debt - CEO_tax_balance;     // calculate how much defaulted
-            burn(address(this), CEO_tax_balance);                // burn the tax
+            _burn(address(this), CEO_tax_balance);                // burn the tax
             emit TaxBurned(msg.sender, CEO_tax_balance);
             CEO_state = 2;                                       // initiate a Dutch auction.
             CEO_tax_balance = 0;
             _transferNFT(The_CEO, address(this));                // This contract holds the NFT temporarily
             The_CEO = address(this);                             // This contract is the "interim CEO"
-            mint(msg.sender, default_amount);                    // reward the caller for reporting tax default
+            _mint(msg.sender, default_amount);                    // reward the caller for reporting tax default
             emit CEODefaulted(msg.sender, default_amount);
         }
     }
@@ -485,7 +483,7 @@ contract Cig {
         require(block.number > rewardsChangedBlock + (CEO_epoch_blocks*2), "wait more blocks");
         require (cigPerBlock <= MAX_REWARD, "reward already max");
         rewardsChangedBlock = block.number;
-        uint256 _amount = cigPerBlock / 5;                // %20
+        uint256 _amount = cigPerBlock / 5; // %20
         uint256 _new_reward = cigPerBlock + _amount;
         if (_new_reward > MAX_REWARD) {
             _amount = MAX_REWARD - cigPerBlock;
@@ -520,20 +518,20 @@ contract Cig {
     * @dev _calcDiscount calculates the discount for the CEO title based on how many blocks passed
     */
     function _calcDiscount() internal view returns (uint256) {
-    unchecked {
-        uint256 d = (CEO_price / 10)           // 10% discount
-        // multiply by the number of discounts accrued
-        * (block.number - taxBurnBlock) / CEO_auction_blocks;
-        if (d > CEO_price) {
-            // overflow assumed, reset to MIN_PRICE
-            return MIN_PRICE;
+        unchecked {
+            uint256 d = (CEO_price / 10)           // 10% discount
+            // multiply by the number of discounts accrued
+            * ((block.number - taxBurnBlock) / CEO_auction_blocks);
+            if (d > CEO_price) {
+                // overflow assumed, reset to MIN_PRICE
+                return MIN_PRICE;
+            }
+            uint256 price = CEO_price - d;
+            if (price < MIN_PRICE) {
+                price = MIN_PRICE;
+            }
+            return price;
         }
-        uint256 price = CEO_price - d;
-        if (price < MIN_PRICE) {
-            price = MIN_PRICE;
-        }
-        return price;
-    }
     }
 
     /**
@@ -654,7 +652,7 @@ contract Cig {
         }
         // mint some new cigarette rewards to be distributed
         uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
-        mint(address(this), cigReward);
+        _mint(address(this), cigReward);
         accCigPerShare = accCigPerShare + (
         cigReward * 1e12 / supply
         );
@@ -720,7 +718,11 @@ contract Cig {
         _withdraw(user, msg.sender, _amount);
         emit Withdraw(msg.sender, _amount);
     }
-
+    
+    /**
+    * @dev Internal withdraw
+    * @param _to the amount to withdraw
+    */
     function _withdraw(UserInfo storage _user, address payoutTo, uint256 _amount) internal {
         require(_user.deposit >= _amount, "Balance is too low");
         _user.deposit -= _amount;
@@ -729,7 +731,7 @@ contract Cig {
     }
 
     /**
-    * @dev harvest redeems only pending rewards
+    * @dev harvest redeems pending rewards & updates state
     */
     function harvest() external {
         UserInfo storage user = farmers[msg.sender];
@@ -758,11 +760,11 @@ contract Cig {
     */
     function safeSendPayout(address _to, uint256 _amount) internal {
         uint256 cigBal = balanceOf[address(this)];
-        if (_amount > cigBal) {
-            _amount = cigBal;
+        require(cigBal >= _amount, "Insert more tobacco leaves...");
+        unchecked {
+            balanceOf[address(this)] = balanceOf[address(this)] - _amount;
+            balanceOf[_to] = balanceOf[_to] + _amount;
         }
-        balanceOf[address(this)] = balanceOf[address(this)] - _amount;
-        balanceOf[_to] = balanceOf[_to] + _amount;
         emit Transfer(address(this), _to, _amount);
     }
 
@@ -775,7 +777,7 @@ contract Cig {
     * @param _from The address to burn from
     * @param _amount The amount to burn
     */
-    function burn(address _from, uint256 _amount) internal {
+    function _burn(address _from, uint256 _amount) internal {
         balanceOf[_from] = balanceOf[_from] - _amount;
         totalSupply = totalSupply - _amount;
         emit Transfer(_from, address(0), _amount);
@@ -786,10 +788,12 @@ contract Cig {
    * @param _to The address to mint to.
    * @param _amount The amount to be minted.
    */
-    function mint(address _to, uint256 _amount) internal {
+    function _mint(address _to, uint256 _amount) internal {
         require(_to != address(0), "ERC20: mint to the zero address");
-        totalSupply = totalSupply + _amount;
-        balanceOf[_to] = balanceOf[_to] + _amount;
+        unchecked {
+            totalSupply = totalSupply + _amount;
+            balanceOf[_to] = balanceOf[_to] + _amount;
+        }
         emit Transfer(address(0), _to, _amount);
     }
 
@@ -799,9 +803,11 @@ contract Cig {
     * @param _value The amount to be transferred.
     */
     function transfer(address _to, uint256 _value) public returns (bool) {
-        // require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
-        balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
-        balanceOf[_to] = balanceOf[_to] + _value;
+        require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
+        unchecked {
+            balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
+            balanceOf[_to] = balanceOf[_to] + _value;
+        }
         emit Transfer(msg.sender, _to, _value);
         return true;
     }
@@ -821,15 +827,17 @@ contract Cig {
     returns (bool)
     {
         uint256 a = allowance[_from][msg.sender]; // read allowance
-        //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
-        if (a != type(uint256).max) {                                   // not infinite approval
+        require(_value <= balanceOf[_from], "value exceeds balance");
+        if (a != type(uint256).max) {             // not infinite approval
             require(_value <= a, "not approved");
             unchecked {
                 allowance[_from][msg.sender] = a - _value;
             }
         }
-        balanceOf[_from] = balanceOf[_from] - _value;
-        balanceOf[_to] = balanceOf[_to] + _value;
+        unchecked {
+            balanceOf[_from] = balanceOf[_from] - _value;
+            balanceOf[_to] = balanceOf[_to] + _value;
+        }
         emit Transfer(_from, _to, _value);
         return true;
     }
