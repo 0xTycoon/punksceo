@@ -830,25 +830,24 @@ contract Cig {
         UserInfo storage user = farmersMasterchef[_user];
         // We have to harvest every call for sushi, no way around it as they could be withdrawing all and harvesting all with the withdrawAndHarvest.
         _harvest(user, _to);
-        // I'm thinking we could turn it into an int that underflows/underflows and make the logic much simpler rather than two codepaths, but would need to check gas costs.
+        
         uint256 delta = 0;
         // Withdraw
-        if(user.deposit >= _newLpAmount) {
-            // Delta is withdraw
+        if(user.deposit >= _newLpAmount) { // Delta is withdraw
             delta = user.deposit - _newLpAmount;
             masterchefDeposits -= delta;
             user.deposit -= delta;
+            // Earlier we called _harvest, so these won't underflow.
             uint256 deltaShare = (delta * accCigPerShare) / 1e12;
-            // Fix underflows here
             user.rewardDebt -= deltaShare;
-            // Reward them with their holding
+            // Reward them with their earned cigs!
             safeSendPayout(_to, deltaShare);
+
             emit ChefWithdraw(_user, delta);
             emit Harvest(_user, _to, delta);
         }
-        // Deposit, only do this logic if the lp amount has changed
-        else if(user.deposit != _newLpAmount) {
-            // Delta is deposit
+        // Deposit
+        else if(user.deposit != _newLpAmount) { // Delta is deposit
             delta = _newLpAmount - user.deposit;
             masterchefDeposits += delta;
             user.deposit += delta;
