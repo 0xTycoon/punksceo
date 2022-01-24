@@ -481,7 +481,7 @@ contract Cig {
     function rewardUp() external onlyCEO returns (uint256)  {
         require(CEO_state == 1, "No CEO in charge");
         require(block.number > rewardsChangedBlock + (CEO_epoch_blocks*2), "wait more blocks");
-        require (cigPerBlock <= MAX_REWARD, "reward already max");
+        require (cigPerBlock < MAX_REWARD, "reward already max");
         rewardsChangedBlock = block.number;
         uint256 _amount = cigPerBlock / 5; // %20
         uint256 _new_reward = cigPerBlock + _amount;
@@ -501,7 +501,7 @@ contract Cig {
     function rewardDown() external onlyCEO returns (uint256) {
         require(CEO_state == 1, "No CEO in charge");
         require(block.number > rewardsChangedBlock + (CEO_epoch_blocks*2), "wait more blocks");
-        require(cigPerBlock >= MIN_REWARD, "reward already low");
+        require(cigPerBlock > MIN_REWARD, "reward already low");
         rewardsChangedBlock = block.number;
         uint256 _amount = cigPerBlock / 5;            // %20
         uint256 _new_reward = cigPerBlock - _amount;
@@ -716,6 +716,13 @@ contract Cig {
         // harvest beforehand, so _withdraw can safely decrement their reward count
         _harvest(user, msg.sender);
         _withdraw(user, msg.sender, _amount);
+
+        // Interact
+        require(lpToken.transferFrom(
+            address(this),
+            address(msg.sender),
+            _amount
+        ));
         emit Withdraw(msg.sender, _amount);
     }
     
@@ -723,7 +730,7 @@ contract Cig {
     * @dev Internal withdraw
     * @param _to the amount to withdraw
     */
-    function _withdraw(UserInfo storage _user, address payoutTo, uint256 _amount) internal {
+    function _withdraw(UserInfo storage _user, address _to, uint256 _amount) internal {
         require(_user.deposit >= _amount, "Balance is too low");
         _user.deposit -= _amount;
         uint256 _rewardAmount = _amount * accCigPerShare / 1e12;
@@ -878,6 +885,13 @@ contract Cig {
         uint256 amount = user.deposit;
         user.deposit = 0;
         user.rewardDebt = 0;
+        
+        // Interact
+        require(lpToken.transferFrom(
+            address(this),
+            address(msg.sender),
+            amount
+        ));
         emit EmergencyWithdraw(msg.sender, amount);
     }
 
