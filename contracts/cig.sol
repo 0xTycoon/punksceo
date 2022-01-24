@@ -238,7 +238,6 @@ contract Cig {
         CEO_punk_index = OC.CEO_punk_index();
         cigPerBlock = STARTING_REWARDS;        // set special rewards
         lastRewardBlock = OC.lastRewardBlock();// start rewards
-        taxBurnBlock = OC.taxBurnBlock();
         rewardsChangedBlock = OC.rewardsChangedBlock();
         /* Historical records */
         _transferNFT(
