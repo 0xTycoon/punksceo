@@ -51,10 +51,10 @@ contract PoolTokenMock {
     }
 
     /**
-* @dev transfer token for a specified address
-* @param _to The address to transfer to.
-* @param _value The amount to be transferred.
-*/
+    * @dev transfer token for a specified address
+    * @param _to The address to transfer to.
+    * @param _value The amount to be transferred.
+    */
     function transfer(address _to, uint256 _value) public returns (bool) {
         // require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
         balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
