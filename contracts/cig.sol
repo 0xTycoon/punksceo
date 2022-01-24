@@ -94,22 +94,23 @@ contract Cig {
     ILiquidityPoolERC20 public lpToken;           // lpToken is the address of LP token contract that's being staked.
     uint256 public lastRewardBlock;               // Last block number that cigarettes distribution occurs.
     uint256 public accCigPerShare;                // Accumulated cigarettes per share, times 1e12. See below.
-    uint256 public masterchefDeposits;                 // How much has been deposited onto the masterchef contract
+    uint256 public masterchefDeposits;            // How much has been deposited onto the masterchef contract
     uint256 public cigPerBlock;                   // CIGs per-block rewarded and split with LPs
     bytes32 public graffiti;                      // a 32 character graffiti set when buying a CEO
     ICryptoPunk public punks;                     // a reference to the CryptoPunks contract
     event Deposit(address indexed user, uint256 amount);           // when depositing LP tokens to stake
-    event Harvest(address indexed user, address indexed to, uint256 amount);          // when withdrawing LP tokens form staking
+    event Harvest(address indexed user, address to, uint256 amount);    // when withdrawing LP tokens form staking
     event Withdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
-    event ChefDeposit(address indexed user, uint256 amount);           // when depositing LP tokens to stake
-    event ChefWithdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
+    event EmergencyWithdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
+    event ChefDeposit(address indexed user, uint256 amount);       // when depositing LP tokens to stake
+    event ChefWithdraw(address indexed user, uint256 amount);      // when withdrawing LP tokens, no rewards claimed
     event RewardUp(uint256 reward, uint256 upAmount);              // when cigPerBlock is increased
     event RewardDown(uint256 reward, uint256 downAmount);          // when cigPerBlock is decreased
     event Claim(address indexed owner, uint indexed punkIndex, uint256 value); // when a punk is claimed
     mapping(uint => bool) public claims;                           // keep track of claimed punks
     modifier onlyAdmin {
         require(
-            msg.sender == admin && msg.sender != address(0), // hey..you never know.
+            msg.sender == admin,
             "Only admin can call this"
         );
         _;
@@ -163,7 +164,7 @@ contract Cig {
     * @param _NFT address pointing to the NFT contract
     * @param _V2ROUTER address pointing to the SushiSwap router
     * @param _OC address pointing to the original Cig Token contract
-    * @param _MASTERCHEF_V2 address pointing to the original Cig Token contract
+    * @param _MASTERCHEF_V2 address for the sushi masterchef v2 contract
     */
     constructor(
         uint256 _cigPerBlock,
@@ -625,7 +626,11 @@ contract Cig {
         emit Claim(msg.sender, _punkIndex, CLAIM_AMOUNT);
         return true;
     }
-    function lpSupply() public view returns(uint256)
+    
+    /**
+    * @dev Gets the LP supply, with masterchef deposits taken into account.
+    */
+    function stakedlpSupply() public view returns(uint256)
     {
         return lpToken.balanceOf(address(this)) + masterchefDeposits;
     }
@@ -642,7 +647,7 @@ contract Cig {
         if (block.number <= lastRewardBlock) {
             return;
         }
-        uint256 supply = lpSupply();
+        uint256 supply = stakedlpSupply();
         if (supply == 0) {
             lastRewardBlock = block.number;
             return;
@@ -664,7 +669,7 @@ contract Cig {
         uint256 _acps = accCigPerShare;
         // accumulated cig per share
         UserInfo storage user = farmers[_user];
-        uint256 supply = lpSupply();
+        uint256 supply = stakedlpSupply();
         if (block.number > lastRewardBlock && supply != 0) {
             uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
             _acps = _acps + (
@@ -676,17 +681,19 @@ contract Cig {
 
 
     /**
-    * @dev userInfo1 is added for compatibility with the MasterChef interface
+    * @dev userInfo is added for compatibility with the Snapshot interface.
     */
-    function userInfo(uint256 _pid, address _user) view external returns (uint256, uint256) {
-        return (farmers[_user].deposit + farmersMasterchef[_user].deposit, farmers[_user].rewardDebt + farmersMasterchef[_user].rewardDebt);
+    function userInfo(uint256, address _user) view external returns (uint256, uint256 depositAmount) {
+        return (0,farmers[_user].deposit + farmersMasterchef[_user].deposit);
     }
     /**
     * @dev deposit deposits LP tokens to be staked.
     * @param _amount the amount of LP tokens to deposit. Assumes this contract has been approved for the _amount.
     */
     function deposit(uint256 _amount) external {
+        require(_amount != 0, "You cannot deposit only 0 tokens"); // Check how many bytes
         UserInfo storage user = farmers[msg.sender];
+
         update();
         _deposit(user, _amount);
         require(lpToken.transferFrom(
@@ -698,19 +705,18 @@ contract Cig {
     }
     
     function _deposit(UserInfo storage _user, uint256 _amount) internal {
-        require(_user.deposit >= _amount, "Balance is too low");
         _user.deposit += _amount;
         _user.rewardDebt += _amount * accCigPerShare / 1e12;
     }
     /**
     * @dev withdraw takes out the LP tokens
-    * @param _amount the amount to harvest+
+    * @param _amount the amount to withdraw
     */
     function withdraw(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
+        update();
         // harvest beforehand, so _withdraw can safely decrement their reward count
         _harvest(user, msg.sender);
-        update();
         _withdraw(user, msg.sender, _amount);
         emit Withdraw(msg.sender, _amount);
     }
@@ -727,24 +733,21 @@ contract Cig {
     */
     function harvest() external {
         UserInfo storage user = farmers[msg.sender];
-        UserInfo storage userChef = farmersMasterchef[msg.sender];
+        update();
         _harvest(user, msg.sender);
-        _harvest(userChef, msg.sender);
     }
 
     /**
     * @dev Internal harvest
-    * @param _to the amount to harvest+
+    * @param _to the amount to harvest
     */
     function _harvest(UserInfo storage _user, address _to) internal {
-        update();
         uint256 potentialValue = (_user.deposit * accCigPerShare / 1e12);
         uint256 delta = potentialValue - _user.rewardDebt;
 
         safeSendPayout(_to, delta);
         // Recalculate their reward debt now that we've given them their reward
         _user.rewardDebt = _user.deposit * accCigPerShare / 1e12;
-        
         emit Harvest(msg.sender, _to, delta);
     }
 
@@ -835,13 +838,14 @@ contract Cig {
         uint256 /* pid */,
         address _user,
         address _to,
-        uint256 /* sushiAmount*/,
+        uint256 _sushiAmount,
         uint256 _newLpAmount)  external onlyMCV2 {
         UserInfo storage user = farmersMasterchef[_user];
-        // We have to harvest every call for sushi, no way around it as they could be withdrawing all and harvesting all with the withdrawAndHarvest.
-        _harvest(user, _to);
+        update();
+        // Harvest sushi when there is sushiAmount passed through as this only comes in the event of the masterchef contract harvesting
+        if(_sushiAmount != 0) _harvest(user, _to);
         
-        uint256 delta = 0;
+        uint256 delta;
         // Withdraw
         if(user.deposit >= _newLpAmount) { // Delta is withdraw
             delta = user.deposit - _newLpAmount;
@@ -855,8 +859,18 @@ contract Cig {
             _deposit(user, delta);
             emit ChefDeposit(_user, delta);
         }
-        
 
+    }
+
+    /**
+    * @dev emergencyWithdraw does a withdraw without caring about rewards. EMERGENCY ONLY.
+    */
+    function emergencyWithdraw() external {
+        UserInfo storage user = farmers[msg.sender];
+        uint256 amount = user.deposit;
+        user.deposit = 0;
+        user.rewardDebt = 0;
+        emit EmergencyWithdraw(msg.sender, amount);
     }
 
     /** 
