@@ -687,6 +687,7 @@ contract Cig {
         UserInfo storage user = farmers[msg.sender];
         update();
         user.deposit += _amount;
+        
         user.rewardDebt += _amount * accCigPerShare / 1e12;
 
         require(lpToken.transferFrom(
@@ -704,6 +705,7 @@ contract Cig {
         UserInfo storage user = farmers[msg.sender];
         require(user.deposit >= _amount, "Balance is too low");
         user.deposit -= _amount;
+        // underflows?
         user.rewardDebt -= _amount * accCigPerShare / 1e12;
         emit Withdraw(msg.sender, _amount);
     }
@@ -726,7 +728,7 @@ contract Cig {
         update();
         uint256 potentialValue = (_user.deposit * accCigPerShare / 1e12);
         uint256 delta = potentialValue - _user.rewardDebt;
-        
+
         safeSendPayout(_to, delta);
         // Recalculate their reward debt now that we've given them their reward
         _user.rewardDebt = _user.deposit * accCigPerShare / 1e12;
@@ -844,7 +846,6 @@ contract Cig {
             delta = _newLpAmount - user.deposit;
             masterchefDeposits += delta;
             user.deposit += delta;
-            // Fix overflows here
             user.rewardDebt += (delta * accCigPerShare) / 1e12;
         }
         
