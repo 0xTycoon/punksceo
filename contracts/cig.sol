@@ -688,28 +688,42 @@ contract Cig {
     function deposit(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
         update();
-        user.deposit += _amount;
-        
-        user.rewardDebt += _amount * accCigPerShare / 1e12;
+        _deposit(user, _amount);
 
         require(lpToken.transferFrom(
                 address(msg.sender),
                 address(this),
                 _amount
             ));
+        emit Deposit(msg.sender, _amount);
     }
-
+    
+    function _deposit(UserInfo storage _user, uint256 _amount) internal {
+        require(_user.deposit >= _amount, "Balance is too low");
+        _user.deposit += _amount;
+        
+        _user.rewardDebt += _amount * accCigPerShare / 1e12;
+    }
     /**
     * @dev withdraw takes out the LP tokens
     * @param _amount the amount to harvest+
     */
     function withdraw(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
-        require(user.deposit >= _amount, "Balance is too low");
-        user.deposit -= _amount;
-        // underflows?
-        user.rewardDebt -= _amount * accCigPerShare / 1e12;
+        
+        update();
+        _withdraw(user, msg.sender, _amount);
         emit Withdraw(msg.sender, _amount);
+    }
+
+    function _withdraw(UserInfo storage _user, address payoutTo, uint256 _amount) internal {
+        require(_user.deposit >= _amount, "Balance is too low");
+        _user.deposit -= _amount;
+        // underflows?
+        uint256 _rewardAmount = _amount * accCigPerShare / 1e12;
+        _user.rewardDebt -= _rewardAmount;
+        // Payout their earnings
+        safeSendPayout(payoutTo, _rewardAmount);
     }
 
     /**
@@ -836,23 +850,13 @@ contract Cig {
         if(user.deposit >= _newLpAmount) { // Delta is withdraw
             delta = user.deposit - _newLpAmount;
             masterchefDeposits -= delta;
-            user.deposit -= delta;
-            // Earlier we called _harvest, so these won't underflow.
-            uint256 deltaShare = (delta * accCigPerShare) / 1e12;
-            user.rewardDebt -= deltaShare;
-            // Reward them with their earned cigs!
-            safeSendPayout(_to, deltaShare);
-
+            _withdraw(user, _to, delta);
             emit ChefWithdraw(_user, delta);
-            emit Harvest(_user, _to, delta);
         }
         // Deposit
         else if(user.deposit != _newLpAmount) { // Delta is deposit
             delta = _newLpAmount - user.deposit;
-            masterchefDeposits += delta;
-            user.deposit += delta;
-            user.rewardDebt += (delta * accCigPerShare) / 1e12;
-            emit ChefDeposit(_user, delta);
+            _deposit(user, delta);
         }
         
 
