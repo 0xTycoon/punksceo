@@ -101,6 +101,8 @@ contract Cig {
     event Deposit(address indexed user, uint256 amount);           // when depositing LP tokens to stake
     event Harvest(address indexed user, address indexed to, uint256 amount);          // when withdrawing LP tokens form staking
     event Withdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
+    event ChefDeposit(address indexed user, uint256 amount);           // when depositing LP tokens to stake
+    event ChefWithdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
     event RewardUp(uint256 reward, uint256 upAmount);              // when cigPerBlock is increased
     event RewardDown(uint256 reward, uint256 downAmount);          // when cigPerBlock is decreased
     event Claim(address indexed owner, uint indexed punkIndex, uint256 value); // when a punk is claimed
@@ -735,7 +737,7 @@ contract Cig {
         
         emit Harvest(msg.sender, _to, delta);
     }
-    
+
     /**
     * @dev safeSendPayout, just in case if rounding error causes pool to not have enough CIGs.
     * @param _to recipient address
@@ -830,15 +832,19 @@ contract Cig {
         _harvest(user, _to);
         // I'm thinking we could turn it into an int that underflows/underflows and make the logic much simpler rather than two codepaths, but would need to check gas costs.
         uint256 delta = 0;
-
         // Withdraw
         if(user.deposit >= _newLpAmount) {
             // Delta is withdraw
             delta = user.deposit - _newLpAmount;
             masterchefDeposits -= delta;
             user.deposit -= delta;
+            uint256 deltaShare = (delta * accCigPerShare) / 1e12;
             // Fix underflows here
-            user.rewardDebt -= (delta * accCigPerShare) / 1e12;
+            user.rewardDebt -= deltaShare;
+            // Reward them with their holding
+            safeSendPayout(_to, deltaShare);
+            emit ChefWithdraw(_user, delta);
+            emit Harvest(_user, _to, delta);
         }
         // Deposit, only do this logic if the lp amount has changed
         else if(user.deposit != _newLpAmount) {
@@ -847,6 +853,7 @@ contract Cig {
             masterchefDeposits += delta;
             user.deposit += delta;
             user.rewardDebt += (delta * accCigPerShare) / 1e12;
+            emit ChefDeposit(_user, delta);
         }
         
 
