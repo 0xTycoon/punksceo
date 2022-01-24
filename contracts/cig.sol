@@ -1,7 +1,8 @@
 // SYS 64738
 // SPDX-License-Identifier: MIT
 // Version 2.0
-// Author: 0xTycoon & contributors
+// Author: 0xTycoon
+// Contributor: Alphasoup <twitter: alphasoups>
 // Repo: github.com/0xTycoon/punksceo
 
 pragma solidity ^0.8.11;
@@ -99,7 +100,7 @@ contract Cig {
     bytes32 public graffiti;                      // a 32 character graffiti set when buying a CEO
     ICryptoPunk public punks;                     // a reference to the CryptoPunks contract
     event Deposit(address indexed user, uint256 amount);           // when depositing LP tokens to stake
-    event Harvest(address indexed user, address to, uint256 amount);    // when withdrawing LP tokens form staking
+    event Harvest(address indexed user, address to, uint256 amount);// when withdrawing LP tokens form staking
     event Withdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
     event EmergencyWithdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
     event ChefDeposit(address indexed user, uint256 amount);       // when depositing LP tokens to stake
@@ -297,8 +298,7 @@ contract Cig {
     */
     function unwrap(uint256 _value) external {
         require (CEO_state == 3);
-        require (_dist() <= MAX_DIST);                      // issuance distance in range
-        _burn(msg.sender, _value);                           // burn new cig
+       _burn(msg.sender, _value);                           // burn new cig
         OC.transfer(msg.sender, _value);                    // give back old cig
         wBal[msg.sender] = wBal[msg.sender] - _value;       // record decrease of wrapped old cig for caller
     }
