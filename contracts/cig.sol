@@ -98,9 +98,9 @@ contract Cig {
     uint256 public cigPerBlock;                   // CIGs per-block rewarded and split with LPs
     bytes32 public graffiti;                      // a 32 character graffiti set when buying a CEO
     ICryptoPunk public punks;                     // a reference to the CryptoPunks contract
-    event Deposit(address indexed user, uint256 amount);           // when depositing LP tokens to stake, or harvest
+    event Deposit(address indexed user, uint256 amount);           // when depositing LP tokens to stake
     event Harvest(address indexed user, address indexed to, uint256 amount);          // when withdrawing LP tokens form staking
-    event EmergencyWithdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
+    event Withdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
     event RewardUp(uint256 reward, uint256 upAmount);              // when cigPerBlock is increased
     event RewardDown(uint256 reward, uint256 downAmount);          // when cigPerBlock is decreased
     event Claim(address indexed owner, uint indexed punkIndex, uint256 value); // when a punk is claimed
@@ -623,7 +623,10 @@ contract Cig {
         emit Claim(msg.sender, _punkIndex, CLAIM_AMOUNT);
         return true;
     }
-
+    function lpSupply() public view returns(uint256)
+    {
+        return lpToken.balanceOf(address(this)) + masterchefDeposits;
+    }
     /**
     * @dev update updates the accCigPerShare value and mints new CIG rewards to be distributed to LP stakers
     * Credits go to MasterChef.sol
@@ -637,17 +640,16 @@ contract Cig {
         if (block.number <= lastRewardBlock) {
             return;
         }
-        uint256 lpSupply = lpToken.balanceOf(address(this));
-        if (lpSupply == 0) {
+        uint256 supply = lpSupply();
+        if (supply == 0) {
             lastRewardBlock = block.number;
             return;
         }
-        lpSupply += masterchefDeposits;
         // mint some new cigarette rewards to be distributed
         uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
         mint(address(this), cigReward);
         accCigPerShare = accCigPerShare + (
-        cigReward * 1e12 / lpSupply
+        cigReward * 1e12 / supply
         );
         lastRewardBlock = block.number;
     }
@@ -684,7 +686,6 @@ contract Cig {
     function deposit(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
         update();
-        
         user.deposit += _amount;
         user.rewardDebt += _amount * accCigPerShare / 1e12;
 
@@ -701,9 +702,10 @@ contract Cig {
     */
     function withdraw(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
-        require(user.deposit < _amount, "Balance is too low");
+        require(user.deposit >= _amount, "Balance is too low");
         user.deposit -= _amount;
         user.rewardDebt -= _amount * accCigPerShare / 1e12;
+        emit Withdraw(msg.sender, _amount);
     }
 
     /**
@@ -711,7 +713,9 @@ contract Cig {
     */
     function harvest() external {
         UserInfo storage user = farmers[msg.sender];
+        UserInfo storage userChef = farmersMasterchef[msg.sender];
         _harvestSafe(user, msg.sender);
+        _harvestSafe(userChef, msg.sender);
     }
 
     /**
@@ -720,6 +724,7 @@ contract Cig {
     */
     function _harvestSafe(UserInfo storage _user, address _to) internal {
         _giveHarvestOnly(_user, _to);
+        // Recalculate their reward debt now that we've given them their reward
         _user.rewardDebt = _user.deposit * accCigPerShare / 1e12;
     }
     /**
@@ -807,7 +812,9 @@ contract Cig {
         //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
         if (a != type(uint256).max) {                                         // not infinite approval
             require(_value <= a, "not approved");
-            allowance[_from][msg.sender] = a - _value;
+            unchecked {
+                allowance[_from][msg.sender] = a - _value;
+            }
         }
         balanceOf[_from] = balanceOf[_from] - _value;
         balanceOf[_to] = balanceOf[_to] + _value;
@@ -823,26 +830,23 @@ contract Cig {
         uint256 _newLpAmount)  external onlyMCV2 {
         UserInfo storage user = farmersMasterchef[_user];
         // I'm thinking we could turn it into an int that underflows/underflows and make the logic much simpler rather than two codepaths, but would need to check gas costs.
-        uint256 delta;
-
-        // Give them their rewards up to this point, after this we'll be able to safely modify their debt
-        // Using harvest only doesn't modify their reward debt, to gas optimize as we don't need to update it twice.
-        _giveHarvestOnly(user, _to);
+        uint256 delta = 0;
 
         // User is withdrawing from the contract
         if(user.deposit > _newLpAmount) {
             delta = user.deposit - _newLpAmount;
             masterchefDeposits -= delta;
             user.deposit -= delta;
-            user.rewardDebt = (user.deposit * accCigPerShare) / 1e12;
+            user.rewardDebt -= (delta * accCigPerShare) / 1e12;
         }
         // User is depositing into the contract
         else if(user.deposit < _newLpAmount){
             delta = _newLpAmount - user.deposit;
             masterchefDeposits += delta;
             user.deposit += delta;
-            user.rewardDebt = (user.deposit * accCigPerShare) / 1e12;
+            user.rewardDebt += (delta * accCigPerShare) / 1e12;
         }
+        
 
     }
 
