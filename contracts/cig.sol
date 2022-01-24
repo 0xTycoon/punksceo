@@ -662,11 +662,11 @@ contract Cig {
         uint256 _acps = accCigPerShare;
         // accumulated cig per share
         UserInfo storage user = farmers[_user];
-        uint256 lpSupply = lpToken.balanceOf(address(this));
-        if (block.number > lastRewardBlock && lpSupply != 0) {
+        uint256 supply = lpSupply();
+        if (block.number > lastRewardBlock && supply != 0) {
             uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
             _acps = _acps + (
-            cigReward * 1e12 / lpSupply
+            cigReward * 1e12 / supply
             );
         }
         return (user.deposit * _acps / 1e12) - user.rewardDebt;
@@ -714,28 +714,23 @@ contract Cig {
     function harvest() external {
         UserInfo storage user = farmers[msg.sender];
         UserInfo storage userChef = farmersMasterchef[msg.sender];
-        _harvestSafe(user, msg.sender);
-        _harvestSafe(userChef, msg.sender);
+        _harvest(user, msg.sender);
+        _harvest(userChef, msg.sender);
     }
 
     /**
     * @dev Internal harvest
     * @param _to the amount to harvest+
     */
-    function _harvestSafe(UserInfo storage _user, address _to) internal {
-        _giveHarvestOnly(_user, _to);
-        // Recalculate their reward debt now that we've given them their reward
-        _user.rewardDebt = _user.deposit * accCigPerShare / 1e12;
-    }
-    /**
-    * @dev Internal harvest that doesn't update the users balance afterward
-    * @param _to the amount to harvest+
-    */
-    function _giveHarvestOnly(UserInfo storage _user, address _to) internal {
+    function _harvest(UserInfo storage _user, address _to) internal {
         update();
         uint256 potentialValue = (_user.deposit * accCigPerShare / 1e12);
         uint256 delta = potentialValue - _user.rewardDebt;
+        
         safeSendPayout(_to, delta);
+        // Recalculate their reward debt now that we've given them their reward
+        _user.rewardDebt = _user.deposit * accCigPerShare / 1e12;
+        
         emit Harvest(msg.sender, _to, delta);
     }
     
@@ -810,7 +805,7 @@ contract Cig {
     {
         uint256 a = allowance[_from][msg.sender]; // read allowance
         //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
-        if (a != type(uint256).max) {                                         // not infinite approval
+        if (a != type(uint256).max) {                                   // not infinite approval
             require(_value <= a, "not approved");
             unchecked {
                 allowance[_from][msg.sender] = a - _value;
@@ -829,21 +824,27 @@ contract Cig {
         uint256 /* sushiAmount*/,
         uint256 _newLpAmount)  external onlyMCV2 {
         UserInfo storage user = farmersMasterchef[_user];
+        // We have to harvest every call for sushi, no way around it as they could be withdrawing all and harvesting all with the withdrawAndHarvest.
+        _harvest(user, _to);
         // I'm thinking we could turn it into an int that underflows/underflows and make the logic much simpler rather than two codepaths, but would need to check gas costs.
         uint256 delta = 0;
 
-        // User is withdrawing from the contract
-        if(user.deposit > _newLpAmount) {
+        // Withdraw
+        if(user.deposit >= _newLpAmount) {
+            // Delta is withdraw
             delta = user.deposit - _newLpAmount;
             masterchefDeposits -= delta;
             user.deposit -= delta;
+            // Fix underflows here
             user.rewardDebt -= (delta * accCigPerShare) / 1e12;
         }
-        // User is depositing into the contract
-        else if(user.deposit < _newLpAmount){
+        // Deposit, only do this logic if the lp amount has changed
+        else if(user.deposit != _newLpAmount) {
+            // Delta is deposit
             delta = _newLpAmount - user.deposit;
             masterchefDeposits += delta;
             user.deposit += delta;
+            // Fix overflows here
             user.rewardDebt += (delta * accCigPerShare) / 1e12;
         }
         
