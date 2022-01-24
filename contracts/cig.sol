@@ -689,7 +689,6 @@ contract Cig {
         UserInfo storage user = farmers[msg.sender];
         update();
         _deposit(user, _amount);
-
         require(lpToken.transferFrom(
                 address(msg.sender),
                 address(this),
@@ -701,7 +700,6 @@ contract Cig {
     function _deposit(UserInfo storage _user, uint256 _amount) internal {
         require(_user.deposit >= _amount, "Balance is too low");
         _user.deposit += _amount;
-        
         _user.rewardDebt += _amount * accCigPerShare / 1e12;
     }
     /**
@@ -710,7 +708,8 @@ contract Cig {
     */
     function withdraw(uint256 _amount) external {
         UserInfo storage user = farmers[msg.sender];
-        
+        // harvest beforehand, so _withdraw can safely decrement their reward count
+        _harvest(user, msg.sender);
         update();
         _withdraw(user, msg.sender, _amount);
         emit Withdraw(msg.sender, _amount);
@@ -719,11 +718,8 @@ contract Cig {
     function _withdraw(UserInfo storage _user, address payoutTo, uint256 _amount) internal {
         require(_user.deposit >= _amount, "Balance is too low");
         _user.deposit -= _amount;
-        // underflows?
         uint256 _rewardAmount = _amount * accCigPerShare / 1e12;
         _user.rewardDebt -= _rewardAmount;
-        // Payout their earnings
-        safeSendPayout(payoutTo, _rewardAmount);
     }
 
     /**
@@ -857,6 +853,7 @@ contract Cig {
         else if(user.deposit != _newLpAmount) { // Delta is deposit
             delta = _newLpAmount - user.deposit;
             _deposit(user, delta);
+            emit ChefDeposit(_user, delta);
         }
         
 
