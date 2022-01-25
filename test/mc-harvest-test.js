@@ -159,27 +159,12 @@ describe("NewCig", function () {
             // simp does emergency withdraw
             expect(await cigToken.connect(simp).emergencyWithdraw()).to.emit(cigToken, "EmergencyWithdraw").withArgs(simp.address, peth("3"));
 
-            // simp should be able to harvest throug mc
+            // simp should be able to harvest through mc
             expect(await mcv2.connect(simp).harvest()).to.emit(cigToken, "Harvest"); // fails here
 
-            return;
-            [,total] = await cigToken.userInfo(0, owner.address);
-            expect(total).to.be.equal(peth("20"));
-
-            return;
+            await pt.balanceOf()
 
 
-            expect(await cigToken.connect(simp).deposit(utils.parseEther('11'))).to.emit(pt, 'Transfer').withArgs(owner.address, cigToken.address, peth('11'));
-
-
-
-
-return;
-            expect(await cigToken.deposit(utils.parseEther('11'))).to.emit(cigToken, 'Transfer').withArgs(owner.address, peth('11'));
-
-            expect(await cigToken.withdraw( utils.parseEther('11'))).to.emit(cigToken, 'Transfer').withArgs(cigToken.address, owner.address, peth('11'));
-            return;
-            expect(await cigToken.withdraw(utils.parseEther('5'))).to.emit(cigToken, 'Transfer').withArgs(cigToken.address, owner.address, peth('600'));
         });
 
     });
