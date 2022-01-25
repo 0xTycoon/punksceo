@@ -3,8 +3,17 @@
 // Version 2.0
 // Author: 0xTycoon
 // Contributor: Alphasoup <twitter: alphasoups>
-// Special Thanks: straybits1, cryptopunkart, cyounessi1, ethereumdegen, Punk7572 and
+// Special Thanks: straybits1, cryptopunkart, cyounessi1, ethereumdegen, Punk7572, sherone.eth,
+//                 songadaymann, Redlioneye.eth, tw1tte7, PabloPunkasso, Kaprekar_Punk, aradtski,
+//                 phantom_scribbs, Cryptopapa.eth, johnhenderson, thekriskay, PerfectoidPeter,
+//                 uxt_exe, 0xUnicorn, dansickles.eth, Blon Dee#9649, VRPunk1, Don Seven Slices, hogo.eth,
+//                 GeoCities#5700, "HP OfficeJet Pro 9015e #2676", gigiuz#0061, danpolko.eth, mariano.eth,
+//                 0xfoobar, jakerockland, Mudit__Gupta, BokkyPooBah, 0xaaby.eth, and
 //                 everyone at the discord, and all the awesome people who gave feedback for this project!
+// Greetings to:   Punk3395, foxthepunk, bushleaf.eth, 570KylΞ.eth, bushleaf.eth, Tokyolife, Joshuad.eth (1641),
+//                 markchesler_coinwitch, decideus.eth, zachologylol, punk8886, jony_bee, nfttank, DolAtoR, punk8886
+//                 DonJon.eth, kilifibaobab, joked507, cryptoed#3040, DroScott#7162, 0xAllen.eth, Tschuuuly#5158,
+//                 MetasNomadic#0349, punk8653, NittyB, heygareth.eth, Aaru.eth, robertclarke.eth, Acmonides#6299
 // Repo: github.com/0xTycoon/punksceo
 
 pragma solidity ^0.8.11;
