@@ -266,6 +266,9 @@ describe("Migration", function () {
             }
             console.log("state is: " + await cig.CEO_state());
 
+            // 68656c6c6f20776f726c64000000000000000000000000000000000000000000
+            console.log("graff is: "+Buffer.from(graff32).toString('hex'));
+
             await expect( cig.harvest()).to.emit(cig, "Transfer"); // grab some cig
 
             let [newStats, newThe_CEO, newGraff] = await cig.getStats(owner.address);
