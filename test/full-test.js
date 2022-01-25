@@ -242,6 +242,8 @@ describe("Cig", function () {
                         await cig.update();
                         //[stats] = await cig.getStats(owner.address);
                         //console.log
+                        [stats] = await cig.getStats(owner.address);
+                        console.log("discount price is: " + feth(stats[4]));
                     }
                     [stats] = await cig.getStats(owner.address);
                     expect(stats[4]).to.be.equal(peth('0.000001')); // further 10% discount applied

@@ -7,7 +7,7 @@ pragma solidity ^0.8.10;
 import "./oldcig.sol";
 
 //import "./safemath.sol";
-
+import "hardhat/console.sol";
 // a mock contract used for testing
 contract PunkMock {
 
@@ -139,6 +139,10 @@ contract MasterChefV2 {
     function withdraw(address _user, uint256 _amount) external {
         balances[_user] = balances[_user] - _amount;
         _simulateCallback(_user);
+    }
+
+    function harvest() external {
+        _simulateCallback(msg.sender);
     }
 
     function _simulateCallback(address _user) internal {

@@ -189,7 +189,8 @@ contract Cig {
         The_NFT            = ICEOERC721(_NFT);
         V2ROUTER           = IRouterV2(_V2ROUTER);
         OC                 = IOldCigtoken(_OC);
-        lastRewardBlock = block.number + (CEO_epoch_blocks * _migration_epochs); // set the migration window end
+        lastRewardBlock =
+            block.number + (CEO_epoch_blocks * _migration_epochs); // set the migration window end
         MASTERCHEF_V2 = _MASTERCHEF_V2;
         CEO_state = 3;                               // begin in migration state
     }
@@ -279,7 +280,6 @@ contract Cig {
             0x00000000000000000000000000000000000000000014adf4b7320334b9000000,
             0x46697273742070756e6b7320746f6b656e000000000000000000000000000000
         );
-
     }
 
     /**
@@ -288,9 +288,9 @@ contract Cig {
     */
     function wrap(uint256 _value) external {
         require (CEO_state == 3);
-        OC.transferFrom(msg.sender, address(this), _value);  // transfer old cig to here
-        _mint(msg.sender, _value);                            // give user new cig
-        wBal[msg.sender] = wBal[msg.sender] + _value;        // record increase of wrapped old cig for caller
+        OC.transferFrom(msg.sender, address(this), _value); // transfer old cig to here
+        _mint(msg.sender, _value);                          // give user new cig
+        wBal[msg.sender] = wBal[msg.sender] + _value;       // record increase of wrapped old cig for caller
     }
 
     /**
@@ -328,12 +328,12 @@ contract Cig {
             // Auction state. The price goes down 10% every `CEO_auction_blocks` blocks
             CEO_price = _calcDiscount();
         }
-        require (CEO_price + _tax_amount <= _max_spend, "overpaid");        // prevent CEO over-payment
+        require (CEO_price + _tax_amount <= _max_spend, "overpaid");       // prevent CEO over-payment
         require (_new_price >= MIN_PRICE, "price 2 smol");                 // price cannot be under 0.000001 CIG
         require (_punk_index <= 9999, "invalid punk");                     // validate the punk index
         require (_tax_amount >= _new_price / 1000, "insufficient tax" );   // at least %0.1 fee paid for 1 epoch
         transfer(address(this), CEO_price);                                // pay for the CEO title
-        _burn(address(this), CEO_price);                                    // burn the revenue
+        _burn(address(this), CEO_price);                                   // burn the revenue
         emit RevenueBurned(msg.sender, CEO_price);
         _returnDeposit(The_CEO, CEO_tax_balance);                          // return deposited tax back to old CEO
         transfer(address(this), _tax_amount);                              // deposit tax (reverts if not enough)
@@ -422,18 +422,18 @@ contract Cig {
         uint256 debt = (block.number - taxBurnBlock) * tpb;
         if (CEO_tax_balance !=0 && CEO_tax_balance >= debt) {    // Does CEO have enough deposit to pay debt?
             CEO_tax_balance = CEO_tax_balance - debt;            // deduct tax
-            _burn(address(this), debt);                           // burn the tax
+            _burn(address(this), debt);                          // burn the tax
             emit TaxBurned(msg.sender, debt);
         } else {
             // CEO defaulted
             uint256 default_amount = debt - CEO_tax_balance;     // calculate how much defaulted
-            _burn(address(this), CEO_tax_balance);                // burn the tax
+            _burn(address(this), CEO_tax_balance);               // burn the tax
             emit TaxBurned(msg.sender, CEO_tax_balance);
             CEO_state = 2;                                       // initiate a Dutch auction.
             CEO_tax_balance = 0;
             _transferNFT(The_CEO, address(this));                // This contract holds the NFT temporarily
             The_CEO = address(this);                             // This contract is the "interim CEO"
-            _mint(msg.sender, default_amount);                    // reward the caller for reporting tax default
+            _mint(msg.sender, default_amount);                   // reward the caller for reporting tax default
             emit CEODefaulted(msg.sender, default_amount);
         }
     }
@@ -599,10 +599,10 @@ contract Cig {
     * @param _punkIndex the index of the punk, number between 0-9999
     */
     function claim(uint256 _punkIndex) external returns(bool) {
-        require (CEO_state != 3, "invalid state");                       // disabled in migration state
+        require (CEO_state != 3, "invalid state");                            // disabled in migration state
         require (_punkIndex <= 9999, "invalid punk");
         require(claims[_punkIndex] == false, "punk already claimed");
-        require(OC.claims(_punkIndex) == false, "punk already claimed"); // claimed in old contract
+        require(OC.claims(_punkIndex) == false, "punk already claimed");      // claimed in old contract
         require(msg.sender == punks.punkIndexToAddress(_punkIndex), "punk 404");
         claims[_punkIndex] = true;
         balanceOf[address(punks)] = balanceOf[address(punks)] - CLAIM_AMOUNT; // deduct from the punks contract
@@ -849,7 +849,6 @@ contract Cig {
         update();
         // Harvest sushi when there is sushiAmount passed through as this only comes in the event of the masterchef contract harvesting
         if(_sushiAmount != 0) _harvest(user, _to);
-        
         uint256 delta;
         // Withdraw
         if(user.deposit >= _newLpAmount) { // Delta is withdraw
@@ -861,6 +860,7 @@ contract Cig {
         // Deposit
         else if(user.deposit != _newLpAmount) { // Delta is deposit
             delta = _newLpAmount - user.deposit;
+            masterchefDeposits += delta;
             _deposit(user, delta);
             emit ChefDeposit(_user, delta);
         }
@@ -875,10 +875,8 @@ contract Cig {
         uint256 amount = user.deposit;
         user.deposit = 0;
         user.rewardDebt = 0;
-        
         // Interact
-        require(lpToken.transferFrom(
-            address(this),
+        require(lpToken.transfer(
             address(msg.sender),
             amount
         ));
