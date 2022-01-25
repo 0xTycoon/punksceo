@@ -13,7 +13,8 @@
 // Greetings to:   Punk3395, foxthepunk, bushleaf.eth, 570KylΞ.eth, bushleaf.eth, Tokyolife, Joshuad.eth (1641),
 //                 markchesler_coinwitch, decideus.eth, zachologylol, punk8886, jony_bee, nfttank, DolAtoR, punk8886
 //                 DonJon.eth, kilifibaobab, joked507, cryptoed#3040, DroScott#7162, 0xAllen.eth, Tschuuuly#5158,
-//                 MetasNomadic#0349, punk8653, NittyB, heygareth.eth, Aaru.eth, robertclarke.eth, Acmonides#6299
+//                 MetasNomadic#0349, punk8653, NittyB, heygareth.eth, Aaru.eth, robertclarke.eth, Acmonides#6299,
+//                 Gustavus99 (1871)
 // Repo: github.com/0xTycoon/punksceo
 
 pragma solidity ^0.8.11;
