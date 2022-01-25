@@ -8,7 +8,7 @@ Optionally, there is a DeFi farm, where you can earn CIG rewards by supplying li
 
 ![Preview](cig-preview.jpg)
 
-WEB: not yet
+WEB: punksCEO.eth.limo
 
 IPFS: punksCEO.eth
 
@@ -44,6 +44,7 @@ END
 * 0 = initial
 * 1 = CEO reigning
 * 2 = Dutch auction
+* 3 = Migration state
 
 Notes
 

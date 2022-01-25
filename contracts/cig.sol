@@ -14,7 +14,7 @@
 //                 markchesler_coinwitch, decideus.eth, zachologylol, punk8886, jony_bee, nfttank, DolAtoR, punk8886
 //                 DonJon.eth, kilifibaobab, joked507, cryptoed#3040, DroScott#7162, 0xAllen.eth, Tschuuuly#5158,
 //                 MetasNomadic#0349, punk8653, NittyB, heygareth.eth, Aaru.eth, robertclarke.eth, Acmonides#6299,
-//                 Gustavus99 (1871)
+//                 Gustavus99 (1871), Foobazzler
 // Repo: github.com/0xTycoon/punksceo
 
 pragma solidity ^0.8.11;
@@ -620,7 +620,7 @@ contract Cig {
         update();
         /* harvest beforehand, so _withdraw can safely decrement their reward count */
         _harvest(user, msg.sender);
-        _withdraw(user, msg.sender, _amount);
+        _withdraw(user, _amount);
         /* Interact */
         require(lpToken.transferFrom(
             address(this),
@@ -631,10 +631,10 @@ contract Cig {
     }
     
     /**
-    * @dev Internal withdraw
-    * @param _to the amount to withdraw
+    * @dev Internal withdraw, updates internal accounting after withdrawing LP
+    * @param _amount to subtract
     */
-    function _withdraw(UserInfo storage _user, address _to, uint256 _amount) internal {
+    function _withdraw(UserInfo storage _user, uint256 _amount) internal {
         require(_user.deposit >= _amount, "Balance is too low");
         _user.deposit -= _amount;
         uint256 _rewardAmount = _amount * accCigPerShare / 1e12;
@@ -737,12 +737,13 @@ contract Cig {
         require (OC.CEO_state() == 1);
         require (block.number > lastRewardBlock, "cannot end migration yet");
         CEO_state = 1;                         // CEO is in charge state
+        OC.burnTax();                          // before copy, burn the old CEO's tax
         /* copy the state over to this contract */
         _mint(address(punks), OC.balanceOf(address(punks))); // CIG to be set aside for the remaining airdrop
         uint256 taxDeposit = OC.CEO_tax_balance();
         The_CEO = OC.The_CEO();                // copy the CEO
         if (taxDeposit > 0) {                  // copy the CEO's outstanding tax
-            _mint(The_CEO, taxDeposit);
+            _mint(address(this), taxDeposit);  // mint tax that CEO had locked in previous contract (cannot be migrated)
             CEO_tax_balance =  taxDeposit;
         }
         taxBurnBlock = OC.taxBurnBlock();
@@ -840,11 +841,9 @@ contract Cig {
     * @param _value The amount to be transferred.
     */
     function transfer(address _to, uint256 _value) public returns (bool) {
-        require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
-        unchecked {
-            balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
-            balanceOf[_to] = balanceOf[_to] + _value;
-        }
+        //require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
+        balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
+        balanceOf[_to] = balanceOf[_to] + _value;
         emit Transfer(msg.sender, _to, _value);
         return true;
     }
@@ -864,17 +863,15 @@ contract Cig {
     returns (bool)
     {
         uint256 a = allowance[_from][msg.sender]; // read allowance
-        require(_value <= balanceOf[_from], "value exceeds balance");
+        //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
         if (a != type(uint256).max) {             // not infinite approval
             require(_value <= a, "not approved");
             unchecked {
                 allowance[_from][msg.sender] = a - _value;
             }
         }
-        unchecked {
-            balanceOf[_from] = balanceOf[_from] - _value;
-            balanceOf[_to] = balanceOf[_to] + _value;
-        }
+        balanceOf[_from] = balanceOf[_from] - _value;
+        balanceOf[_to] = balanceOf[_to] + _value;
         emit Transfer(_from, _to, _value);
         return true;
     }
@@ -910,19 +907,19 @@ contract Cig {
         UserInfo storage user = farmersMasterchef[_user];
         update();
         // Harvest sushi when there is sushiAmount passed through as this only comes in the event of the masterchef contract harvesting
-        if(_sushiAmount != 0) _harvest(user, _to);
+        if(_sushiAmount != 0) _harvest(user, _to); // send outstanding CIG to _to
         uint256 delta;
-        // Withdraw
+        // Withdraw stake
         if(user.deposit >= _newLpAmount) { // Delta is withdraw
             delta = user.deposit - _newLpAmount;
-            masterchefDeposits -= delta;
-            _withdraw(user, _to, delta);
+            masterchefDeposits -= delta;   // subtract from staked total
+            _withdraw(user, delta);
             emit ChefWithdraw(_user, delta);
         }
-        // Deposit
+        // Deposit stake
         else if(user.deposit != _newLpAmount) { // Delta is deposit
             delta = _newLpAmount - user.deposit;
-            masterchefDeposits += delta;
+            masterchefDeposits += delta;        // add to staked total
             _deposit(user, delta);
             emit ChefDeposit(_user, delta);
         }
@@ -1052,6 +1049,7 @@ interface IOldCigtoken is IERC20 {
     function lastRewardBlock() external view returns (uint256);
     function rewardsChangedBlock() external view returns (uint256);
     function userInfo(address) external view returns (uint256, uint256);
+    function burnTax() external;
 }
 
 // 🚬

@@ -66,7 +66,8 @@ describe("Migration", function () {
             nft.address,
             v2RouterAddress,
             OLD_CIG,
-            MIGRATION_EPOCHS
+            MIGRATION_EPOCHS,
+            MSV2
         );
         await cig.deployed();
         // tell the NFT contract about the cig token
@@ -164,17 +165,18 @@ describe("Migration", function () {
             let bal = await lp.balanceOf(owner.address);
             console.log("LP balance: " + feth(bal));
             expect(await lp.approve(cig.address, unlimited)).to.emit(lp, "Approval");
-            expect(await cig.deposit(bal)).to.emit(cig, "Deposit"); // shot deposit
-            expect(await cig.deposit(BigNumber.from("0"))).to.emit(cig, "Transfer", BigNumber.from("0")); // no rewards
+            expect(await cig.deposit(bal)).to.emit(cig, "Deposit"); // should deposit
+            await expect(cig.deposit(BigNumber.from("0"))).to.be.revertedWith("You cannot deposit only 0 tokens"); // no rewards
         });
 
         it("trigger migration", async function () {
+            //throw new Error("production environment! Aborting!");
             let start = await cig.lastRewardBlock();
             let b = await ethers.provider.getBlockNumber();
             let toWait = start.sub(b);
             console.log("blocks to wait: " + toWait);
             for (let i = 0; i < toWait; i++) {
-                console.log(i);
+               if (i % 100 === 0) console.log(i);
                 await expect(cig.migrationComplete()).to.be.revertedWith("cannot end migration yet");
             }
             let oldBal = await oldCig.balanceOf(punks.address);
@@ -196,6 +198,8 @@ describe("Migration", function () {
             expect(oldStats[6]).to.be.not.equal(newStats[6]); // cig per block
             expect(oldStats[16]).to.be.equal(newStats[16]);
             expect(oldStats[21]).to.be.equal(newStats[21]);
+
+            console.log("CEO deposit after migration:" + feth(await(cig.CEO_tax_balance())));
             // todo inspect state to ensure all migrated
             expect(await cig.balanceOf(punks.address)).to.be.equal(oldBal); // claim balance transferred
         });
@@ -225,19 +229,22 @@ describe("Migration", function () {
 
         it("should farm", async function () {
             let a = await cig.balanceOf(owner.address);
-            console.log((a));
-            await expect( cig.deposit('0')).to.emit(cig, "Transfer");
+            console.log("balance before harvest:", feth(a));
+            await expect( cig.harvest()).to.emit(cig, "Transfer");
             let b = await cig.balanceOf(owner.address);
-            expect(b.gt(a)).to.be.equal(true);
+            console.log("balance after harvest:", feth(b));
+            expect(await b.gt(a)).to.be.equal(true);
 
             // send some cig to ceo
             let ceo = await cig.The_CEO();
             await expect(cig.transfer(ceo, b)).to.emit(cig, "Transfer");
+            console.log("AFTER transfer:" + feth(await(cig.balanceOf(ceo))));
         });
 
         it("should buy ceo", async function () {
 
             let ceo = await cig.The_CEO();
+            console.log("ceo is:", ceo);
             await hre.network.provider.request({
                 method: "hardhat_impersonateAccount",
                 params: [ceo],
@@ -248,9 +255,26 @@ describe("Migration", function () {
             );
 
             console.log("ceo has:" + feth(await(cig.balanceOf(ceo))));
-            console.log("ceo deposit:" + feth(await(cig.balanceOf(ceo))));
-
+            console.log("CEO deposit:" + feth(await(cig.CEO_tax_balance())));
+            // set to a ver low price
             await expect(cig.connect(signer).setPrice(peth("100"))).to.emit(cig, "CEOPriceChange");
+
+            let graff32 = new Uint8Array(32);
+            let graffiti = "hello world";
+            for (let i = 0; i < graffiti.length; i++) {
+                graff32[i] = graffiti.charCodeAt(i);
+            }
+            console.log("state is: " + await cig.CEO_state());
+
+            await expect( cig.harvest()).to.emit(cig, "Transfer"); // grab some cig
+
+            let [newStats, newThe_CEO, newGraff] = await cig.getStats(owner.address);
+            let price = newStats[4];
+            let tax = peth("10");
+            let max = price.add(tax);
+            console.log("CEO price is:" + feth(price), " You have:" +  feth(await cig.balanceOf(owner.address)));
+            // max_spend, new_price, tax
+            await expect(cig.buyCEO(max, price, tax, 4513, graff32)).to.emit(cig,"NewCEO");
 
         });
 

@@ -99,7 +99,7 @@ describe("NewCig", function () {
 
     });
 
-    describe("Exploit", function () {
+    describe("Harvest", function () {
 
 
 
@@ -162,7 +162,7 @@ describe("NewCig", function () {
             // simp should be able to harvest through mc
             expect(await mcv2.connect(simp).harvest()).to.emit(cigToken, "Harvest"); // fails here
 
-            await pt.balanceOf()
+
 
 
         });
