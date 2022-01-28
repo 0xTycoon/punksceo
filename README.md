@@ -8,7 +8,7 @@ Optionally, there is a DeFi farm, where you can earn CIG rewards by supplying li
 
 ![Preview](cig-preview.jpg)
 
-WEB: not yet
+WEB: punksCEO.eth.limo
 
 IPFS: punksCEO.eth
 
@@ -44,6 +44,7 @@ END
 * 0 = initial
 * 1 = CEO reigning
 * 2 = Dutch auction
+* 3 = Migration state
 
 Notes
 
@@ -79,3 +80,26 @@ The `cigtoken-deployed-contract` branch contains the old cig.sol version which w
 
 Fortunately, the deployed cigtoken.eth contract is not exploitable,
 however care should be taken that you do not use that branch if you fork it.
+
+# Dev notes
+
+To run tests
+
+``` 
+$ npm install --save-dev hardhat
+$ npx hardhat test
+```
+
+Using node 17 and getting a strange 'envelope' error?
+
+```
+export NODE_OPTIONS=--openssl-legacy-provider
+```
+
+To run migration tests only
+
+```
+npx hardhat test test/migration-test.js
+```
+
+end
