@@ -1,12 +1,13 @@
 # PUNKS CEO (and "Cigarette" token)
 
+![Preview](img/logo128.png)
 ## Executive Summary
                                            
 If you have a punk, then use it to claim 100,000 Cigarettes. These can be used to buy the CEO title to become the CEO of the CryptoPunks. The CEO title comes with two perks: ability to set a "graffiti" message and the ability to increase or decrease the issuance rate of CIG itself. You can also set what price the CEO title will cost. Be careful, anybody else can take your CEO title by buying it. Set the price too low, and someone will take it, set it too high, and you would need to pay a higher tax. Each time the title is bought, the tokens will be burned. (This is what's known as a harberger tax)
 
 Optionally, there is a DeFi farm, where you can earn CIG rewards by supplying liquidity for the CIG token on a decentralized exchange.
 
-![Preview](cig-preview.jpg)
+![Preview](img/cig-preview.jpg)
 
 WEB: punksCEO.eth.limo
 
