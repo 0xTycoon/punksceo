@@ -1,11 +1,27 @@
 // SPDX-License-Identifier: MIT
+// SYS 64738
+// Version 2.0
 // Author: 0xTycoon
+// Contributor: Alphasoup <twitter: alphasoups>
+// Special Thanks: straybits1, cryptopunkart, cyounessi1, ethereumdegen, Punk7572, sherone.eth,
+//                 songadaymann, Redlioneye.eth, tw1tte7, PabloPunkasso, Kaprekar_Punk, aradtski,
+//                 phantom_scribbs, Cryptopapa.eth, johnhenderson, thekriskay, PerfectoidPeter,
+//                 uxt_exe, 0xUnicorn, dansickles.eth, Blon Dee#9649, VRPunk1, Don Seven Slices, hogo.eth,
+//                 GeoCities#5700, "HP OfficeJet Pro 9015e #2676", gigiuz#0061, danpolko.eth, mariano.eth,
+//                 0xfoobar, jakerockland, Mudit__Gupta, BokkyPooBah, 0xaaby.eth, and
+//                 everyone at the discord, and all the awesome people who gave feedback for this project!
+// Greetings to:   Punk3395, foxthepunk, bushleaf.eth, 570KylΞ.eth, bushleaf.eth, Tokyolife, Joshuad.eth (1641),
+//                 markchesler_coinwitch, decideus.eth, zachologylol, punk8886, jony_bee, nfttank, DolAtoR, punk8886
+//                 DonJon.eth, kilifibaobab, joked507, cryptoed#3040, DroScott#7162, 0xAllen.eth, Tschuuuly#5158,
+//                 MetasNomadic#0349, punk8653, NittyB, heygareth.eth, Aaru.eth, robertclarke.eth, Acmonides#6299,
+//                 Gustavus99 (1871), Foobazzler
 // Repo: github.com/0xTycoon/punksceo
 
 pragma solidity ^0.8.11;
 
 //import "./safemath.sol"; // don't need since v0.8
 //import "./ceo.sol";
+//import "hardhat/console.sol";
 /*
 
 PUNKS CEO (and "Cigarette" token)
@@ -13,9 +29,18 @@ WEB: https://punksceo.eth.limo / https://punksceo.eth.link
 IPFS: See content hash record for punksceo.eth
 Token Address: cigtoken.eth
 
-There is NO trade tax or any other fee in the standard ERC20 methods of this token.
+         , - ~ ~ ~ - ,
+     , '               ' ,
+   ,                    🚬  ,
+  ,                     🚬   ,
+ ,                      🚬    ,
+ ,                      🚬    ,
+ ,         =============     ,
+  ,                   ||█   ,
+   ,       =============   ,
+     ,                  , '
+       ' - , _ _ _ ,  '
 
-The "CEO of CryptoPunks" game element is optional and implemented for your entertainment.
 
 ### THE RULES OF THE GAME
 
@@ -47,6 +72,7 @@ END
 * 0 = initial
 * 1 = CEO reigning
 * 2 = Dutch auction
+* 3 = Migration
 
 Notes:
 It was decided that whoever buys the CEO title does not have to hold a punk and can nominate any punk they wish.
@@ -61,7 +87,6 @@ Credits:
 
 contract Cig {
     //using SafeMath for uint256; // no need since Solidity 0.8
-    // ERC20 stuff
     string public constant name = "Cigarette Token";
     string public constant symbol = "CIG";
     uint8 public constant decimals = 18;
@@ -75,17 +100,23 @@ contract Cig {
         uint256 deposit;    // How many LP tokens the user has deposited.
         uint256 rewardDebt; // keeps track of how much reward was paid out
     }
-    mapping(address => UserInfo) public userInfo; // keeps track of UserInfo for each staking address
+    mapping(address => UserInfo) public farmers;  // keeps track of UserInfo for each staking address with own pool
+    mapping(address => UserInfo) public farmersMasterchef;  // keeps track of UserInfo for each staking address with masterchef pool
+    mapping(address => uint256) public wBal;      // keeps tracked of wrapped old cig
     address public admin;                         // admin is used for deployment, burned after
     ILiquidityPoolERC20 public lpToken;           // lpToken is the address of LP token contract that's being staked.
     uint256 public lastRewardBlock;               // Last block number that cigarettes distribution occurs.
     uint256 public accCigPerShare;                // Accumulated cigarettes per share, times 1e12. See below.
+    uint256 public masterchefDeposits;            // How much has been deposited onto the masterchef contract
     uint256 public cigPerBlock;                   // CIGs per-block rewarded and split with LPs
     bytes32 public graffiti;                      // a 32 character graffiti set when buying a CEO
     ICryptoPunk public punks;                     // a reference to the CryptoPunks contract
-    event Deposit(address indexed user, uint256 amount);           // when depositing LP tokens to stake, or harvest
-    event Withdraw(address indexed user, uint256 amount);          // when withdrawing LP tokens form staking
+    event Deposit(address indexed user, uint256 amount);           // when depositing LP tokens to stake
+    event Harvest(address indexed user, address to, uint256 amount);// when withdrawing LP tokens form staking
+    event Withdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
     event EmergencyWithdraw(address indexed user, uint256 amount); // when withdrawing LP tokens, no rewards claimed
+    event ChefDeposit(address indexed user, uint256 amount);       // when depositing LP tokens to stake
+    event ChefWithdraw(address indexed user, uint256 amount);      // when withdrawing LP tokens, no rewards claimed
     event RewardUp(uint256 reward, uint256 upAmount);              // when cigPerBlock is increased
     event RewardDown(uint256 reward, uint256 downAmount);          // when cigPerBlock is decreased
     event Claim(address indexed owner, uint indexed punkIndex, uint256 value); // when a punk is claimed
@@ -101,6 +132,7 @@ contract Cig {
     uint256 constant CLAIM_AMOUNT = 100000 ether; // claim amount for each punk
     uint256 constant MIN_REWARD = 1e14;           // minimum block reward of 0.0001 CIG (1e14 wei)
     uint256 constant MAX_REWARD = 1000 ether;     // maximum block reward of 1000 CIG
+    uint256 constant STARTING_REWARDS = 512 ether;// starting rewards at end of migration
     address public The_CEO;                       // address of CEO
     uint public CEO_punk_index;                   // which punk id the CEO is using
     uint256 public CEO_price = 50000 ether;       // price to buy the CEO title
@@ -110,11 +142,17 @@ contract Cig {
     uint256 public rewardsChangedBlock;           // which block was the last reward increase / decrease
     uint256 private immutable CEO_epoch_blocks;   // secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
     uint256 private immutable CEO_auction_blocks; // 3600 blocks
+    // NewCEO 0x09b306c6ea47db16bdf4cc36f3ea2479af494cd04b4361b6485d70f088658b7e
     event NewCEO(address indexed user, uint indexed punk_id, uint256 new_price, bytes32 graffiti); // when a CEO is bought
+    // TaxDeposit 0x2ab3b3b53aa29a0599c58f343221e29a032103d015c988fae9a5cdfa5c005d9d
     event TaxDeposit(address indexed user,  uint256 amount);                               // when tax is deposited
+    // RevenueBurned 0x1b1be00a9ca19f9c14f1ca5d16e4aba7d4dd173c2263d4d8a03484e1c652c898
     event RevenueBurned(address indexed user,  uint256 amount);                            // when tax is burned
+    // TaxBurned 0x9ad3c710e1cc4e96240264e5d3cd5aeaa93fd8bd6ee4b11bc9be7a5036a80585
     event TaxBurned(address indexed user,  uint256 amount);                                // when tax is burned
+    // CEODefaulted b69f2aeff650d440d3e7385aedf764195cfca9509e33b69e69f8c77cab1e1af1
     event CEODefaulted(address indexed called_by,  uint256 reward);                        // when CEO defaulted on tax
+    // CEOPriceChange 0x10c342a321267613a25f77d4273d7f2688bef174a7214bc3dde44b31c5064ff6
     event CEOPriceChange(uint256 price);                                                   // when CEO changed price
     modifier onlyCEO {
         require(
@@ -126,72 +164,47 @@ contract Cig {
     IRouterV2 private immutable V2ROUTER;    // address of router used to get the price quote
     ICEOERC721 private immutable The_NFT;    // reference to the CEO NFT token
     address private immutable MASTERCHEF_V2; // address pointing to SushiSwap's MasterChefv2 contract
+    IOldCigtoken private immutable OC;       // Old Contract
     /**
     * @dev constructor
-    * @param _startBlock starting block when rewards start
     * @param _cigPerBlock Number of CIG tokens rewarded per block
     * @param _punks address of the cryptopunks contract
     * @param _CEO_epoch_blocks how many blocks between each epochs
     * @param _CEO_auction_blocks how many blocks between each auction discount
     * @param _CEO_price starting price to become CEO (in CIG)
-    * @param _MASTERCHEF_V2 address of the MasterChefv2 contract
+    * @param _graffiti bytes32 initial graffiti message
+    * @param _NFT address pointing to the NFT contract
+    * @param _V2ROUTER address pointing to the SushiSwap router
+    * @param _OC address pointing to the original Cig Token contract
+    * @param _MASTERCHEF_V2 address for the sushi masterchef v2 contract
     */
     constructor(
-        uint256 _startBlock,
         uint256 _cigPerBlock,
         address _punks,
         uint _CEO_epoch_blocks,
         uint _CEO_auction_blocks,
         uint256 _CEO_price,
-        address _MASTERCHEF_V2,
         bytes32 _graffiti,
         address _NFT,
-        address _V2ROUTER
+        address _V2ROUTER,
+        address _OC,
+        uint256 _migration_epochs,
+        address _MASTERCHEF_V2
     ) {
-        lastRewardBlock    = _startBlock;
         cigPerBlock        = _cigPerBlock;
-        admin              = msg.sender;                 // the admin key will be burned after deployment
+        admin              = msg.sender;             // the admin key will be burned after deployment
         punks              = ICryptoPunk(_punks);
         CEO_epoch_blocks   = _CEO_epoch_blocks;
         CEO_auction_blocks = _CEO_auction_blocks;
         CEO_price          = _CEO_price;
-        MASTERCHEF_V2      = _MASTERCHEF_V2;
         graffiti           = _graffiti;
         The_NFT            = ICEOERC721(_NFT);
         V2ROUTER           = IRouterV2(_V2ROUTER);
-        // mint the tokens for the airdrop and place them in the CryptoPunks contract.
-        mint(_punks, CLAIM_AMOUNT * 10000);
-    }
-
-    /**
-    * @dev renounceOwnership burns the admin key, so this contract is unruggable
-    */
-    function renounceOwnership() external onlyAdmin {
-        admin = address(0);
-    }
-
-    /**
-    * @dev setStartingBlock sets the starting block for LP staking rewards
-    * Admin only, used only for initial configuration.
-    * @param _startBlock the block to start rewards for
-    */
-    function setStartingBlock(uint256 _startBlock) external onlyAdmin {
-        lastRewardBlock = _startBlock;
-    }
-
-    /**
-    * @dev setPool address to an LP pool. Only Admin. (used only in testing/deployment)
-    */
-    function setPool(ILiquidityPoolERC20 _addr) external onlyAdmin {
-        require(address(lpToken) == address(0), "pool already set");
-        lpToken = _addr;
-    }
-
-    /**
-    * @dev setReward sets the reward. Admin only (used only in testing/deployment)
-    */
-    function setReward(uint256 _value) public onlyAdmin {
-        cigPerBlock = _value;
+        OC                 = IOldCigtoken(_OC);
+        lastRewardBlock =
+            block.number + (CEO_epoch_blocks * _migration_epochs); // set the migration window end
+        MASTERCHEF_V2 = _MASTERCHEF_V2;
+        CEO_state = 3;                               // begin in migration state
     }
 
     /**
@@ -209,6 +222,7 @@ contract Cig {
         uint256 _punk_index,
         bytes32 _graffiti
     ) external  {
+        require (CEO_state != 3); // disabled in in migration state
         if (CEO_state == 1 && (taxBurnBlock != block.number)) {
             _burnTax();                                                    // _burnTax can change CEO_state to 2
         }
@@ -216,12 +230,12 @@ contract Cig {
             // Auction state. The price goes down 10% every `CEO_auction_blocks` blocks
             CEO_price = _calcDiscount();
         }
-        require (CEO_price + _tax_amount <= _max_spend, "overpaid");        // prevent CEO over-payment
+        require (CEO_price + _tax_amount <= _max_spend, "overpaid");       // prevent CEO over-payment
         require (_new_price >= MIN_PRICE, "price 2 smol");                 // price cannot be under 0.000001 CIG
         require (_punk_index <= 9999, "invalid punk");                     // validate the punk index
         require (_tax_amount >= _new_price / 1000, "insufficient tax" );   // at least %0.1 fee paid for 1 epoch
         transfer(address(this), CEO_price);                                // pay for the CEO title
-        burn(address(this), CEO_price);                                    // burn the revenue
+        _burn(address(this), CEO_price);                                   // burn the revenue
         emit RevenueBurned(msg.sender, CEO_price);
         _returnDeposit(The_CEO, CEO_tax_balance);                          // return deposited tax back to old CEO
         transfer(address(this), _tax_amount);                              // deposit tax (reverts if not enough)
@@ -231,8 +245,8 @@ contract Cig {
         CEO_punk_index = _punk_index;                                      // store the punk id
         The_CEO = msg.sender;                                              // store the CEO's address
         taxBurnBlock = block.number;                                       // store the block number
-                                                                           // (tax may not have been burned if the
-                                                                           // previous state was 0)
+        // (tax may not have been burned if the
+        // previous state was 0)
         CEO_state = 1;
         graffiti = _graffiti;
         emit TaxDeposit(msg.sender, _tax_amount);
@@ -263,9 +277,7 @@ contract Cig {
     * @dev transfer the NFT to a new wallet
     */
     function _transferNFT(address _oldCEO, address _newCEO) internal {
-        if (_oldCEO != _newCEO) {
-            The_NFT.transferFrom(_oldCEO, _newCEO, 0);
-        }
+        The_NFT.transferFrom(_oldCEO, _newCEO, 0);
     }
 
     /**
@@ -312,18 +324,18 @@ contract Cig {
         uint256 debt = (block.number - taxBurnBlock) * tpb;
         if (CEO_tax_balance !=0 && CEO_tax_balance >= debt) {    // Does CEO have enough deposit to pay debt?
             CEO_tax_balance = CEO_tax_balance - debt;            // deduct tax
-            burn(address(this), debt);                           // burn the tax
+            _burn(address(this), debt);                          // burn the tax
             emit TaxBurned(msg.sender, debt);
         } else {
             // CEO defaulted
             uint256 default_amount = debt - CEO_tax_balance;     // calculate how much defaulted
-            burn(address(this), CEO_tax_balance);                // burn the tax
+            _burn(address(this), CEO_tax_balance);               // burn the tax
             emit TaxBurned(msg.sender, CEO_tax_balance);
             CEO_state = 2;                                       // initiate a Dutch auction.
             CEO_tax_balance = 0;
             _transferNFT(The_CEO, address(this));                // This contract holds the NFT temporarily
             The_CEO = address(this);                             // This contract is the "interim CEO"
-            mint(msg.sender, default_amount);                    // reward the caller for reporting tax default
+            _mint(msg.sender, default_amount);                   // reward the caller for reporting tax default
             emit CEODefaulted(msg.sender, default_amount);
         }
     }
@@ -342,26 +354,26 @@ contract Cig {
         }
         // The state is 1 if the CEO hasn't defaulted on tax
         if (CEO_state == 1) {
-            CEO_price = _price; // set the new price
+            CEO_price = _price;                                   // set the new price
             emit CEOPriceChange(_price);
         }
     }
 
     /**
-    * @dev rewardUp allows the CEO to increase the block rewards by %1
-    * Can only be called by the CEO every 7 epochs
+    * @dev rewardUp allows the CEO to increase the block rewards by %20
+    * Can only be called by the CEO every 2 epochs
     * @return _amount increased by
     */
     function rewardUp() external onlyCEO returns (uint256)  {
         require(CEO_state == 1, "No CEO in charge");
         require(block.number > rewardsChangedBlock + (CEO_epoch_blocks*2), "wait more blocks");
-        require (cigPerBlock <= MAX_REWARD, "reward already max");
+        require (cigPerBlock < MAX_REWARD, "reward already max");
         rewardsChangedBlock = block.number;
-        uint256 _amount = cigPerBlock / 5;                // %20
+        uint256 _amount = cigPerBlock / 5;            // %20
         uint256 _new_reward = cigPerBlock + _amount;
         if (_new_reward > MAX_REWARD) {
             _amount = MAX_REWARD - cigPerBlock;
-            _new_reward = MAX_REWARD; // cap
+            _new_reward = MAX_REWARD;                 // cap
         }
         cigPerBlock = _new_reward;
         emit RewardUp(_new_reward, _amount);
@@ -369,19 +381,19 @@ contract Cig {
     }
 
     /**
-    * @dev rewardDown decreases the block rewards by 1%
-    * Can only be called by the CEO every 7 epochs
+    * @dev rewardDown decreases the block rewards by 20%
+    * Can only be called by the CEO every 2 epochs
     */
     function rewardDown() external onlyCEO returns (uint256) {
         require(CEO_state == 1, "No CEO in charge");
         require(block.number > rewardsChangedBlock + (CEO_epoch_blocks*2), "wait more blocks");
-        require(cigPerBlock >= MIN_REWARD, "reward already low");
+        require(cigPerBlock > MIN_REWARD, "reward already low");
         rewardsChangedBlock = block.number;
         uint256 _amount = cigPerBlock / 5;            // %20
         uint256 _new_reward = cigPerBlock - _amount;
         if (_new_reward < MIN_REWARD) {
             _amount = cigPerBlock - MIN_REWARD;
-            _new_reward = MIN_REWARD;
+            _new_reward = MIN_REWARD;                 // limit
         }
         cigPerBlock = _new_reward;
         emit RewardDown(_new_reward, _amount);
@@ -395,7 +407,7 @@ contract Cig {
         unchecked {
             uint256 d = (CEO_price / 10)           // 10% discount
             // multiply by the number of discounts accrued
-            * (block.number - taxBurnBlock) / CEO_auction_blocks;
+            * ((block.number - taxBurnBlock) / CEO_auction_blocks);
             if (d > CEO_price) {
                 // overflow assumed, reset to MIN_PRICE
                 return MIN_PRICE;
@@ -404,24 +416,28 @@ contract Cig {
             if (price < MIN_PRICE) {
                 price = MIN_PRICE;
             }
-        return price;
+            return price;
         }
     }
+
+    /*
+    * 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬 Information used by the UI 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
+    */
 
     /**
     * @dev getStats helps to fetch some stats for the GUI in a single web3 call
     * @param _user the address to return the report for
-    * @return uint256[22] the stats
+    * @return uint256[27] the stats
     * @return address of the current CEO
     * @return bytes32 Current graffiti
     */
     function getStats(address _user) external view returns(uint256[] memory, address, bytes32, uint112[] memory) {
-        uint[] memory ret = new uint[](22);
+        uint[] memory ret = new uint[](27);
         uint112[] memory reserves = new uint112[](2);
         uint256 tpb = (CEO_price / 1000) / (CEO_epoch_blocks); // 0.1% per epoch
         uint256 debt = (block.number - taxBurnBlock) * tpb;
         uint256 price = CEO_price;
-        UserInfo memory info = userInfo[_user];
+        UserInfo memory info = farmers[_user];
         if (CEO_state == 2) {
             price = _calcDiscount();
         }
@@ -447,32 +463,64 @@ contract Cig {
                 // get the price of ETH in USD
                 ret[19] =  V2ROUTER.getAmountOut(1 ether, uint(r0), uint(r1));      // ETH price in USD
             }
+            ret[22] = lpToken.totalSupply();       // total supply
         }
-
-        ret[9] = block.number;                     // current block number
-        ret[10] = tpb;                             // "tax per block" (tpb)
-        ret[11] = debt;                            // tax debt accrued
-        ret[12] = lastRewardBlock;                 // the block of the last staking rewards payout update
-        ret[13] = info.deposit;                    // amount of LP tokens staked by user
-        ret[14] = info.rewardDebt;                 // amount of rewards paid out
-        ret[15] = balanceOf[_user];                // amount of CIG held by user
-        ret[20] = balanceOf[address(0)];           // amount of CIG burned
-        ret[21] = balanceOf[address(punks)];       // amount of CIG to be claimed
-
+        ret[9] = block.number;                       // current block number
+        ret[10] = tpb;                               // "tax per block" (tpb)
+        ret[11] = debt;                              // tax debt accrued
+        ret[12] = lastRewardBlock;                   // the block of the last staking rewards payout update
+        ret[13] = info.deposit;                      // amount of LP tokens staked by user
+        ret[14] = info.rewardDebt;                   // amount of rewards paid out
+        ret[15] = balanceOf[_user];                  // amount of CIG held by user
+        ret[20] = accCigPerShare;                    // Accumulated cigarettes per share
+        ret[21] = balanceOf[address(punks)];         // amount of CIG to be claimed
+        ret[23] = wBal[_user];                       // wrapped cig balance
+        ret[24] = OC.balanceOf(_user);               // balance of old cig in old isContract
+        ret[25] = OC.allowance(_user, address(this));// is old contract approved
+        (ret[26], ) = OC.userInfo(_user);            // old contract stake bal
         return (ret, The_CEO, graffiti, reserves);
     }
 
+    /**
+     * @dev Returns true if `account` is a contract.
+     *
+     * credits https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Address.sol
+     */
+    function isContract(address account) internal view returns (bool) {
+        uint256 size;
+        assembly {
+            size := extcodesize(account)
+        }
+        return size > 0;
+    }
+
     /*
-    * ************************ Token distribution and farming stuff ****************
+    * 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬 Token distribution and farming stuff 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
     */
+
+    /**
+    * @dev isClaimed checks to see if a punk was claimed
+    * @param _punkIndex the punk number
+    */
+    function isClaimed(uint256 _punkIndex) external view returns (bool) {
+        if (claims[_punkIndex]) {
+            return true;
+        }
+        if (OC.claims(_punkIndex)) {
+            return true;
+        }
+        return false;
+    }
 
     /**
     * Claim claims the initial CIG airdrop using a punk
     * @param _punkIndex the index of the punk, number between 0-9999
     */
     function claim(uint256 _punkIndex) external returns(bool) {
+        require (CEO_state != 3, "invalid state");                            // disabled in migration state
         require (_punkIndex <= 9999, "invalid punk");
         require(claims[_punkIndex] == false, "punk already claimed");
+        require(OC.claims(_punkIndex) == false, "punk already claimed");      // claimed in old contract
         require(msg.sender == punks.punkIndexToAddress(_punkIndex), "punk 404");
         claims[_punkIndex] = true;
         balanceOf[address(punks)] = balanceOf[address(punks)] - CLAIM_AMOUNT; // deduct from the punks contract
@@ -482,6 +530,13 @@ contract Cig {
         return true;
     }
 
+    /**
+    * @dev Gets the LP supply, with masterchef deposits taken into account.
+    */
+    function stakedlpSupply() public view returns(uint256)
+    {
+        return lpToken.balanceOf(address(this)) + masterchefDeposits;
+    }
     /**
     * @dev update updates the accCigPerShare value and mints new CIG rewards to be distributed to LP stakers
     * Credits go to MasterChef.sol
@@ -495,16 +550,16 @@ contract Cig {
         if (block.number <= lastRewardBlock) {
             return;
         }
-        uint256 lpSupply = lpToken.balanceOf(address(this));
-        if (lpSupply == 0) {
+        uint256 supply = stakedlpSupply();
+        if (supply == 0) {
             lastRewardBlock = block.number;
             return;
         }
         // mint some new cigarette rewards to be distributed
         uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
-        mint(address(this), cigReward);
+        _mint(address(this), cigReward);
         accCigPerShare = accCigPerShare + (
-            cigReward * 1e12 / lpSupply
+        cigReward * 1e12 / supply
         );
         lastRewardBlock = block.number;
     }
@@ -516,68 +571,98 @@ contract Cig {
     function pendingCig(address _user) view public returns (uint256) {
         uint256 _acps = accCigPerShare;
         // accumulated cig per share
-        UserInfo storage user = userInfo[_user];
-        uint256 lpSupply = lpToken.balanceOf(address(this));
-        if (block.number > lastRewardBlock && lpSupply != 0) {
+        UserInfo storage user = farmers[_user];
+        uint256 supply = stakedlpSupply();
+        if (block.number > lastRewardBlock && supply != 0) {
             uint256 cigReward = (block.number - lastRewardBlock) * cigPerBlock;
             _acps = _acps + (
-                cigReward * 1e12 / lpSupply
+            cigReward * 1e12 / supply
             );
         }
         return (user.deposit * _acps / 1e12) - user.rewardDebt;
     }
 
+
     /**
-    * @dev deposit deposits LP tokens to be staked. It also harvests rewards.
+    * @dev userInfo is added for compatibility with the Snapshot.org interface.
+    */
+    function userInfo(uint256, address _user) view external returns (uint256, uint256 depositAmount) {
+        return (0,farmers[_user].deposit + farmersMasterchef[_user].deposit);
+    }
+    /**
+    * @dev deposit deposits LP tokens to be staked.
     * @param _amount the amount of LP tokens to deposit. Assumes this contract has been approved for the _amount.
     */
-    function deposit(uint256 _amount) public {
-        UserInfo storage user = userInfo[msg.sender];
+    function deposit(uint256 _amount) external {
+        require(_amount != 0, "You cannot deposit only 0 tokens"); // Check how many bytes
+        UserInfo storage user = farmers[msg.sender];
+
         update();
-        if (user.deposit > 0) {
-            uint256 pending =
-            (user.deposit * (accCigPerShare) / 1e12) - user.rewardDebt;
-            safeSendPayout(msg.sender, pending);
-        }
-        if (_amount > 0) {
-            lpToken.transferFrom(
+        _deposit(user, _amount);
+        require(lpToken.transferFrom(
                 address(msg.sender),
                 address(this),
                 _amount
-            );
-            user.deposit = user.deposit + _amount;
-            emit Deposit(msg.sender, _amount);
-        }
-        user.rewardDebt = user.deposit * accCigPerShare / 1e12;
+            ));
+        emit Deposit(msg.sender, _amount);
     }
-
+    
+    function _deposit(UserInfo storage _user, uint256 _amount) internal {
+        _user.deposit += _amount;
+        _user.rewardDebt += _amount * accCigPerShare / 1e12;
+    }
     /**
-    * @dev withdraw takes out the LP tokens and pending rewards
+    * @dev withdraw takes out the LP tokens
     * @param _amount the amount to withdraw
     */
     function withdraw(uint256 _amount) external {
-        UserInfo storage user = userInfo[msg.sender];
-        require(user.deposit >= _amount, "withdraw: not good");
+        UserInfo storage user = farmers[msg.sender];
         update();
-        uint256 pending = (user.deposit * accCigPerShare / 1e12) - user.rewardDebt;
-        safeSendPayout(msg.sender, pending);
-        user.deposit = user.deposit - _amount;
-        user.rewardDebt = user.deposit * accCigPerShare / 1e12;
-        lpToken.transfer(address(msg.sender), _amount);
+        /* harvest beforehand, so _withdraw can safely decrement their reward count */
+        _harvest(user, msg.sender);
+        _withdraw(user, _amount);
+        /* Interact */
+        require(lpToken.transferFrom(
+            address(this),
+            address(msg.sender),
+            _amount
+        ));
         emit Withdraw(msg.sender, _amount);
     }
+    
     /**
-    * @dev emergencyWithdraw does a withdraw without caring about rewards. EMERGENCY ONLY.
+    * @dev Internal withdraw, updates internal accounting after withdrawing LP
+    * @param _amount to subtract
     */
-    function emergencyWithdraw() external {
-        UserInfo storage user = userInfo[msg.sender];
-        uint256 amount = user.deposit;
-        user.deposit = 0;
-        user.rewardDebt = 0;
-        lpToken.transfer(address(msg.sender), amount);
-        emit EmergencyWithdraw(msg.sender, amount);
-
+    function _withdraw(UserInfo storage _user, uint256 _amount) internal {
+        require(_user.deposit >= _amount, "Balance is too low");
+        _user.deposit -= _amount;
+        uint256 _rewardAmount = _amount * accCigPerShare / 1e12;
+        _user.rewardDebt -= _rewardAmount;
     }
+
+    /**
+    * @dev harvest redeems pending rewards & updates state
+    */
+    function harvest() external {
+        UserInfo storage user = farmers[msg.sender];
+        update();
+        _harvest(user, msg.sender);
+    }
+
+    /**
+    * @dev Internal harvest
+    * @param _to the amount to harvest
+    */
+    function _harvest(UserInfo storage _user, address _to) internal {
+        uint256 potentialValue = (_user.deposit * accCigPerShare / 1e12);
+        uint256 delta = potentialValue - _user.rewardDebt;
+        safeSendPayout(_to, delta);
+        // Recalculate their reward debt now that we've given them their reward
+        _user.rewardDebt = _user.deposit * accCigPerShare / 1e12;
+        emit Harvest(msg.sender, _to, delta);
+    }
+
     /**
     * @dev safeSendPayout, just in case if rounding error causes pool to not have enough CIGs.
     * @param _to recipient address
@@ -585,16 +670,144 @@ contract Cig {
     */
     function safeSendPayout(address _to, uint256 _amount) internal {
         uint256 cigBal = balanceOf[address(this)];
-        if (_amount > cigBal) {
-            _amount = cigBal;
+        require(cigBal >= _amount, "insert more tobacco leaves...");
+        unchecked {
+            balanceOf[address(this)] = balanceOf[address(this)] - _amount;
+            balanceOf[_to] = balanceOf[_to] + _amount;
         }
-        balanceOf[address(this)] = balanceOf[address(this)] - _amount;
-        balanceOf[_to] = balanceOf[_to] + _amount;
         emit Transfer(address(this), _to, _amount);
     }
 
+    /**
+    * @dev emergencyWithdraw does a withdraw without caring about rewards. EMERGENCY ONLY.
+    */
+    function emergencyWithdraw() external {
+        UserInfo storage user = farmers[msg.sender];
+        uint256 amount = user.deposit;
+        user.deposit = 0;
+        user.rewardDebt = 0;
+        // Interact
+        require(lpToken.transfer(
+                address(msg.sender),
+                amount
+            ));
+        emit EmergencyWithdraw(msg.sender, amount);
+    }
+
     /*
-    * ************************ ERC20 Token stuff ********************************
+    * 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬 Migration 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
+    */
+
+    /**
+    * @dev renounceOwnership burns the admin key, so this contract is unruggable
+    */
+    function renounceOwnership() external onlyAdmin {
+        admin = address(0);
+    }
+
+    /**
+    * @dev setStartingBlock sets the starting block for LP staking rewards
+    * Admin only, used only for initial configuration.
+    * @param _startBlock the block to start rewards for
+    */
+    function setStartingBlock(uint256 _startBlock) external onlyAdmin {
+        lastRewardBlock = _startBlock;
+    }
+
+    /**
+    * @dev setPool address to an LP pool. Only Admin. (used only in testing/deployment)
+    */
+    function setPool(ILiquidityPoolERC20 _addr) external onlyAdmin {
+        require(address(lpToken) == address(0), "pool already set");
+        lpToken = _addr;
+    }
+
+    /**
+    * @dev setReward sets the reward. Admin only (used only in testing/deployment)
+    */
+    function setReward(uint256 _value) public onlyAdmin {
+        cigPerBlock = _value;
+    }
+
+    /**
+    * @dev migrationComplete completes the migration
+    */
+    function migrationComplete() external  {
+        require (CEO_state == 3);
+        require (OC.CEO_state() == 1);
+        require (block.number > lastRewardBlock, "cannot end migration yet");
+        CEO_state = 1;                         // CEO is in charge state
+        OC.burnTax();                          // before copy, burn the old CEO's tax
+        /* copy the state over to this contract */
+        _mint(address(punks), OC.balanceOf(address(punks))); // CIG to be set aside for the remaining airdrop
+        uint256 taxDeposit = OC.CEO_tax_balance();
+        The_CEO = OC.The_CEO();                // copy the CEO
+        if (taxDeposit > 0) {                  // copy the CEO's outstanding tax
+            _mint(address(this), taxDeposit);  // mint tax that CEO had locked in previous contract (cannot be migrated)
+            CEO_tax_balance =  taxDeposit;
+        }
+        taxBurnBlock = OC.taxBurnBlock();
+        CEO_price = OC.CEO_price();
+        graffiti = OC.graffiti();
+        CEO_punk_index = OC.CEO_punk_index();
+        cigPerBlock = STARTING_REWARDS;        // set special rewards
+        lastRewardBlock = OC.lastRewardBlock();// start rewards
+        rewardsChangedBlock = OC.rewardsChangedBlock();
+        /* Historical records */
+        _transferNFT(
+            address(0),
+            address(0x1e32a859d69dde58d03820F8f138C99B688D132F)
+        );
+        emit NewCEO(
+            address(0x1e32a859d69dde58d03820F8f138C99B688D132F),
+            0x00000000000000000000000000000000000000000000000000000000000015c9,
+            0x000000000000000000000000000000000000000000007618fa42aac317900000,
+            0x41732043454f2049206465636c617265204465632032322050756e6b20446179
+        );
+        _transferNFT(
+            address(0x1e32a859d69dde58d03820F8f138C99B688D132F),
+            address(0x72014B4EEdee216E47786C4Ab27Cc6344589950d)
+        );
+        emit NewCEO(
+            address(0x72014B4EEdee216E47786C4Ab27Cc6344589950d),
+            0x0000000000000000000000000000000000000000000000000000000000000343,
+            0x00000000000000000000000000000000000000000001a784379d99db42000000,
+            0x40617a756d615f626974636f696e000000000000000000000000000000000000
+        );
+        _transferNFT(
+            address(0x72014B4EEdee216E47786C4Ab27Cc6344589950d),
+            address(0x4947DA4bEF9D79bc84bD584E6c12BfFa32D1bEc8)
+        );
+        emit NewCEO(
+            address(0x4947DA4bEF9D79bc84bD584E6c12BfFa32D1bEc8),
+            0x00000000000000000000000000000000000000000000000000000000000007fa,
+            0x00000000000000000000000000000000000000000014adf4b7320334b9000000,
+            0x46697273742070756e6b7320746f6b656e000000000000000000000000000000
+        );
+    }
+
+    /**
+    * @dev wrap wraps old CIG and issues new CIG 1:1
+    * @param _value how much old cig to wrap
+    */
+    function wrap(uint256 _value) external {
+        require (CEO_state == 3);
+        OC.transferFrom(msg.sender, address(this), _value); // transfer old cig to here
+        _mint(msg.sender, _value);                          // give user new cig
+        wBal[msg.sender] = wBal[msg.sender] + _value;       // record increase of wrapped old cig for caller
+    }
+
+    /**
+    * @dev unwrap unwraps old CIG and burns new CIG 1:1
+    */
+    function unwrap(uint256 _value) external {
+        require (CEO_state == 3);
+        _burn(msg.sender, _value);                          // burn new cig
+        OC.transfer(msg.sender, _value);                    // give back old cig
+        wBal[msg.sender] = wBal[msg.sender] - _value;       // record decrease of wrapped old cig for caller
+    }
+    /*
+    * 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬 ERC20 Token stuff 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
     */
 
     /**
@@ -602,21 +815,23 @@ contract Cig {
     * @param _from The address to burn from
     * @param _amount The amount to burn
     */
-   function burn(address _from, uint256 _amount) internal {
-       balanceOf[_from] = balanceOf[_from] - _amount;
-       totalSupply = totalSupply - _amount;
-       emit Transfer(_from, address(0), _amount);
-   }
+    function _burn(address _from, uint256 _amount) internal {
+        balanceOf[_from] = balanceOf[_from] - _amount;
+        totalSupply = totalSupply - _amount;
+        emit Transfer(_from, address(0), _amount);
+    }
 
-   /**
-   * @dev mint new tokens
+    /**
+    * @dev mint new tokens
    * @param _to The address to mint to.
    * @param _amount The amount to be minted.
    */
-    function mint(address _to, uint256 _amount) internal {
+    function _mint(address _to, uint256 _amount) internal {
         require(_to != address(0), "ERC20: mint to the zero address");
-        totalSupply = totalSupply + _amount;
-        balanceOf[_to] = balanceOf[_to] + _amount;
+        unchecked {
+            totalSupply = totalSupply + _amount;
+            balanceOf[_to] = balanceOf[_to] + _amount;
+        }
         emit Transfer(address(0), _to, _amount);
     }
 
@@ -626,7 +841,7 @@ contract Cig {
     * @param _value The amount to be transferred.
     */
     function transfer(address _to, uint256 _value) public returns (bool) {
-        // require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
+        //require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
         balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
         balanceOf[_to] = balanceOf[_to] + _value;
         emit Transfer(msg.sender, _to, _value);
@@ -647,57 +862,69 @@ contract Cig {
     public
     returns (bool)
     {
+        uint256 a = allowance[_from][msg.sender]; // read allowance
         //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
-        require(_value <= allowance[_from][msg.sender], "not approved");
+        if (a != type(uint256).max) {             // not infinite approval
+            require(_value <= a, "not approved");
+            unchecked {
+                allowance[_from][msg.sender] = a - _value;
+            }
+        }
         balanceOf[_from] = balanceOf[_from] - _value;
         balanceOf[_to] = balanceOf[_to] + _value;
         emit Transfer(_from, _to, _value);
         return true;
     }
 
-
     /**
     * @dev Approve tokens of mount _value to be spent by _spender
     * @param _spender address The spender
     * @param _value the stipend to spend
     */
-    function approve(address _spender, uint256 _value) public returns (bool) {
+    function approve(address _spender, uint256 _value) external returns (bool) {
         allowance[msg.sender][_spender] = _value;
         emit Approval(msg.sender, _spender, _value);
         return true;
     }
 
-    /********************************************************************
-    * @dev onSushiReward IRewarder methods to be called by the SushSwap MasterChefV2 contract
+    /*
+    * 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬 Masterchef v2 integration 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
     */
 
+    /**
+    * @dev onSushiReward implements the SushiSwap masterchefV2 callback, guarded by the onlyMCV2 modifier
+    * @param _user address called on behalf of
+    * @param _to address who send rewards to
+    * @param _sushiAmount uint256, if not 0 then the rewards will be harvested
+    * @param _newLpAmount uint256, amount of LP tokens staked at Sushi
+    */
     function onSushiReward (
         uint256 /* pid */,
         address _user,
         address _to,
-        uint256 /* sushiAmount*/,
+        uint256 _sushiAmount,
         uint256 _newLpAmount)  external onlyMCV2 {
-        UserInfo storage user = userInfo[_user];
+        UserInfo storage user = farmersMasterchef[_user];
         update();
-        if (user.deposit > 0) {
-            uint256 pending = (user.deposit * accCigPerShare / 1e12) - user.rewardDebt;
-            safeSendPayout(_to, pending);
+        // Harvest sushi when there is sushiAmount passed through as this only comes in the event of the masterchef contract harvesting
+        if(_sushiAmount != 0) _harvest(user, _to); // send outstanding CIG to _to
+        uint256 delta;
+        // Withdraw stake
+        if(user.deposit >= _newLpAmount) { // Delta is withdraw
+            delta = user.deposit - _newLpAmount;
+            masterchefDeposits -= delta;   // subtract from staked total
+            _withdraw(user, delta);
+            emit ChefWithdraw(_user, delta);
         }
-        user.deposit = _newLpAmount;
-        user.rewardDebt = user.deposit * accCigPerShare / 1e12;
+        // Deposit stake
+        else if(user.deposit != _newLpAmount) { // Delta is deposit
+            delta = _newLpAmount - user.deposit;
+            masterchefDeposits += delta;        // add to staked total
+            _deposit(user, delta);
+            emit ChefDeposit(_user, delta);
+        }
     }
 
-    /**
-    * pendingTokens returns the number of pending CIG rewards, implementing IRewarder
-    * @param user it is the only parameter we look at
-    */
-    function pendingTokens(uint256 pid, address user, uint256 sushiAmount) external view returns (IERC20[] memory, uint256[] memory) {
-        IERC20[] memory _rewardTokens = new IERC20[](1);
-        _rewardTokens[0] = IERC20(address(this));
-        uint256[] memory _rewardAmounts = new uint256[](1);
-        _rewardAmounts[0] = pendingCig(user);
-        return (_rewardTokens, _rewardAmounts);
-    }
     // onlyMCV2 ensures only the MasterChefV2 contract can call this
     modifier onlyMCV2 {
         require(
@@ -706,31 +933,22 @@ contract Cig {
         );
         _;
     }
-
-    /**
-     * @dev Returns true if `account` is a contract.
-     *
-     * credits https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Address.sol
-     */
-    function isContract(address account) internal view returns (bool) {
-        uint256 size;
-        assembly {
-            size := extcodesize(account)
-        }
-        return size > 0;
-    }
 }
 
+/*
+* 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬 interfaces 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
+*/
+
 /**
-* @dev sushi router 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F
+* @dev IRouterV2 is the sushi router 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F
 */
 interface IRouterV2 {
     function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) external pure returns(uint256 amountOut);
-
 }
 
-
-
+/**
+* @dev ICryptoPunk used to query the cryptopunks contract to verify the owner
+*/
 interface ICryptoPunk {
     //function balanceOf(address account) external view returns (uint256);
     function punkIndexToAddress(uint256 punkIndex) external returns (address);
@@ -743,17 +961,10 @@ interface ICEOERC721 {
     function transferFrom(address _from, address _to, uint256 _tokenId) external payable;
 }
 
-// IRewarder allows the contract to be called by SushSwap MasterChefV2
-// example impl https://etherscan.io/address/0x7519c93fc5073e15d89131fd38118d73a72370f8/advanced#code
-interface IRewarder {
-    function onSushiReward(uint256 pid, address user, address recipient, uint256 sushiAmount, uint256 newLpAmount) external;
-    function pendingTokens(uint256 pid, address user, uint256 sushiAmount) external view returns (IERC20[] memory, uint256[] memory);
-}
-
 /*
  * @dev Interface of the ERC20 standard as defined in the EIP.
  */
-interface IERC20 is IRewarder {
+interface IERC20 {
     /**
      * @dev Returns the amount of tokens in existence.
      */
@@ -822,4 +1033,23 @@ interface IERC20 is IRewarder {
 */
 interface ILiquidityPoolERC20 is IERC20 {
     function getReserves() external view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast);
+    function totalSupply() external view returns(uint);
 }
+
+interface IOldCigtoken is IERC20 {
+    function claims(uint256) external view returns (bool);
+    function graffiti() external view returns (bytes32);
+    function cigPerBlock() external view returns (uint256);
+    function The_CEO() external view returns (address);
+    function CEO_punk_index() external view returns (uint);
+    function CEO_price() external view returns (uint256);
+    function CEO_state() external view returns (uint256);
+    function CEO_tax_balance() external view returns (uint256);
+    function taxBurnBlock() external view returns (uint256);
+    function lastRewardBlock() external view returns (uint256);
+    function rewardsChangedBlock() external view returns (uint256);
+    function userInfo(address) external view returns (uint256, uint256);
+    function burnTax() external;
+}
+
+// 🚬

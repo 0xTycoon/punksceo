@@ -73,9 +73,32 @@ No Admin keys / "team allocations" / VCs. (The Admin keys are used for deploymen
 
 ### Versions and disclosure
 
-This repository contains vulnerability discovered and disclosed by twitter.com/alphasoups (The vulnerability was with the MasterChefV2 callback implementation)
+This branch (main) removes a vulnerability discovered and disclosed by https://twitter.com/alphasoups (The vulnerability was with the MasterChefV2 callback implementation)
 
 The `cigtoken-deployed-contract` branch contains the old cig.sol version which was deployed.
 
-Fortunately, the deployed cigtoken.eth contract is not exploitable, 
+Fortunately, the deployed cigtoken.eth contract is not exploitable,
 however care should be taken that you do not use that branch if you fork it.
+
+# Dev notes
+
+To run tests
+
+``` 
+$ npm install --save-dev hardhat
+$ npx hardhat test
+```
+
+Using node 17 and getting a strange 'envelope' error?
+
+```
+export NODE_OPTIONS=--openssl-legacy-provider
+```
+
+To run migration tests only
+
+```
+npx hardhat test test/migration-test.js
+```
+
+end
