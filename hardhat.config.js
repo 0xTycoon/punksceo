@@ -1,6 +1,3 @@
-/*
-* Sample hardhat config file used for running tests.
-*/
 require("@nomiclabs/hardhat-waffle");
 
 // This is a sample Hardhat task. To learn how to create your own go to
@@ -16,13 +13,14 @@ task("accounts", "Prints the list of accounts", async () => {
 // You need to export an object to set up your config
 // Go to https://hardhat.org/config/ to learn more
 
+// todo: deploy cig, claim punk, add uniswap pool, seed pool, add liquidity. test deposit & withdraw
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
  */
 module.exports = {
     solidity: {
-        version: "0.8.11",
+        version: "0.7.6",
         settings: {
             optimizer: {
                 enabled: true,
@@ -38,17 +36,6 @@ module.exports = {
     defaultNetwork: "hardhat",
     networks: {
 
-        // when running the migration-test.js
-        // uncomment the following and get an API key from https://www.alchemy.com/
-        /*
-
-        hardhat: {
-                    forking: {
-                        url: "https://eth-mainnet.alchemyapi.io/v2/API-KEY",
-                        blockNumber: 13974859
-                    }
-                },
-        */
         forkedLocal: {
             url: "http://127.0.0.1:8546",
             chainId: 1,

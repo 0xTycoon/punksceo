@@ -59,7 +59,7 @@ describe("Cig", function () {
         nft = await NFTMock.deploy(ASSET_URL);
         await nft.deployed();
 
-        CigToken = await ethers.getContractFactory("OldCig");
+        CigToken = await ethers.getContractFactory("Cig");
         cig = await CigToken.deploy(
             100,
             utils.parseEther(BLOCK_REWARD),
@@ -242,8 +242,6 @@ describe("Cig", function () {
                         await cig.update();
                         //[stats] = await cig.getStats(owner.address);
                         //console.log
-                        [stats] = await cig.getStats(owner.address);
-                        console.log("discount price is: " + feth(stats[4]));
                     }
                     [stats] = await cig.getStats(owner.address);
                     expect(stats[4]).to.be.equal(peth('0.000001')); // further 10% discount applied

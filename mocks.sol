@@ -4,10 +4,8 @@
 
 pragma solidity ^0.8.10;
 
-import "./oldcig.sol";
-
 //import "./safemath.sol";
-import "hardhat/console.sol";
+
 // a mock contract used for testing
 contract PunkMock {
 
@@ -24,7 +22,6 @@ contract PunkMock {
     }
 }
 
-import "hardhat/console.sol";
 // PoolTokenMock is a mock contract for testing
 contract PoolTokenMock {
     //using SafeMath for uint256;
@@ -51,10 +48,10 @@ contract PoolTokenMock {
     }
 
     /**
-    * @dev transfer token for a specified address
-    * @param _to The address to transfer to.
-    * @param _value The amount to be transferred.
-    */
+* @dev transfer token for a specified address
+* @param _to The address to transfer to.
+* @param _value The amount to be transferred.
+*/
     function transfer(address _to, uint256 _value) public returns (bool) {
         // require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
         balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
@@ -111,41 +108,5 @@ contract V2RouterMock {
     }
     function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) external pure returns(uint256 amountOut) {
         amountOut = 4206969;
-    }
-}
-
-/**
-* Mock the masterchef v2 callback
-*/
-contract MasterChefV2 {
-    IRewarder rewarder;
-    mapping(address => uint256) public balances;
-
-    constructor() {}
-
-    /**
-    * @dev pass the address of the cig token to call back to
-    * @param _rewarder address of the cig contract that implements the callback
-    */
-    function setRewarder(address _rewarder) external {
-        rewarder = IRewarder(_rewarder);
-    }
-
-    function deposit(address _user, uint256 _amount) external {
-        balances[_user] = balances[_user] + _amount;
-        _simulateCallback(_user);
-    }
-
-    function withdraw(address _user, uint256 _amount) external {
-        balances[_user] = balances[_user] - _amount;
-        _simulateCallback(_user);
-    }
-
-    function harvest() external {
-        _simulateCallback(msg.sender);
-    }
-
-    function _simulateCallback(address _user) internal {
-        rewarder.onSushiReward(0, _user, _user, 10 ether, balances[_user]);
     }
 }
