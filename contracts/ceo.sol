@@ -2,10 +2,9 @@
 // Author: 0xTycoon
 // Repo: github.com/0xTycoon/punksceo
 
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.11;
 
 //import "./safemath.sol"; // don't need it
-
 /**
 * "Non fungible CEO"
 * This is a NFT that gets transferred to the address that hold the CEO title.
