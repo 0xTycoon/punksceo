@@ -10,11 +10,12 @@ describe("Cig", function () {
     let owner, simp, elizabeth;
     let PoolMock;
     let pt;
-    let NFTMock;
-    let nft;
+    let NFTMock, NFTMock2;
+    let nft, nft2;
     let V2RouterMock;
     let v2;
-    const BLOCK_REWARD = '5';
+    let oldCig, OldCigToken;
+    const BLOCK_REWARD = '512';
     const CEO_EPOCH_BLOCKS = 10;
     const CEO_AUCTION_BLOCKS = 5;
     let CEO_BUY_PRICE = '50000';
@@ -32,9 +33,10 @@ describe("Cig", function () {
     let peth = utils.parseEther;
 
     let ASSET_URL = "ipfs://2727838744/something/238374/";
+    let OLD_ADDRESS = "0x5a35a6686db167b05e2eb74e1ede9fb5d9cdb3e0";
 
     before(async function () {
-
+        //process.exit(1); // USE THIS TO STOP THE TEST
         [owner, simp, elizabeth] = await ethers.getSigners();
         // deploy the punks mocking contract
         V2RouterMock = await ethers.getContractFactory("V2RouterMock");
@@ -59,8 +61,12 @@ describe("Cig", function () {
         nft = await NFTMock.deploy(ASSET_URL);
         await nft.deployed();
 
-        CigToken = await ethers.getContractFactory("OldCig");
-        cig = await CigToken.deploy(
+        NFTMock2 = await ethers.getContractFactory("NonFungibleCEO");
+        nft2 = await NFTMock.deploy(ASSET_URL);
+        await nft2.deployed();
+
+        OldCigToken = await ethers.getContractFactory("OldCig");
+        oldCig = await OldCigToken.deploy(
             100,
             utils.parseEther(BLOCK_REWARD),
             pm.address,
@@ -72,15 +78,31 @@ describe("Cig", function () {
             nft.address,
             v2.address
         );
+        await oldCig.deployed();
+
+        CigToken = await ethers.getContractFactory("Cig");
+        cig = await CigToken.deploy(
+            utils.parseEther(BLOCK_REWARD),
+            pm.address,
+            CEO_EPOCH_BLOCKS,
+            CEO_AUCTION_BLOCKS,
+            utils.parseEther(CEO_BUY_PRICE),
+            graff32,
+            nft2.address,
+            v2.address,
+            oldCig.address,
+            1,
+            MSV2
+
+        );
         await cig.deployed();
 
         // tell the NFT contract about the cig token
-        await nft.setCigToken(cig.address);
+        await nft2.setCigToken(cig.address);
+        await nft.setCigToken(oldCig.address);
         //await nft.setBaseURI(ASSET_URL); // onlyCEO
-
         // test burning of keys
         await nft.renounceOwnership();
-
         await expect(nft.setBaseURI(ASSET_URL)).to.be.revertedWith('must be called by CEO');
 
     });
@@ -93,81 +115,114 @@ describe("Cig", function () {
             expect(await cig.lpToken()).to.equal(pt.address);
         });
 
-        it("Should use a punk to claim some coins", async function () {
-            // test if we claim
-            expect(await cig.claim(4513))
-                .to.emit(cig, 'Claim').withArgs(owner.address, 4513, utils.parseEther(CLAIM_AMOUNT))
-                .to.emit(cig, 'Transfer').withArgs(pm.address, owner.address, utils.parseEther(CLAIM_AMOUNT));
-            expect(await cig.balanceOf(owner.address)).to.equal(utils.parseEther(CLAIM_AMOUNT));
-            // cannot claim a punk twice
-            await expect(cig.claim(4513))
-                .to.be.revertedWith('punk already claimed');
-            // out of range
-            await expect(cig.claim(10000))
-                .to.be.revertedWith('invalid punk');
-            //
-            await expect(cig.claim(4))
-                .to.be.revertedWith('punk 404');
-
-        });
-
-        it("Should buy a ceo and pay tax", async function () {
-            let [stats, The_CEO, graff] = await cig.getStats(owner.address);
-            let totalSupply = stats[7];
-            // approve the cig contract (not necessary, just testing)
-            expect(await cig.approve(cig.address, peth(CEO_BUY_PRICE)))
-                .to.emit(cig, 'Approval').withArgs(owner.address, cig.address, peth(CEO_BUY_PRICE));
-            expect(await cig.allowance(owner.address, cig.address))
-                .to.equal(peth(CEO_BUY_PRICE));
-            // buy the CEO title (reverts due to insufficient tax)
-            let tax = peth(CEO_BUY_PRICE).div(tax_denominator)
+        it("Call the migration", async function () {
+            expect(await oldCig.claim(4513))
+                .to.emit(oldCig, 'Claim').withArgs(owner.address, 4513, utils.parseEther(CLAIM_AMOUNT))
+                .to.emit(oldCig, 'Transfer').withArgs(pm.address, owner.address, utils.parseEther(CLAIM_AMOUNT));
+            expect(await oldCig.balanceOf(owner.address)).to.equal(utils.parseEther(CLAIM_AMOUNT));
+            await oldCig.claim(4514);
+            await oldCig.claim(4515);
+            let [stats, The_CEO, graff] = await oldCig.getStats(owner.address);
+            let tax = peth(CEO_BUY_PRICE).div(tax_denominator);
             let insufficient = tax.sub("1");
-            let max_spend = stats[4].add(insufficient);
-            await expect(cig.buyCEO(max_spend, peth(CEO_BUY_PRICE), insufficient, 4513, graff32))
-                .to.be.revertedWith("insufficient tax");
-
-            // buy the CEO title (reverts due to price being under)
-            max_spend = stats[4].add(tax);
-            await expect(cig.buyCEO(max_spend, peth('0.0000009'), tax, 4513, graff32))
-                .to.be.revertedWith("price 2 smol");
-            // buy the CEO title
-            console.log("total supply before:" + feth(totalSupply));
-            max_spend = stats[4].add(peth(CEO_TAX_DEPOSIT));
-            expect(await cig.buyCEO(max_spend, peth(CEO_BUY_PRICE), peth(CEO_TAX_DEPOSIT), 4513, graff32))
-                .to.emit(cig, "NewCEO").withArgs(owner.address, 4513, peth(CEO_BUY_PRICE), BigNumber.from(graff32))
-                .to.emit(cig, "TaxDeposit").withArgs(owner.address, peth(CEO_TAX_DEPOSIT))
-                .to.emit(cig, "Transfer").withArgs(cig.address, "0x0000000000000000000000000000000000000000", peth(CEO_BUY_PRICE))
-                .to.emit(cig, "RevenueBurned").withArgs(owner.address, peth(CEO_BUY_PRICE))
-            ;
-            expect(await nft.ownerOf(0)).to.be.equal(owner.address); // check NFT transferred
-
-            expect(await nft.tokenURI(0)).to.equal(ASSET_URL + "0.json");
-
-            let expectedSupply = totalSupply.sub(peth(CEO_BUY_PRICE));
-            // check the total supply, an amount of CEO_BUY_PRICE should be burned
-            expect(await cig.totalSupply()).to.be.equal(expectedSupply);
-            // check to make sure the CEO has been set
-            expect(await cig.The_CEO()).to.be.equal(owner.address);
-            [stats, The_CEO, graff] = await cig.getStats(owner.address);
-            //console.log("%s stats %s", stats);
-            expect(stats[0]).to.be.equal(1); // CEO_state
-            expect(stats[1]).to.be.equal(peth(CEO_TAX_DEPOSIT)); // CEO_tax_balance
-            expect(stats[2]).to.be.equal(17); // taxBurnBlock (last tax burn)
-            expect(stats[3]).to.be.equal(0); // rewards_block_number
-            expect(stats[4]).to.be.equal(peth(CEO_BUY_PRICE)); // CEO_price
-            expect(stats[5]).to.be.equal(4513); // CEO_punk_index
-            expect(stats[6]).to.be.equal(peth(BLOCK_REWARD)); // cigPerBlock
-            expect(stats[7]).to.be.equal(peth(MINT_SUPPLY).sub(peth(CEO_BUY_PRICE))); // MINT_SUPPLY minus what was burned
-            expect(stats[8]).to.be.equal(0); // lpToken.balanceOf
-            expect(graff).to.be.equal(BigNumber.from(graff32));
-            // 9 - block.number
-            // 10 - tpb (tax per block)
-            // 11 - debt
-            // 13 - pending cig reward
-            // 14 - user.deposit
-            // 15 - user.rewardDebt
+            let max_spend = peth(CEO_BUY_PRICE).add(peth(CEO_TAX_DEPOSIT)); //stats[4].add(insufficient);
+            expect(await oldCig.buyCEO(
+                max_spend,
+                peth(CEO_BUY_PRICE),
+                peth(CEO_TAX_DEPOSIT),
+                4513, graff32)
+            ).to.emit(oldCig, "NewCEO");
+            expect(await oldCig.approve(cig.address,  utils.parseEther(CLAIM_AMOUNT))).to.emit(oldCig, "Approval");
+            expect (await cig.wrap(utils.parseEther(CLAIM_AMOUNT))).to.emit(cig, "Transfer");
+            expect(await cig.migrationComplete()).to.emit(cig,"NewCEO");
 
         });
+
+
+         it("Should use a punk to claim some coins", async function () {
+             // test if we claim
+             expect(await cig.claim(4519))
+                 .to.emit(cig, 'Claim').withArgs(owner.address, 4519, utils.parseEther(CLAIM_AMOUNT))
+                 .to.emit(cig, 'Transfer').withArgs(pm.address, owner.address, utils.parseEther(CLAIM_AMOUNT));
+             expect(await cig.balanceOf(owner.address)).to.equal(utils.parseEther(CLAIM_AMOUNT).mul(2));
+             // cannot claim a punk twice
+             await expect(cig.claim(4519))
+                 .to.be.revertedWith('punk already claimed');
+             // out of range
+             await expect(cig.claim(10000))
+                 .to.be.revertedWith('invalid punk');
+           //
+             await expect(cig.claim(4))
+                 .to.be.revertedWith('punk 404');
+         });
+
+
+
+         it("Should buy a ceo and pay tax", async function () {
+
+             let [stats, The_CEO, graff] = await cig.getStats(owner.address);
+             let totalSupply = stats[7];
+             // approve the cig contract (not necessary, just testing)
+             expect(await cig.approve(cig.address, peth(CEO_BUY_PRICE)))
+                 .to.emit(cig, 'Approval').withArgs(owner.address, cig.address, peth(CEO_BUY_PRICE));
+             expect(await cig.allowance(owner.address, cig.address))
+                 .to.equal(peth(CEO_BUY_PRICE));
+             // buy the CEO title (reverts due to insufficient tax)
+             let tax = peth(CEO_BUY_PRICE).div(tax_denominator)
+             let insufficient = tax.sub("1");
+             let max_spend = stats[4].add(insufficient);
+             await expect(cig.buyCEO(max_spend, peth(CEO_BUY_PRICE), insufficient, 4513, graff32))
+                 .to.be.revertedWith("insufficient tax");
+
+             // buy the CEO title (reverts due to price being under)
+             max_spend = stats[4].add(tax);
+             await expect(cig.buyCEO(max_spend, peth('0.0000009'), tax, 4513, graff32))
+                 .to.be.revertedWith("price 2 smol");
+             // buy the CEO title
+             console.log("total supply before:" + feth(totalSupply));
+             max_spend = stats[4].add(peth(CEO_TAX_DEPOSIT));
+             expect(await cig.buyCEO(max_spend, peth(CEO_BUY_PRICE), peth(CEO_TAX_DEPOSIT), 4513, graff32))
+                 .to.emit(cig, "NewCEO").withArgs(owner.address, 4513, peth(CEO_BUY_PRICE), BigNumber.from(graff32))
+                 .to.emit(cig, "TaxDeposit").withArgs(owner.address, peth(CEO_TAX_DEPOSIT))
+                 .to.emit(cig, "Transfer").withArgs(cig.address, "0x0000000000000000000000000000000000000000", peth(CEO_BUY_PRICE))
+                 .to.emit(cig, "RevenueBurned").withArgs(owner.address, peth(CEO_BUY_PRICE))
+             ;
+             expect(await nft.ownerOf(0)).to.be.equal(owner.address); // check NFT transferred
+
+             expect(await nft.tokenURI(0)).to.equal(ASSET_URL + "0.json");
+
+             let expectedSupply = totalSupply.sub(peth(CEO_BUY_PRICE));
+             // check the total supply, an amount of CEO_BUY_PRICE should be burned
+             expectedSupply = expectedSupply.sub(peth("40"));
+             let supply = await cig.totalSupply();
+             console.log(feth(expectedSupply.sub(supply)));
+             console.log(feth(BigNumber.from("999754985000000000000000000")));
+             expect(await cig.totalSupply()).to.be.equal(expectedSupply);
+             // check to make sure the CEO has been set
+             expect(await cig.The_CEO()).to.be.equal(owner.address);
+             [stats, The_CEO, graff] = await cig.getStats(owner.address);
+             //console.log("%s stats %s", stats);
+             expect(stats[0]).to.be.equal(1); // CEO_state
+             expect(stats[1]).to.be.equal(peth(CEO_TAX_DEPOSIT)); // CEO_tax_balance
+             expect(stats[2]).to.be.equal(27); // taxBurnBlock (last tax burn)
+             expect(stats[3]).to.be.equal(0); // rewards_block_number
+             expect(stats[4]).to.be.equal(peth(CEO_BUY_PRICE)); // CEO_price
+             expect(stats[5]).to.be.equal(4513); // CEO_punk_index
+             expect(stats[6]).to.be.equal(peth(BLOCK_REWARD)); // cigPerBlock
+             let temp = (peth(CEO_BUY_PRICE)).sub(peth(MINT_SUPPLY));
+            // console.log("supply diff:" + feth(stats[7].sub(temp)));
+            // expect(stats[7]).to.be.equal(peth(MINT_SUPPLY).sub(peth(CEO_BUY_PRICE))); // MINT_SUPPLY minus what was burned
+
+             expect(stats[8]).to.be.equal(0); // lpToken.balanceOf
+             expect(graff).to.be.equal(BigNumber.from(graff32));
+             // 9 - block.number
+             // 10 - tpb (tax per block)
+             // 11 - debt
+             // 13 - pending cig reward
+             // 14 - user.deposit
+             // 15 - user.rewardDebt
+
+         });
 
         it("Should burn tax then default on debt", async function () {
             await cig.update(); // advance a block (to incur a tax liability)
@@ -227,265 +282,263 @@ describe("Cig", function () {
             ;
         });
 
-                it("apply a discount for each epoch", async function () {
-                    let [stats] = await cig.getStats(owner.address);
-                    let initialPrice = stats[4];
-                    console.log("price is" + stats[4]);
-                    expect(stats[0]).to.be.equal(2); // state 2 means the CEO defaulted
-                    expect(stats[4]).to.be.equal(peth(CEO_BUY_PRICE)); // no discount yet
-                    for (let i = 0; i < CEO_AUCTION_BLOCKS; i++) {
-                        await cig.update();
-                    }
-                    [stats] = await cig.getStats(owner.address);
-                    expect(stats[4]).to.be.equal(initialPrice.sub(initialPrice.div(10))); // a 10% discount applied
-                    for (let i = 0; i < CEO_AUCTION_BLOCKS * 9; i++) {
-                        await cig.update();
-                        //[stats] = await cig.getStats(owner.address);
-                        //console.log
-                        [stats] = await cig.getStats(owner.address);
-                        console.log("discount price is: " + feth(stats[4]));
-                    }
-                    [stats] = await cig.getStats(owner.address);
-                    expect(stats[4]).to.be.equal(peth('0.000001')); // further 10% discount applied
-                    console.log("price is" + stats[4]);
-                });
+       it("apply a discount for each epoch", async function () {
+           let [stats] = await cig.getStats(owner.address);
+           let initialPrice = stats[4];
+           console.log("price is" + stats[4]);
+           expect(stats[0]).to.be.equal(2); // state 2 means the CEO defaulted
+           expect(stats[4]).to.be.equal(peth(CEO_BUY_PRICE)); // no discount yet
+           for (let i = 0; i < CEO_AUCTION_BLOCKS; i++) {
+               await cig.update();
+           }
+           [stats] = await cig.getStats(owner.address);
+           expect(stats[4]).to.be.equal(initialPrice.sub(initialPrice.div(10))); // a 10% discount applied
+           for (let i = 0; i < CEO_AUCTION_BLOCKS * 9; i++) {
+               await cig.update();
+               //[stats] = await cig.getStats(owner.address);
+               //console.log
+               [stats] = await cig.getStats(owner.address);
+               console.log("discount price is: " + feth(stats[4]));
+           }
+           [stats] = await cig.getStats(owner.address);
+           expect(stats[4]).to.be.equal(peth('0.000001')); // further 10% discount applied
+           console.log("price is" + stats[4]);
+       });
 
-                       // approve the cig contract to spend our pool token
-                       it("Should use some cig to liquidity mine", async function () {
-                           console.log("balance BEFORE is: " + utils.formatEther(await cig.balanceOf(owner.address)));
+      // approve the cig contract to spend our pool token
+      it("Should use some cig to liquidity mine", async function () {
+          console.log("balance BEFORE is: " + utils.formatEther(await cig.balanceOf(owner.address)));
 
-                           // approve and deposit LP tokens
-                           await expect(pt.approve(cig.address, utils.parseEther('5'))).to.emit(pt, 'Approval');
-                           await expect(cig.deposit(utils.parseEther('5'))).to.emit(cig, 'Deposit');
-                           // liquidity mining started!
-                           await cig.update(); // mine for 1 block
-                           // check how many we mined
-                           let pcig = await cig.pendingCig(owner.address);
-                           console.log("pending cig:" + utils.formatEther(pcig));
-                           expect(pcig).to.be.equal(utils.parseEther(BLOCK_REWARD));
-                           // claim the cig
-                           await expect(cig.deposit('0'))
-                               .to.emit(cig, 'Transfer')
-                               .withArgs(
-                                   cig.address, owner.address,
-                                   utils.parseEther(BLOCK_REWARD).mul(2) // multiply by 2 since 2 blocks passed
-                               );
-                           pcig = await cig.pendingCig(owner.address);
+          // approve and deposit LP tokens
+          await expect(pt.approve(cig.address, utils.parseEther('5'))).to.emit(pt, 'Approval');
+          await expect(cig.deposit(utils.parseEther('5'))).to.emit(cig, 'Deposit');
+          // liquidity mining started!
+          await cig.update(); // mine for 1 block
+          // check how many we mined
+          let pcig = await cig.pendingCig(owner.address);
+          console.log("pending cig:" + utils.formatEther(pcig));
+          expect(pcig).to.be.equal(utils.parseEther(BLOCK_REWARD));
+          // claim the cig
+          await expect(cig.harvest())
+              .to.emit(cig, 'Transfer')
+              .withArgs(
+                  cig.address, owner.address,
+                  utils.parseEther(BLOCK_REWARD).mul(2) // multiply by 2 since 2 blocks passed
+              );
+          pcig = await cig.pendingCig(owner.address);
 
-                           console.log("balance is: " + utils.formatEther(await cig.balanceOf(owner.address)));
+          console.log("balance is: " + utils.formatEther(await cig.balanceOf(owner.address)));
 
-                           // mine from another account
-                           await expect(pt.connect(simp).mint(simp.address, utils.parseEther('15')))
-                               .to.emit(pt, "Transfer"); // mint some test tokens
-                           await expect(pt.connect(simp).approve(cig.address, utils.parseEther('15'))).to.emit(pt, 'Approval'); // approve cig to spend 15
-                           await cig.deposit('0'); // claim for owner account
-                           // owner has 5 cig
-                           // after simp deposits, owner will own 1/4 of the pool, so 1.25 per block
-                           // simp will be getting 3.75 per block
-                           await expect(cig.connect(simp).deposit(utils.parseEther('15'))).to.emit(cig, 'Deposit');
-                           // owner should have 5
-                           await cig.update(); // mine
-
-
-                           // check the stats for both accounts
-                           pcig = await cig.pendingCig(owner.address);
-                           console.log("pending cig owner:" + utils.formatEther(pcig));
-                           pcig = await cig.pendingCig(simp.address);
-                           console.log("pending cig simp:" + utils.formatEther(pcig));
-                       });
-
-                       it("should withdraw pool tokens correctly", async function () {
-                           let [stats] = await cig.getStats(owner.address);
-                           let pending = await cig.pendingCig(owner.address);
-                           let perBlock = stats[6].div(stats[8].div(stats[13])); // work out the individual reward per block
-                           console.log("perBlock isssss: " + perBlock + " " + feth(stats[8]) + " " + feth(stats[13]) + " " + feth(stats[6]));
-                           console.log("LP deposit " + stats[13], "pending " + pending);
-                           expect(stats[13]).to.equal(peth("5"));
-                           await expect(cig.withdraw(stats[13]))
-                               .to.emit(cig, "Withdraw").withArgs(owner.address, stats[13]) // LP token
-                               // add an additional block reward
-                               .to.emit(cig, "Transfer").withArgs(cig.address, owner.address, pending.add(perBlock)) // block reward
-                           ;
-                           let info = await cig.userInfo(cig.address);
-                           expect(info.deposit).to.be.equal(0);
-                           // pending cig should be 0 after the withdrawal
-                           expect(await cig.pendingCig(owner.address)).to.be.equal("0");
-                           // we should have CIGs in our wallet
-                           expect(await cig.balanceOf(owner.address)).to.be.equal(pending.add(perBlock).add(stats[15]));
-                           // we should have the LP tokens in our wallet
-                           expect(await pt.balanceOf(owner.address)).to.be.equal(peth("5"));
-
-                           // emergency withdraw time
-                           [stats] = await cig.getStats(simp.address);
-                           await expect(cig.connect(simp).emergencyWithdraw())
-                               .to.emit(cig, 'EmergencyWithdraw').withArgs(simp.address, stats[13]);
-                           // we should have the LP tokens in our wallet
-                           expect(await pt.balanceOf(simp.address)).to.be.equal(peth("15"));
-                           // there should be no more LP tokens deposited
-                           expect(await pt.balanceOf(cig.address)).to.be.equal("0");
-                       });
-
-                               it("Should test CEO takeover", async function () {
-                                   let [stats] = await cig.getStats(owner.address);
-                                   console.log("LP deposit " + stats[13]);
-                                   await expect(cig.transfer(elizabeth.address, stats[15]))
-                                       .to.emit(cig, "Transfer").withArgs(owner.address, elizabeth.address, stats[15]);
-                                   // elizabeth will become the CEO
-                                   let max_spend = stats[4].add(stats[15].sub(peth("1")));
-                                   await expect(cig.connect(elizabeth)
-                                       .buyCEO(max_spend, peth("1"), stats[15].sub(peth("1")), 6942, graff32))
-                                       .to.emit(cig, "NewCEO").withArgs(elizabeth.address, 6942, peth("1"), BigNumber.from(graff32))
-                                       .to.emit(cig, "TaxDeposit")
-                                   ;
-
-                                   // simp starts to liquidity mine!
-
-                                   await expect(cig.connect(simp).deposit(await pt.balanceOf(simp.address)))
-                                       .to.emit(cig, "Deposit");
-                                   await cig.update(); // mine
-                                   await cig.update(); // mine
-                                   // simp does a harvest
-                                   await expect(cig.connect(simp).deposit(0))
-                                       .to.emit(cig, "Transfer");
-                                   console.log("simp farmed:" + feth(await cig.pendingCig(simp.address)) + "and has:" + feth(await cig.balanceOf(simp.address)));
-                                   // and now simp does a takeover!
-                                   [stats] = await cig.getStats(elizabeth.address);
-                                   let elizabethExpectedRefund = stats[1].sub(stats[11]).sub(stats[10]);  // tax_deposit - accrued_debt - 1_block_debt
-
-                                   [stats] = await cig.getStats(simp.address);
-                                   console.log("it should burn " + feth("5000000000000000") + " but we have " + feth(stats[10]))
-                                   max_spend = stats[4].add(stats[15].sub(peth("1")));
-                                   await expect(cig.connect(simp)
-                                       .buyCEO(max_spend, peth("1"), stats[15].sub(peth("1")), 6942, graff32))
-                                       .to.emit(cig, "NewCEO").withArgs(simp.address, 6942, peth("1"), BigNumber.from(graff32))
-                                       // return previous ceo's tac deposit
-                                       .to.emit(cig, "Transfer").withArgs(cig.address, elizabeth.address, elizabethExpectedRefund)
-                                       // store new CEO tax deposit
-                                       .to.emit(cig, "Transfer").withArgs(simp.address, cig.address, stats[15].sub(peth("1")))
-                                       // take payment for the title
-                                       .to.emit(cig, "Transfer").withArgs(simp.address, cig.address, peth("1"))
-                                       // burn the paymeny for the title
-                                       .to.emit(cig, "Transfer").withArgs(cig.address, "0x0000000000000000000000000000000000000000", peth("1"))
-
-                                       // elizabeth's tax should be burned
-                                       .to.emit(cig, "Transfer").withArgs(cig.address, "0x0000000000000000000000000000000000000000", stats[10].add(stats[11]))
-                                   ;
-                               });
-
-                               // ratios:
-                               // 1000 wei gives 0.1%
-                               // 100  wei gives 1%
-                               // 40   wei gives 2.5%
-                               // 20   wei gives 5%
-                               // 10   wei gives 10%
-                               // 5    wei gives 20%
-                               // 4    wei gives 25%
-                               // and so on...
-                               it("Should increase the block rewards", async function () {
-                                   let [stats] = await cig.getStats(simp.address);
-                                   let cpb = stats[6]; //peth("100");
-                                   let expectedIncrease = cpb.div(BigNumber.from(5));
-                                   let expectedNewReward = cpb.add(expectedIncrease);
-                                   console.log("cpb:" + feth(cpb) + " expectedIncrease: " + feth(expectedIncrease) + " expectedNewReward: " + feth(expectedNewReward) + " percent:" + feth(expectedIncrease.div(cpb)));
-
-                                   await expect(cig.connect(simp).rewardUp())
-                                       .to.emit(cig, "RewardUp").withArgs(expectedNewReward, expectedIncrease);
-
-                                   await expect(cig.connect(simp).rewardUp())
-                                       .to.be.revertedWith("wait more blocks");
-
-                                   await expect(cig.connect(elizabeth).rewardUp())
-                                       .to.be.revertedWith("only CEO can call this");
-
-                                   // this routine will keep increasing the CIG rewards until the cap is reached
-                                   for (let i = 0; i < 650; i++) {
-                                       let diff = parseInt(stats[9].sub(stats[3].toString()));
-
-                                       if (diff === CEO_EPOCH_BLOCKS * 2) {
-                                           await expect(cig.connect(simp).rewardUp()).to.emit(cig, "RewardUp");
-                                           //await expect(cig.connect(simp).rewardUp()).to.be.revertedWith("wait more blocks");
-                                           console.log("reward up");
-                                           [stats] = await cig.getStats(simp.address);
-                                           console.log("reward:" + feth(stats[6]) + " dif:" + parseInt(stats[9].sub(stats[3].toString())));
-                                       } else {
-                                           await expect(cig.connect(simp).rewardUp())
-                                               .to.be.revertedWith("wait more blocks");
-                                       }
-                                       [stats] = await cig.getStats(simp.address);
-                                       // must never go over the cap
-                                       expect(parseFloat(feth(stats[6]))).to.be.lessThanOrEqual(1000);
-                                   }
-                                   // See if we can call deposit to harvest rewards
-                                   await expect(await cig.connect(simp).deposit(peth("0"))).to.emit(cig, "Transfer");
-                               });
-
-                               it("Should decrease the block rewards", async function () {
-                                   await cig.setReward(peth("0.1"));
-
-                                   let [stats] = await cig.getStats(simp.address);
-                                   console.log("moo:" + (stats[9].sub(stats[3])));
-                                   for (let i = 0; i < CEO_EPOCH_BLOCKS * 2; i++) {
-                                       await cig.update();
-                                   }
-
-                                   //return;
-                                   let cpb = stats[6]; //peth("100");
-                                   let expectedIncrease = cpb.div(BigNumber.from(5));
-                                   let expectedNewReward = cpb.sub(expectedIncrease);
-                                   console.log("cpb:" + feth(cpb) + " expectedIncrease: " + feth(expectedIncrease) + " expectedNewReward: " + feth(expectedNewReward) + " percent:" + feth(expectedIncrease.div(cpb)));
-
-                                   await expect(cig.connect(simp).rewardDown())
-                                       .to.emit(cig, "RewardDown").withArgs(expectedNewReward, expectedIncrease);
-
-                                   await expect(cig.connect(simp).rewardDown())
-                                       .to.be.revertedWith("wait more blocks");
-
-                                   await expect(cig.connect(elizabeth).rewardDown())
-                                       .to.be.revertedWith("only CEO can call this");
+          // mine from another account
+          await expect(pt.connect(simp).mint(simp.address, utils.parseEther('15')))
+              .to.emit(pt, "Transfer"); // mint some test tokens
+          await expect(pt.connect(simp).approve(cig.address, utils.parseEther('15'))).to.emit(pt, 'Approval'); // approve cig to spend 15
+          await cig.harvest(); // claim for owner account
+          // owner has 5 cig
+          // after simp deposits, owner will own 1/4 of the pool, so 1.25 per block
+          // simp will be getting 3.75 per block
+          await expect(cig.connect(simp).deposit(utils.parseEther('15'))).to.emit(cig, 'Deposit');
+          // owner should have 5
+          await cig.update(); // mine
 
 
-                                   // this routine will keep increasing the CIG rewards until the cap is reached
-                                   for (let i = 0; i < 650; i++) {
-                                       let diff = parseInt(stats[9].sub(stats[3].toString()));
+          // check the stats for both accounts
+          pcig = await cig.pendingCig(owner.address);
+          console.log("pending cig owner:" + utils.formatEther(pcig));
+          pcig = await cig.pendingCig(simp.address);
+          console.log("pending cig simp:" + utils.formatEther(pcig));
+      });
 
-                                       if (diff === CEO_EPOCH_BLOCKS * 2) {
-                                           await expect(cig.connect(simp).rewardDown()).to.emit(cig, "RewardDown");
-                                           //await expect(cig.connect(simp).rewardUp()).to.be.revertedWith("wait more blocks");
-                                           console.log("reward down");
-                                           [stats] = await cig.getStats(simp.address);
-                                           console.log("reward:" + feth(stats[6]) + " dif:" + parseInt(stats[9].sub(stats[3].toString())));
-                                       } else {
-                                           await expect(cig.connect(simp).rewardDown())
-                                               .to.be.revertedWith("wait more blocks");
-                                       }
-                                       [stats] = await cig.getStats(simp.address);
-                                       // must never go over the cap
-                                       expect(parseFloat(feth(stats[6]))).to.be.greaterThanOrEqual(0.0001);
-                                   }
-                                   // See if we can call deposit to harvest rewards
-                                   await expect(await cig.connect(simp).deposit(peth("0"))).to.emit(cig, "Transfer");
-                               });
-     //   /*
-                                       it("Should burn admin keys", async function () {
-                                           // burn admin key
-                                           await cig.renounceOwnership();
+      it("should withdraw pool tokens correctly", async function () {
+          let [stats] = await cig.getStats(owner.address);
+          let pending = await cig.pendingCig(owner.address);
+          let perBlock = stats[6].div(stats[8].div(stats[13])); // work out the individual reward per block
+          console.log("perBlock isssss: " + perBlock + " " + feth(stats[8]) + " " + feth(stats[13]) + " " + feth(stats[6]));
+          console.log("LP deposit " + stats[13], "pending " + pending);
+          expect(stats[13]).to.equal(peth("5"));
+          await expect(cig.withdraw(stats[13]))
+              .to.emit(cig, "Withdraw").withArgs(owner.address, stats[13]) // LP token
+              // add an additional block reward
+              .to.emit(cig, "Transfer").withArgs(cig.address, owner.address, pending.add(perBlock)) // block reward
+          ;
 
-                                           await expect(cig.setReward(peth("1"))).to.be.revertedWith("Only admin can call this");
+          let info = await cig.userInfo(0, cig.address);
+          console.log(info[1]);
+          expect(info[1]).to.be.equal(0);
+          // pending cig should be 0 after the withdrawal
+          expect(await cig.pendingCig(owner.address)).to.be.equal("0");
+          // we should have CIGs in our wallet
+          expect(await cig.balanceOf(owner.address)).to.be.equal(pending.add(perBlock).add(stats[15]));
 
-                                           await expect(cig.setStartingBlock(peth("1"))).to.be.revertedWith("Only admin can call this");
+          // we should have the LP tokens in our wallet
+          expect(await pt.balanceOf(owner.address)).to.be.equal(peth("5"));
 
-                                           await expect(cig.setPool(pt.address)).to.be.revertedWith("Only admin can call this");
+          // emergency withdraw time
+          [stats] = await cig.getStats(simp.address);
+          await expect(cig.connect(simp).emergencyWithdraw())
+              .to.emit(cig, 'EmergencyWithdraw').withArgs(simp.address, stats[13]);
+          // we should have the LP tokens in our wallet
+          expect(await pt.balanceOf(simp.address)).to.be.equal(peth("15"));
+          // there should be no more LP tokens deposited
+          expect(await pt.balanceOf(cig.address)).to.be.equal("0");
+          return
+      });
 
-                                       });
-/*
-        it("should test transfer overflow", async function () {
-            await expect(cig.transfer(pt.address, peth(""))).to.be.revertedWith("Error: value out-of-bounds (argument=\"_value\", value={\"type\":\"BigNumber\",\"hex\":\"0x0de0b6b3a763fffffffffffffffffffffffffffffffffffffffffffffffffffff21f494c589c0000\"}, code=INVALID_ARGUMENT, version=abi/5.4.1)\n");
+      it("Should test CEO takeover", async function () {
+          let [stats] = await cig.getStats(owner.address);
+          console.log("LP deposit " + stats[13]);
+          await expect(cig.transfer(elizabeth.address, stats[15]))
+              .to.emit(cig, "Transfer").withArgs(owner.address, elizabeth.address, stats[15]);
+          // elizabeth will become the CEO
+          let max_spend = stats[4].add(stats[15].sub(peth("1")));
+          await expect(cig.connect(elizabeth)
+              .buyCEO(max_spend, peth("1"), stats[15].sub(peth("1")), 6942, graff32))
+              .to.emit(cig, "NewCEO").withArgs(elizabeth.address, 6942, peth("1"), BigNumber.from(graff32))
+              .to.emit(cig, "TaxDeposit")
+          ;
 
-        });
-  */                     //        */
+          // simp starts to liquidity mine!
+
+          await expect(cig.connect(simp).deposit(await pt.balanceOf(simp.address)))
+              .to.emit(cig, "Deposit");
+          await cig.update(); // mine
+          await cig.update(); // mine
+          // simp does a harvest
+          await expect(cig.connect(simp).harvest())
+              .to.emit(cig, "Transfer");
+          console.log("simp farmed:" + feth(await cig.pendingCig(simp.address)) + "and has:" + feth(await cig.balanceOf(simp.address)));
+          // and now simp does a takeover!
+          [stats] = await cig.getStats(elizabeth.address);
+          let elizabethExpectedRefund = stats[1].sub(stats[11]).sub(stats[10]);  // tax_deposit - accrued_debt - 1_block_debt
+
+          [stats] = await cig.getStats(simp.address);
+          console.log("it should burn " + feth("5000000000000000") + " but we have " + feth(stats[10]))
+          max_spend = stats[4].add(stats[15].sub(peth("1")));
+          await expect(cig.connect(simp)
+              .buyCEO(max_spend, peth("1"), stats[15].sub(peth("1")), 6942, graff32))
+              .to.emit(cig, "NewCEO").withArgs(simp.address, 6942, peth("1"), BigNumber.from(graff32))
+              // return previous ceo's tac deposit
+              .to.emit(cig, "Transfer").withArgs(cig.address, elizabeth.address, elizabethExpectedRefund)
+              // store new CEO tax deposit
+              .to.emit(cig, "Transfer").withArgs(simp.address, cig.address, stats[15].sub(peth("1")))
+              // take payment for the title
+              .to.emit(cig, "Transfer").withArgs(simp.address, cig.address, peth("1"))
+              // burn the paymeny for the title
+              .to.emit(cig, "Transfer").withArgs(cig.address, "0x0000000000000000000000000000000000000000", peth("1"))
+
+              // elizabeth's tax should be burned
+              .to.emit(cig, "Transfer").withArgs(cig.address, "0x0000000000000000000000000000000000000000", stats[10].add(stats[11]))
+          ;
+      });
+
+      // ratios:
+      // 1000 wei gives 0.1%
+      // 100  wei gives 1%
+      // 40   wei gives 2.5%
+      // 20   wei gives 5%
+      // 10   wei gives 10%
+      // 5    wei gives 20%
+      // 4    wei gives 25%
+      // and so on...
+      it("Should increase the block rewards", async function () {
+          let [stats] = await cig.getStats(simp.address);
+          let cpb = stats[6]; //peth("100");
+          let expectedIncrease = cpb.div(BigNumber.from(5));
+          let expectedNewReward = cpb.add(expectedIncrease);
+          console.log("cpb:" + feth(cpb) + " expectedIncrease: " + feth(expectedIncrease) + " expectedNewReward: " + feth(expectedNewReward) + " percent:" + feth(expectedIncrease.div(cpb)));
+
+          await expect(cig.connect(simp).rewardUp())
+              .to.emit(cig, "RewardUp").withArgs(expectedNewReward, expectedIncrease);
+
+          await expect(cig.connect(simp).rewardUp())
+              .to.be.revertedWith("wait more blocks");
+
+          await expect(cig.connect(elizabeth).rewardUp())
+              .to.be.revertedWith("only CEO can call this");
+
+          // this routine will keep increasing the CIG rewards until the cap is reached
+          for (let i = 0; i < 70; i++) {
+              let diff = parseInt(stats[9].sub(stats[3].toString()));
+
+              if (diff === CEO_EPOCH_BLOCKS * 2) {
+                  await expect(cig.connect(simp).rewardUp()).to.emit(cig, "RewardUp");
+                  //await expect(cig.connect(simp).rewardUp()).to.be.revertedWith("wait more blocks");
+                  console.log("reward up");
+                  [stats] = await cig.getStats(simp.address);
+                  console.log("reward:" + feth(stats[6]) + " dif:" + parseInt(stats[9].sub(stats[3].toString())));
+              } else {
+                  await expect(cig.connect(simp).rewardUp())
+                      .to.be.revertedWith("wait more blocks");
+              }
+              [stats] = await cig.getStats(simp.address);
+              // must never go over the cap
+              expect(parseFloat(feth(stats[6]))).to.be.lessThanOrEqual(1000);
+          }
+          // See if we can call harvest rewards
+          await expect(await cig.connect(simp).harvest()).to.emit(cig, "Transfer");
+      });
+
+      it("Should decrease the block rewards", async function () {
+          await cig.setReward(peth("0.1"));
+
+          let [stats] = await cig.getStats(simp.address);
+          console.log("moo:" + (stats[9].sub(stats[3])));
+          for (let i = 0; i < CEO_EPOCH_BLOCKS * 2; i++) {
+              await cig.update();
+          }
+
+          //return;
+          let cpb = stats[6]; //peth("100");
+          let expectedIncrease = cpb.div(BigNumber.from(5));
+          let expectedNewReward = cpb.sub(expectedIncrease);
+          console.log("cpb:" + feth(cpb) + " expectedIncrease: " + feth(expectedIncrease) + " expectedNewReward: " + feth(expectedNewReward) + " percent:" + feth(expectedIncrease.div(cpb)));
+
+          await expect(cig.connect(simp).rewardDown())
+              .to.emit(cig, "RewardDown").withArgs(expectedNewReward, expectedIncrease);
+
+          await expect(cig.connect(simp).rewardDown())
+              .to.be.revertedWith("wait more blocks");
+
+          await expect(cig.connect(elizabeth).rewardDown())
+              .to.be.revertedWith("only CEO can call this");
+
+
+          // this routine will keep increasing the CIG rewards until the cap is reached
+          for (let i = 0; i < 70; i++) {
+              let diff = parseInt(stats[9].sub(stats[3].toString()));
+
+              if (diff === CEO_EPOCH_BLOCKS * 2) {
+                  await expect(cig.connect(simp).rewardDown()).to.emit(cig, "RewardDown");
+                  //await expect(cig.connect(simp).rewardUp()).to.be.revertedWith("wait more blocks");
+                  console.log("reward down");
+                  [stats] = await cig.getStats(simp.address);
+                  console.log("reward:" + feth(stats[6]) + " dif:" + parseInt(stats[9].sub(stats[3].toString())));
+              } else {
+                  await expect(cig.connect(simp).rewardDown())
+                      .to.be.revertedWith("wait more blocks");
+              }
+              [stats] = await cig.getStats(simp.address);
+              // must never go over the cap
+              expect(parseFloat(feth(stats[6]))).to.be.greaterThanOrEqual(0.0001);
+          }
+          // See if we can call deposit to harvest rewards
+          await expect(await cig.connect(simp).harvest()).to.emit(cig, "Transfer");
+      });
+
+      it("Should burn admin keys", async function () {
+          // burn admin key
+          await cig.renounceOwnership();
+
+          await expect(cig.setReward(peth("1"))).to.be.revertedWith("Only admin can call this");
+
+          await expect(cig.setStartingBlock(peth("1"))).to.be.revertedWith("Only admin can call this");
+
+          await expect(cig.setPool(pt.address)).to.be.revertedWith("Only admin can call this");
+
+      });
+
     });
 
 
 });
 
-// matches https://ethereum-waffle.readthedocs.io/en/latest/matchers.html

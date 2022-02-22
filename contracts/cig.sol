@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // SYS 64738
-// Version 2.0
+// Version 2.1
 // Author: 0xTycoon
 // Contributor: Alphasoup <twitter: alphasoups>
 // Special Thanks: straybits1, cryptopunkart, cyounessi1, ethereumdegen, Punk7572, sherone.eth,
@@ -407,7 +407,7 @@ contract Cig {
         unchecked {
             uint256 d = (CEO_price / 10)           // 10% discount
             // multiply by the number of discounts accrued
-            * ((block.number - taxBurnBlock) / CEO_auction_blocks);
+            * (block.number - taxBurnBlock) / CEO_auction_blocks;
             if (d > CEO_price) {
                 // overflow assumed, reset to MIN_PRICE
                 return MIN_PRICE;
@@ -606,11 +606,12 @@ contract Cig {
             ));
         emit Deposit(msg.sender, _amount);
     }
-    
+
     function _deposit(UserInfo storage _user, uint256 _amount) internal {
         _user.deposit += _amount;
         _user.rewardDebt += _amount * accCigPerShare / 1e12;
     }
+
     /**
     * @dev withdraw takes out the LP tokens
     * @param _amount the amount to withdraw
@@ -622,14 +623,13 @@ contract Cig {
         _harvest(user, msg.sender);
         _withdraw(user, _amount);
         /* Interact */
-        require(lpToken.transferFrom(
-            address(this),
+        require(lpToken.transfer(
             address(msg.sender),
             _amount
         ));
         emit Withdraw(msg.sender, _amount);
     }
-    
+
     /**
     * @dev Internal withdraw, updates internal accounting after withdrawing LP
     * @param _amount to subtract
