@@ -73,19 +73,24 @@ No Admin keys / "team allocations" / VCs. (The Admin keys are used for deploymen
 - LP Staking based on code from SushiSwap's MasterChef.sol
 - ERC20 & SafeMath based on lib from OpenZeppelin 
 
-### Versions and disclosure
+### Versions, disclosure and bugs
 
-This branch (main) removes a vulnerability discovered and disclosed by https://twitter.com/alphasoups (The vulnerability was with the MasterChefV2 callback implementation)
+This branch removes a vulnerability discovered and disclosed by https://twitter.com/alphasoups (The vulnerability was with the MasterChefV2 callback implementation)
 
-The `cigtoken-deployed-contract` branch contains the old cig.sol version which was deployed.
+The `old-cigtoken-deployed-contract` branch contains the old cig.sol version which was deployed.
 
-Fortunately, the deployed cigtoken.eth contract is not exploitable,
-however care should be taken that you do not use that branch if you fork it.
+Fortunately, the deployed OLD cig token contract was not exploitable in its current state, (The exploit was with the MasterchefV2 callback, and a PoC is given in `test/exploit-test`). The old cig token contract has since been abandoned.
+
+The currently deployed version, 2.0 at address `cigtoken.eth` contains a bug with the `withdraw(uint256)` function. The function incorrectly uses `transferFrom` where `transfer` should have been used, causing it to fail. As a workaround, the UI uses `emergencyWithdraw()` which is a backup withdrawal function. IMPORTANT: The `emergencyWithdraw()` function will forefit any accumulated CIG rewards, so it's importnat that the `harvest()` function is called shortly before calling `emergencyWithdraw()`  
+
+A further workaround could be applied by developing a separate rewards distributor contract.
 
 #### version 2.0 (currently deployed)
 - added token migration functionality to complete migration to a new contract
 - changed _caclDiscount() to apply discounts in groups of blocks rather than continuous per block discount
 - introduced the withdraw() bug
+
+branch name: `v2-currently-deployed`
 
 #### version 2.1
 - fixed the withdraw bug (use transfer instead of transfer from)
