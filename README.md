@@ -82,6 +82,16 @@ The `cigtoken-deployed-contract` branch contains the old cig.sol version which w
 Fortunately, the deployed cigtoken.eth contract is not exploitable,
 however care should be taken that you do not use that branch if you fork it.
 
+#### version 2.0 (currently deployed)
+- added token migration functionality to complete migration to a new contract
+- changed _caclDiscount() to apply discounts in groups of blocks rather than continuous per block discount
+- introduced the withdraw() bug
+
+#### version 2.1
+- fixed the withdraw bug (use transfer instead of transfer from)
+- changed _caclDiscount() back to old functionality, applying per block discount
+- update tests in test/full-test.js to point new contract
+
 # Dev notes
 
 To run tests

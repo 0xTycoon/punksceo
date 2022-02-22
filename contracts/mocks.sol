@@ -14,7 +14,7 @@ contract PunkMock {
     address tester;
 
     function punkIndexToAddress(uint256 punkIndex) external returns (address) {
-        if (punkIndex != 4513) {
+        if ((punkIndex != 4513) && (punkIndex != 4514) && (punkIndex != 4515) && (punkIndex != 4519)) {
             return address(0);
         }
         return tester;
