@@ -1,7 +1,7 @@
 // SPDX-License-Identifier:MIT
 // Author: 0xTycoon
 // Project: Cigarettes (CEO of CryptoPunks)
-// Credits: https://github.com/miguelmota/merkletreejs-solidity
+// Credits: Thanks to https://github.com/miguelmota/merkletreejs-solidity
 pragma solidity ^0.8.11;
 
 /**
@@ -21,7 +21,7 @@ pragma solidity ^0.8.11;
 ██  ██  ██ ██      ██      ██ ██ ██    ██ ██  ██ ██
 ██      ██ ██ ███████ ███████ ██  ██████  ██   ████
 
-The last change to upgrade your CIG 🚬
+The last chance to upgrade your CIG 🚬
 
 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
 
@@ -31,8 +31,11 @@ The contract will start with a limit of CIG to be claimed (the `step` parameter)
 Then the limit will increase by the value of `step` every seconds set by `interval` parameter
 
 Mainnet values
-step = 100k
+step    : 100k
 interval: 864000 (10 days)
+multisig: 0xd36ddAe4D9B4b3aAC4FDE830ea0c992752719a21
+cig     : 0xcb56b52316041a62b6b5d0583dce4a8ae7a3c629
+old cig : 0x5a35a6686db167b05e2eb74e1ede9fb5d9cdb3e0
 
 So, first 10 days, 100k, after 10 days 200k, and so on.
 
