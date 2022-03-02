@@ -1,0 +1,196 @@
+// SPDX-License-Identifier:MIT
+// Author: 0xTycoon
+// Project: Cigarettes (CEO of CryptoPunks)
+// Credits: https://github.com/miguelmota/merkletreejs-solidity
+pragma solidity ^0.8.11;
+
+/**
+
+🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
+
+██████  ███████ ███████  ██████ ██    ██ ███████
+██   ██ ██      ██      ██      ██    ██ ██
+██████  █████   ███████ ██      ██    ██ █████
+██   ██ ██           ██ ██      ██    ██ ██
+██   ██ ███████ ███████  ██████  ██████  ███████
+
+
+███    ███ ██ ███████ ███████ ██  ██████  ███    ██
+████  ████ ██ ██      ██      ██ ██    ██ ████   ██
+██ ████ ██ ██ ███████ ███████ ██ ██    ██ ██ ██  ██
+██  ██  ██ ██      ██      ██ ██ ██    ██ ██  ██ ██
+██      ██ ██ ███████ ███████ ██  ██████  ██   ████
+
+The last change to upgrade your CIG 🚬
+
+🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
+
+The following contract implements a 1:1 exchange for old-CIG to new-CIG,
+using a merkle tree as a whitelist.
+The contract will start with a limit of CIG to be claimed (the `step` parameter)
+Then the limit will increase by the value of `step` every seconds set by `interval` parameter
+
+Mainnet values
+step = 100k
+interval: 864000 (10 days)
+
+So, first 10 days, 100k, after 10 days 200k, and so on.
+
+Important: The contract cannot mint new CIG, it needs to be funded with CIG through donations. There might not be
+enough CIG for everyone, and exchange will not be possible if the contract runs out of CIG.
+
+The contract can be killed after 540 days. Once killed, any remaining CIG will be moved to the multisig address
+
+
+END
+
+*/
+
+//import "hardhat/console.sol";
+
+contract RescueMission {
+    address payable public admin;
+    bytes32 immutable public root;
+    mapping(address => uint256) public claims;
+    uint256 constant step = 100000 ether;
+    uint256 private immutable interval;
+    uint256 private immutable deployedAt;
+    IERC20 immutable public cig;
+    IERC20 immutable public oldCig;
+    address immutable public multisig;
+    event Rescue(
+        address, // called by
+        address, // sent claim to
+        uint256  // amount CIG claimed and sent
+    );
+    modifier onlyAdmin {
+        require(
+            msg.sender == admin,
+            "Only admin can call this"
+        );
+        _;
+    }
+
+    /**
+    * @dev constructor
+    * @param _root root hash of merkle tree
+    * @param _interval seconds between 'step' increase
+    * @param _cig address to the Cigarettes contract
+    * @param _oldCig address of the old cig contract
+    * @param _multisig address of the multisig
+    */
+    constructor (bytes32 _root, uint256 _interval, address _cig, address _oldCig, address _multisig) {
+        root = _root;
+        admin = payable(msg.sender);
+        deployedAt = block.timestamp;
+        interval = _interval;
+        cig = IERC20(_cig);
+        oldCig = IERC20(_oldCig);
+        multisig = _multisig;
+    }
+    /**
+    * @dev verify verifies a merkle proof
+    * @param _to address used as part of a leaf
+    * @param _amount used as part of a lead
+    * @param _root hash
+    * @param _proof the merkle proof
+    */
+    function verify(
+        address _to,
+        uint256 _amount,
+        bytes32 _root,
+        bytes32[] memory _proof
+    ) public pure returns (bool) {
+        bytes32 computedHash = keccak256(abi.encodePacked(_to, _amount)); // leaf
+        for (uint256 i = 0; i < _proof.length; i++) {
+            bytes32 proofElement = _proof[i];
+            if (computedHash <= proofElement) {
+                // Hash(current computed hash + current element of the proof)
+                computedHash = keccak256(abi.encodePacked(computedHash, proofElement));
+            } else {
+                // Hash(current element of the proof + current computed hash)
+                computedHash = keccak256(abi.encodePacked(proofElement, computedHash));
+            }
+        }
+        // Check if the computed hash (root) is equal to the provided root
+        return computedHash == _root;
+    }
+
+    /**
+    * @dev
+    * @param _to address used as part of a leaf
+    * @param _amount used as part of a lead
+    * @param _proof the merkle proof
+    */
+    function rescue(address _to, uint256 _amount, bytes32[] memory _proof) external payable {
+        require (verify(_to, _amount, root, _proof), "invalid proof");            // verify merkle proof
+        uint256 claimed = claims[_to];
+        require (claimed < _amount, "already claimed everything");
+        uint256 max = _calcMax();                                                 // get max value we can claim
+        require (claimed < max, "max amount already claimed");
+        uint256 credit = _amount - claimed;                                       // credit is the amount yet to pay
+        if (credit > max) {
+            credit = max;                                                         // cap to the max
+        }
+        require (cig.balanceOf(address(this)) >= credit, "not enough CIG");
+        require (oldCig.transferFrom(_to, address(cig), credit), "need old CIG"); // take old CIG
+        if (cig.transfer(_to, credit)) {
+            claims[_to] += credit;                                                // record the claim
+        }
+        emit Rescue(msg.sender, _to, credit);
+    }
+    /**
+    * @dev kill self destructs the contract after 54 periods
+    */
+    function kill() external onlyAdmin {
+        require(_calcMax() > 5400000 ether, "cannot kill yet");
+        cig.transfer(admin, cig.balanceOf(address(this)));
+        selfdestruct(admin);
+    }
+    /**
+    * @dev _calcMax calculates the current max refund value
+    */
+    function _calcMax() view private returns (uint256) {
+        uint256 diff = block.timestamp - deployedAt;
+        if (diff < interval) {
+            return step;
+        }
+        return  step + step * (diff / interval);
+    }
+    /**
+    * @dev getInfo gets info for the UI
+    * @param _to address used as part of a leaf
+    * @param _amount used as part of a lead
+    * @param _proof the merkle proof
+    */
+    function getInfo(address _to, uint256 _amount, bytes32[] memory _proof) view public returns(uint256[] memory) {
+        uint[] memory ret = new uint[](9);
+        if (verify(_to, _amount, root, _proof)) {
+            ret[0] = 1;                                // 1 if proof was valid
+        }
+        ret[1] = cig.balanceOf(address(this));
+        ret[2] = claims[_to];                          // how much CIG already claimed
+        ret[3] = _calcMax();                           // max CIG can claim
+        ret[4] = deployedAt;                           // timestamp of deployment
+        ret[5] = block.timestamp;                      // current timestamp
+        ret[6] = cig.balanceOf(_to);                   // user's new cig balance
+        ret[7] = oldCig.balanceOf(_to);                // user's old cig balance
+        ret[8] = oldCig.allowance(_to, address(this)); // did user give approval for old cig?
+        return ret;
+    }
+}
+
+/*
+ * @dev Interface of the ERC20 standard as defined in the EIP.
+ * 0xTycoon was here
+ */
+interface IERC20 {
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address recipient, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+}
