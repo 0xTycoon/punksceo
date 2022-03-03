@@ -151,11 +151,11 @@ contract RescueMission {
         emit Rescue(msg.sender, _to, credit);
     }
     /**
-    * @dev kill self destructs the contract after 54 periods
+    * @dev kill self destructs the contract after 54 periods, sends unclaimed CIG to multisig
     */
     function kill() external onlyAdmin {
         require(_calcMax() > 5400000 ether, "cannot kill yet");
-        cig.transfer(admin, cig.balanceOf(address(this)));
+        cig.transfer(multisig, cig.balanceOf(address(this)));
         selfdestruct(admin);
     }
     /**
