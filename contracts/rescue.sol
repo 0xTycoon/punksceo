@@ -91,6 +91,9 @@ contract RescueMission {
         multisig = _multisig;
     }
 
+    /**
+    * @dev open sets the openedAt timestamp, can only be called once by admin
+    */
     function open() external onlyAdmin {
         require (openedAt == 0, "already opened");
         openedAt = block.timestamp;
