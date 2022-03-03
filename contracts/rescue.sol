@@ -57,7 +57,7 @@ contract RescueMission {
     mapping(address => uint256) public claims;
     uint256 constant step = 100000 ether;
     uint256 private immutable interval;
-    uint256 private immutable deployedAt;
+    uint256 private openedAt;
     IERC20 immutable public cig;
     IERC20 immutable public oldCig;
     address immutable public multisig;
@@ -85,11 +85,15 @@ contract RescueMission {
     constructor (bytes32 _root, uint256 _interval, address _cig, address _oldCig, address _multisig) {
         root = _root;
         admin = payable(msg.sender);
-        deployedAt = block.timestamp;
         interval = _interval;
         cig = IERC20(_cig);
         oldCig = IERC20(_oldCig);
         multisig = _multisig;
+    }
+
+    function open() external onlyAdmin {
+        require (openedAt == 0, "already opened");
+        openedAt = block.timestamp;
     }
     /**
     * @dev verify verifies a merkle proof
@@ -126,6 +130,7 @@ contract RescueMission {
     * @param _proof the merkle proof
     */
     function rescue(address _to, uint256 _amount, bytes32[] memory _proof) external payable {
+        require(openedAt > 0, "not opened");
         require (verify(_to, _amount, root, _proof), "invalid proof");            // verify merkle proof
         uint256 claimed = claims[_to];
         require (claimed < _amount, "already claimed everything");
@@ -154,7 +159,7 @@ contract RescueMission {
     * @dev _calcMax calculates the current max refund value
     */
     function _calcMax() view private returns (uint256) {
-        uint256 diff = block.timestamp - deployedAt;
+        uint256 diff = block.timestamp - openedAt;
         if (diff < interval) {
             return step;
         }
@@ -174,7 +179,7 @@ contract RescueMission {
         ret[1] = cig.balanceOf(address(this));
         ret[2] = claims[_to];                          // how much CIG already claimed
         ret[3] = _calcMax();                           // max CIG can claim
-        ret[4] = deployedAt;                           // timestamp of deployment
+        ret[4] = openedAt;                             // timestamp of opening
         ret[5] = block.timestamp;                      // current timestamp
         ret[6] = cig.balanceOf(_to);                   // user's new cig balance
         ret[7] = oldCig.balanceOf(_to);                // user's old cig balance

@@ -63,6 +63,7 @@ describe("Rescue", function () {
                 oldCig.address,
                 '0xd36ddAe4D9B4b3aAC4FDE830ea0c992752719a21');
             await rescue.deployed();
+            await rescue.open();
             let proof = tree.getHexProof(leavesIndex[owner.address]);
 
             let ok = await rescue.verify(
