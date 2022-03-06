@@ -87,7 +87,7 @@ however care should be taken that you do not use that branch if you fork it.
 To run tests
 
 ``` 
-$ npm install --save-dev hardhat
+$ npm install
 $ npx hardhat test
 ```
 
