@@ -130,7 +130,7 @@ contract RescueMission {
     * @dev
     * @param _amount amount to pay out
     * @param _to address used as part of a leaf
-    * @param _amount used as part of a lead
+    * @param _balance max total claimable, used as part of a leaf
     * @param _proof the merkle proof
     */
     function rescue(
