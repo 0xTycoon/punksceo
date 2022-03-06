@@ -31,7 +31,7 @@ The contract will start with a limit of CIG to be claimed (the `step` parameter)
 Then the limit will increase by the value of `step` every seconds set by `interval` parameter
 
 Mainnet values
-step    : 100k
+step    : 100k CIG
 interval: 864000 (10 days)
 multisig: 0xd36ddAe4D9B4b3aAC4FDE830ea0c992752719a21
 cig     : 0xcb56b52316041a62b6b5d0583dce4a8ae7a3c629
@@ -128,27 +128,33 @@ contract RescueMission {
 
     /**
     * @dev
+    * @param _amount amount to pay out
     * @param _to address used as part of a leaf
     * @param _amount used as part of a lead
     * @param _proof the merkle proof
     */
-    function rescue(address _to, uint256 _amount, bytes32[] memory _proof) external payable {
+    function rescue(
+        uint256 _amount,
+        address _to,
+        uint256 _balance,
+        bytes32[] memory _proof
+    ) external payable {
         require(openedAt > 0, "not opened");
-        require (verify(_to, _amount, root, _proof), "invalid proof");            // verify merkle proof
-        uint256 claimed = claims[_to];
-        require (claimed < _amount, "already claimed everything");
+        require (verify(_to, _balance, root, _proof), "invalid proof");            // verify merkle proof
+        uint256 claimed = claims[_to];                                             // read claim amount
+        require (claimed < _balance, "already claimed everything");
         uint256 max = _calcMax();                                                 // get max value we can claim
         require (claimed < max, "max amount already claimed");
-        uint256 credit = _amount - claimed;                                       // credit is the amount yet to pay
+        uint256 credit = _balance - claimed;                                       // credit is the amount yet to pay
         if (credit > max) {
             credit = max;                                                         // cap to the max
         }
-        require (cig.balanceOf(address(this)) >= credit, "not enough CIG");
-        require (oldCig.transferFrom(_to, address(cig), credit), "need old CIG"); // take old CIG
-        if (cig.transfer(_to, credit)) {
-            claims[_to] += credit;                                                // record the claim
+        require(_amount <= credit, "_amount exceeds credit");
+        require (oldCig.transferFrom(_to, address(cig), _amount), "need old CIG"); // take old CIG
+        if (cig.transfer(_to, _amount)) {
+            claims[_to] += _amount;                                                // record the claim
         }
-        emit Rescue(msg.sender, _to, credit);
+        emit Rescue(msg.sender, _to, _amount);
     }
     /**
     * @dev kill self destructs the contract after 54 periods, sends unclaimed CIG to multisig

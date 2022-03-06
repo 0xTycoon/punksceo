@@ -63,8 +63,15 @@ describe("Rescue", function () {
                 oldCig.address,
                 '0xd36ddAe4D9B4b3aAC4FDE830ea0c992752719a21');
             await rescue.deployed();
-            await rescue.open();
             let proof = tree.getHexProof(leavesIndex[owner.address]);
+            info = await rescue.getInfo(
+                owner.address,
+                peth(balances[owner.address]+""),
+                proof
+            );
+            console.log("it should be a large value: " + feth(info[3]));
+            await rescue.open();
+
 
             let ok = await rescue.verify(
                 owner.address,
@@ -99,12 +106,14 @@ describe("Rescue", function () {
 
             // can we claim 100 k?
             expect(await rescue.rescue(
+                peth("100000"),
                 owner.address,
                 peth(balances[owner.address]+""),
                 proof
                 )).to.emit(rescue, "Rescue").withArgs(owner.address, owner.address, peth("100000"));
 
             await expect(rescue.rescue(
+                peth("100000"),
                 owner.address,
                 peth(balances[owner.address]+""),
                 proof
@@ -159,17 +168,20 @@ describe("Rescue", function () {
             expect(parseInt(info2[3].toString())).to.greaterThan(100000); // max should increase now
             // claim another 100k
             expect(await rescue.rescue(
+                peth("200000"),
                 owner.address,
                 peth(balances[owner.address]+""),
                 proof
             )).to.emit(rescue, "Rescue").withArgs(owner.address, owner.address, peth("200000"));
 
-            //console.log(info2);
+            console.log("here: " + feth(info2[3]));
+
             expect(parseInt(info2[3].toString())).to.greaterThan(300000); // max should increase now
 
             await oldCig.connect(elizabeth).approve(rescue.address, unlimited);
             proof = tree.getHexProof(leavesIndex[elizabeth.address]);
             expect(await rescue.connect(elizabeth).rescue(
+                peth("300000"),
                 elizabeth.address,
                 peth(balances[elizabeth.address]+""),
                 proof
