@@ -181,11 +181,11 @@ contract RescueMission {
     * @param _proof the merkle proof
     */
     function getInfo(address _to, uint256 _amount, bytes32[] memory _proof) view public returns(uint256[] memory) {
-        uint[] memory ret = new uint[](9);
+        uint[] memory ret = new uint[](11);
         if (verify(_to, _amount, root, _proof)) {
             ret[0] = 1;                                // 1 if proof was valid
         }
-        ret[1] = cig.balanceOf(address(this));
+        ret[1] = cig.balanceOf(address(this));         // balance of CIG in this contract (donated)
         ret[2] = claims[_to];                          // how much CIG already claimed
         ret[3] = _calcMax();                           // max CIG can claim
         ret[4] = openedAt;                             // timestamp of opening
@@ -193,7 +193,26 @@ contract RescueMission {
         ret[6] = cig.balanceOf(_to);                   // user's new cig balance
         ret[7] = oldCig.balanceOf(_to);                // user's old cig balance
         ret[8] = oldCig.allowance(_to, address(this)); // did user give approval for old cig?
+        if (isContract(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2))) {       // are we on mainnet?
+            IERC20 lp = IERC20(address(0x7c5BbE30B5b1c1ABaA9e1Ee32e04a81a2B20a052));
+            ret[9] = lp.balanceOf(_to);                                              // lp balance (not staked)
+            IOldCigtoken old = IOldCigtoken(address(0x5A35A6686db167B05E2Eb74e1ede9fb5D9Cdb3E0));
+            (ret[10], ) = old.userInfo(_to);                                         // staking deposit balance
+        }
         return ret;
+    }
+
+    /**
+     * @dev Returns true if `account` is a contract.
+     *
+     * credits https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Address.sol
+     */
+    function isContract(address account) internal view returns (bool) {
+        uint256 size;
+        assembly {
+            size := extcodesize(account)
+        }
+        return size > 0;
     }
 }
 
@@ -210,4 +229,8 @@ interface IERC20 {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
+}
+
+interface IOldCigtoken is IERC20 {
+    function userInfo(address) external view returns (uint256, uint256);
 }

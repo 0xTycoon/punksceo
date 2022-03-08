@@ -23,11 +23,13 @@ describe("Rescue", function () {
         [owner, simp, elizabeth] = await ethers.getSigners();
         balances[owner.address] = 1000000; // add owner to a list of balances
         balances[elizabeth.address] = 300000;
+        balances["0xc43473fa66237e9af3b2d886ee1205b81b14b2c8"] = 1;
         RescueMission = await ethers.getContractFactory("RescueMission");
         getLeaves = function() {
             let ret = [];
             for (const address in balances) {
                 let n = ethers.utils.solidityPack([ "uint160", "uint256" ], [address, peth(balances[address]+"")])
+                console.log("xxxxx n:"+n)
                 n = keccak256(n);
                 ret.push(n);
                 leavesIndex[address] = n;
