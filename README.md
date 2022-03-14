@@ -102,7 +102,7 @@ branch name: `v2-currently-deployed`
 To run tests
 
 ``` 
-$ npm install --save-dev hardhat
+$ npm install
 $ npx hardhat test
 ```
 
