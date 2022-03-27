@@ -149,3 +149,71 @@ contract MasterChefV2 {
         rewarder.onSushiReward(0, _user, _user, 10 ether, balances[_user]);
     }
 }
+
+contract CigTokenMock {
+
+    string public name = "Cigarettes";
+    string public symbol = "CIG";
+    uint8 public decimals = 18;
+    uint256 public totalSupply = 0;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    address ceo;
+
+    constructor (address _ceo) {
+        ceo = _ceo;
+        balanceOf[_ceo] = balanceOf[_ceo] + 5 ether;
+        totalSupply = totalSupply + 5 ether;
+    }
+    function mint(address _to, uint256 _amount) public {
+        totalSupply = totalSupply + _amount;
+        balanceOf[_to] = balanceOf[_to] + _amount;
+        emit Transfer(address(0), _to, _amount);
+    }
+    function transfer(address _to, uint256 _value) public returns (bool) {
+        // require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
+        balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
+        balanceOf[_to] = balanceOf[_to] + _value;
+        emit Transfer(msg.sender, _to, _value);
+        return true;
+    }
+
+    function transferFrom(
+        address _from,
+        address _to,
+        uint256 _value
+    )
+    public
+    returns (bool)
+    {
+        //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
+        require(_value <= allowance[_from][msg.sender], "not approved");
+        balanceOf[_from] = balanceOf[_from] - _value;
+        balanceOf[_to] = balanceOf[_to] + _value;
+        emit Transfer(_from, _to, _value);
+        return true;
+    }
+
+    function approve(address _spender, uint256 _value) public returns (bool) {
+        allowance[msg.sender][_spender] = _value;
+        emit Approval(msg.sender, _spender, _value);
+        return true;
+    }
+
+    function The_CEO() external view returns (address) {
+        return ceo;
+    }
+    function CEO_punk_index() external view returns (uint256) {
+        return 4513;
+    }
+    function taxBurnBlock() external view returns (uint256) {
+        return block.number - 5;
+    }
+    function CEO_price() external view returns (uint256) {
+        return 1000000 ether;
+    }
+}

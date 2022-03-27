@@ -4,6 +4,8 @@
 // Bribe punk holders to become CEOs
 pragma solidity ^0.8.11;
 
+import "hardhat/console.sol";
+
 /*
 
 expireAfterSec 7776000 90 days
@@ -43,8 +45,6 @@ contract Bribes {
     // balance users address => (bribe id => balance)
     mapping(address => mapping(uint256 => uint256)) public deposit;
 
-    mapping(address => uint256[]) userBribeList;
-
     mapping(uint256 => Bribe) public bribes;
     uint256[20] public bribesProposed;
     uint256[20] public bribesExpired;
@@ -71,6 +71,7 @@ contract Bribes {
     event Defunct(uint256 id); // a bribe became defunct
     event Increased(uint256 id, uint256 amount, address indexed from); // increase a bribe
     event Refunded(uint256 id, uint256 amount, address indexed to);
+    event MinAmount(uint256 amount);
 
 
     /**
@@ -90,9 +91,13 @@ contract Bribes {
         DurationLimitSec = _duration * _claimDays;
     }
 
+    /**
+    * @dev updateMinAmount updates the minimum amount required for a new bribe prorposal
+    */
     function updateMinAmount() external {
         require (block.number > cig.taxBurnBlock(), "must be CEO for at least 1 block");
         minAmount = cig.CEO_price() / 10;
+        emit MinAmount(minAmount);
     }
 
     /**
@@ -330,6 +335,30 @@ contract Bribes {
             return State.Expired;
         }
         return _b.state;
+    }
+
+    /**
+    * @dev getInfo returns the current state
+    */
+    function getInfo(address _user, uint256 _bribeID) view public returns (
+        uint256[] memory,
+        uint256[20] memory,
+        uint256[20] memory,
+        Bribe memory
+    ) {
+        uint[] memory ret = new uint[](11);
+        Bribe memory ab;
+        ret[0] = cig.balanceOf(address(this));         // balance of CIG in this contract
+        ret[1] = acceptedBribe;
+        if (acceptedBribe > 0) {
+            ab = bribes[acceptedBribe];
+        }
+        if (_user != address(0)) {
+            ret[2] = deposit[_user][_bribeID];  // balance of user deposit
+        }
+
+        return (ret, bribesProposed, bribesExpired, ab);
+
     }
 
 }
