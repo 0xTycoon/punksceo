@@ -174,17 +174,33 @@ describe("Bribes", function () {
             let ret, proposed, expired, bribe;
             [ret, proposed, expired, bribe] = await bribes.getInfo(
                 owner.address, 1);
-
             let perSec = bribe.raised.div(ret[4]);
             let elapsedSec = ret[3].sub(bribe.updatedAt);
 
             console.log("claimable:::: " + elapsedSec.mul(perSec) + " elapsed:" + elapsedSec, " per sec:" + feth(perSec)); // next second, it will be double.
 
+            await sleep(1000);
+
             expect (await bribes.payout()).to.emit(bribes, "Paid").withArgs("2", peth("80000"));
+
+            await sleep(3000);
+
             expect (await bribes.payout()).to.emit(bribes, "Paid").withArgs("2", peth("40000"));
 
 
-        })
+        });
+
+        it("expire bribe", async function () {
+
+            let ret, proposed, expired, bribe;
+            [ret, proposed, expired, bribe] = await bribes.getInfo(
+                owner.address, 1);
+
+           // console.log(expired);
+
+            expect(await bribes.refund(20, 0, 1)).to.emit(bribes, "Refunded");
+
+        });
 
     });
 

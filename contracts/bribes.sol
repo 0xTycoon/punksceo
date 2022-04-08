@@ -158,6 +158,7 @@ contract Bribes {
         b.updatedAt = block.timestamp;
         bribesProposed[_i] = bribeID;
         tvl += _amount;
+        deposit[msg.sender][bribeID] = _amount;
         emit New(bribeID, _amount, _target, _punkID);
     }
 
@@ -276,13 +277,18 @@ contract Bribes {
             return state; // "all claimed"
         }
         uint256 claimable = (r / DurationLimitSec) * (block.timestamp - _b.updatedAt);
+        if (claimable > r) {
+            claimable = r; // cap
+        }
+        if (claimable > _b.claimed) {
+            claimable = claimable - _b.claimed;
+        } else {
+            claimable = 0;
+        }
         if (claimable == 0) {
             return state;
         }
-        if (claimable > r) {
-            claimable = r;
-        }
-        claimable = claimable - _b.claimed;
+        // pay out
         _b.claimed += claimable;
         address target = punks.punkIndexToAddress(_b.punkID);
         if (target == _ceo) {
@@ -326,6 +332,11 @@ contract Bribes {
         }
     }
 
+    /**
+    * @dev _sendRefund transfers deposited tokens back to the user whose proposal expired
+    * @param the _id of the bribe proposal
+    * @paran _b the Bribe to process
+    */
     function _sendRefund(uint256 _id, Bribe storage _b) internal {
         uint256 _amount = deposit[msg.sender][_id];
         if (_amount == 0) {
