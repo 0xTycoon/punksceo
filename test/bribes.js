@@ -32,7 +32,7 @@ describe("Bribes", function () {
         await cig.deployed();
 
         cig.mint(simp.address, peth("1000000"));
-        cig.mint(owner.address, peth("1000000"));
+        cig.mint(owner.address, peth("10000000"));
         cig.mint(elizabeth.address, peth("1000000"));
 
         PunkMock = await ethers.getContractFactory("PunkMock");
@@ -62,7 +62,6 @@ describe("Bribes", function () {
 
 
             expect (await bribes.newBribe(
-                owner.address, // target
                 4513, // punk id
                 peth("100000"), // amount
                 0, // index of bribesProposed
@@ -79,16 +78,6 @@ describe("Bribes", function () {
 
             // punk id incorrect
             await expect ( bribes.newBribe(
-                owner.address, // target
-                2513, // punk id incorrect
-                peth("100000"), // amount
-                0, // index of bribesProposed
-                20 // expiredBribes (will be ignored)
-            )).to.be.revertedWith("punkID not owned by target");
-
-            // punk id incorrect
-            await expect ( bribes.newBribe(
-                owner.address, // target
                 10000, // punk id incorrect
                 peth("100000"), // amount
                 0, // index of bribesProposed
@@ -97,7 +86,6 @@ describe("Bribes", function () {
 
             // amount incorrect
             await expect ( bribes.newBribe(
-                owner.address, // target
                 4513, // punk id
                 peth("99999"), // amount incorrect
                 0, // index of bribesProposed
@@ -106,7 +94,6 @@ describe("Bribes", function () {
 
             // nothing is expired yet
             await expect ( bribes.newBribe(
-                owner.address, // target
                 4513, // punk id
                 peth("100000"), // amount
                 0, // index of bribesProposed
@@ -117,7 +104,6 @@ describe("Bribes", function () {
 
             // i = 0, but there is a proposal there, so we cannot newBribe
             await expect ( bribes.newBribe(
-                owner.address, // target
                 4513, // punk id
                 peth("100000"), // amount
                 0, // index of bribesProposed
@@ -125,7 +111,6 @@ describe("Bribes", function () {
             )).to.be.revertedWith("bribesProposed at _i not empty");
 
             expect ( await bribes.newBribe(
-                owner.address, // target
                 4513, // punk id
                 peth("100000"), // amount
                 0, // index of bribesProposed
@@ -138,7 +123,27 @@ describe("Bribes", function () {
             expect(expired[0]).to.be.equal("1"); // proposal 1 expired
             expect(proposed[0]).to.be.equal("2"); // prposal 2 is the new proposal
 
-            //console.log(proposed);
+            // populate the remaining slots
+
+            let id = 3;
+            for (let i = 1; i < 20; i++) {
+                console.log("populate:" + i);
+                if (i === 10) continue;
+                expect (await bribes.newBribe(
+                    i+4000, // punk id
+                    peth("100000"), // amount
+                    i, // index of bribesProposed
+                    20 // expiredBribes (will be ignored)
+                )).to.emit(bribes, "New")
+                    .withArgs(id, peth("100000"), owner.address, i+4000);
+                id++;
+            }
+            [ret, proposed, expired, bribe] = await bribes.getInfo(
+                owner.address, 1);
+            // by now we should have `expired[0] == 1`
+            // and `proposed` all populated with id randing from 2 .. 21
+            // with `proposed[10]` being empty
+            console.log(proposed);
         });
 
         it("increase bribe", async function () {
@@ -149,7 +154,7 @@ describe("Bribes", function () {
                 .to.be.revertedWith("no such bribe active");
 
             await expect (bribes.increase(0, 2, peth("0")))
-                .to.be.revertedWith("need to send cig");
+                .to.be.revertedWith("not enough cig");
 
         });
 
@@ -190,17 +195,22 @@ describe("Bribes", function () {
 
         });
 
-        it("expire bribe", async function () {
+        it("refund expired bribe", async function () {
 
             let ret, proposed, expired, bribe;
             [ret, proposed, expired, bribe] = await bribes.getInfo(
                 owner.address, 1);
-
+            expect(expired[0]).to.be.equal(1);
            // console.log(expired);
 
-            expect(await bribes.refund(20, 0, 1)).to.emit(bribes, "Refunded");
+            expect(await bribes.refund(20, 0, 1)).to.emit(bribes, "Refunded").withArgs(1, peth("100000"), owner.address);
+
+
 
         });
+
+
+
 
     });
 

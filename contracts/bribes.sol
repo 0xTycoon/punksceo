@@ -63,7 +63,7 @@ contract Bribes {
         Defunct // never been accepted, expired -> defunct
     }
 
-    event New(uint256 id, uint256 amount, address target, uint256 punkID);
+    event New(uint256 id, uint256 amount, address indexed from, uint256 punkID);
     event Burned(uint256 id, uint256 amount); // bribe payment burned
     event Paid(uint256 id, uint256 amount); // bribe payment sent
     event Paidout(uint256 id); // bribe all paidout
@@ -108,7 +108,6 @@ contract Bribes {
     * next, if _i is less than 20, it will attempt to expire a proposal in the
     * bribesProposed[_i] slot, moving to bribesExpired[_j] which now should be clear (0). (Reverting if not clear)
     * Finally if bribesProposed[_i] then create a new proposal
-    * @param _target the address to offer the bribe to
     * @param _punkID the punkID to offer the bribe to
     * @param _amount the amount to offer
     * @param _i position in bribesProposed to insert new bribe. Expire any existing bribe
@@ -116,14 +115,12 @@ contract Bribes {
     *
     */
     function newBribe(
-        address _target,
         uint256 _punkID,
         uint256 _amount,
         uint256 _i,
         uint256 _j
     ) external {
         require (_punkID < 10000, "invalid _punkID");
-        require (_target == punks.punkIndexToAddress(_punkID), "punkID not owned by target");
         require(_amount >= minAmount, "not enough cig");
         require(cig.transferFrom(msg.sender, address(this), _amount), "cannot send cig");
         uint256 bribeID;
@@ -159,7 +156,7 @@ contract Bribes {
         bribesProposed[_i] = bribeID;
         tvl += _amount;
         deposit[msg.sender][bribeID] = _amount;
-        emit New(bribeID, _amount, _target, _punkID);
+        emit New(bribeID, _amount, msg.sender, _punkID);
     }
 
     /**
@@ -172,7 +169,8 @@ contract Bribes {
         uint256 id = bribesProposed[_i];
         require(id > 0, "no such bribe active");
         require(id == _id, "_id not found");
-        require(_amount > 0, "need to send cig");
+        //require(_amount > 0, "need to send cig");
+        require(_amount >= minAmount, "not enough cig");
         Bribe storage b = bribes[id];
         b.raised += _amount;
         b.updatedAt = block.timestamp;
@@ -183,9 +181,7 @@ contract Bribes {
     }
 
     /**
-    * @dev expire expires a bribe. The bribe is considered expired if either:
-    * 1. Not updated for more than DurationLimitSec
-    * 2. The owner of the punk changed (target no longer owns the punk)
+    * @dev expire expires a bribe. The bribe is considered expired if not updated for more than DurationLimitSec
     * @param _i the position in bribesProposed to get the id of the bibe to expire
     * @param _j the position in bribesExpired to place the expired bribe to
     */
@@ -243,7 +239,7 @@ contract Bribes {
     }
 
     /**
-    * @dev pay sends the CIG pooled in a bribe to the current target of the bribe
+    * @dev pay sends the CIG pooled in a bribe to the current owner of the punk
     * checks to make sure it can be called once per block
     * It reads the id of the current bribe
     * checks to make sure there's still balance to pay out
@@ -334,8 +330,8 @@ contract Bribes {
 
     /**
     * @dev _sendRefund transfers deposited tokens back to the user whose proposal expired
-    * @param the _id of the bribe proposal
-    * @paran _b the Bribe to process
+    * @param _id of the bribe proposal
+    * @param _b the Bribe to process
     */
     function _sendRefund(uint256 _id, Bribe storage _b) internal {
         uint256 _amount = deposit[msg.sender][_id];
