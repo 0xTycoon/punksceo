@@ -30,7 +30,7 @@ contract Bribes {
 
     ICigtoken immutable public cig;
     ICryptoPunks immutable public punks;
-
+    uint256 immutable private minBlocks;
     struct Bribe {
         uint256 punkID;
         uint256 raised;
@@ -60,18 +60,18 @@ contract Bribes {
         Expired,
         Accepted,
         PaidOut, // accepted -> paid out
-        Defunct // never been accepted, expired -> defunct
+        Defunct  // never been accepted, expired -> defunct
     }
 
-    event New(uint256 id, uint256 amount, address indexed from, uint256 punkID);
-    event Burned(uint256 id, uint256 amount); // bribe payment burned
-    event Paid(uint256 id, uint256 amount); // bribe payment sent
-    event Paidout(uint256 id); // bribe all paidout
-    event Accepted(uint256 id); // bribe accepted
-    event Expired(uint256 id); // a bribe expired
-    event Defunct(uint256 id); // a bribe became defunct
-    event Increased(uint256 id, uint256 amount, address indexed from); // increase a bribe
-    event Refunded(uint256 id, uint256 amount, address indexed to);
+    event New(uint256 indexed id, uint256 amount, address indexed from, uint256 punkID); // new bribe
+    event Burned(uint256 indexed id, uint256 amount);                                    // bribe payment burned
+    event Paid(uint256 indexed id, uint256 amount);                                      // bribe payment sent
+    event Paidout(uint256 indexed id);                                                   // bribe all paidout
+    event Accepted(uint256 indexed id);                                                  // bribe accepted
+    event Expired(uint256 indexed id);                                                   // a bribe expired
+    event Defunct(uint256 indexed id);                                                   // a bribe became defunct
+    event Increased(uint256 indexed id, uint256 amount, address indexed from);           // increase a bribe
+    event Refunded(uint256 indexed id, uint256 amount, address indexed to);
     event MinAmount(uint256 amount);
     event Slogan(uint256, bytes32);
 
@@ -81,23 +81,27 @@ contract Bribes {
     * @param _punks address of the punks contract
     * @param _claimDays how many days the CEO has to claim the bribe
     * @param _duration, eg 86400 (seconds in a day)
+    * @param _minBlocks that they must be CEO for eg 3600
     */
     constructor(
         address _cig,
         address _punks,
         uint256 _claimDays,
-        uint256 _duration) {
+        uint256 _duration,
+        uint256 _minBlocks
+        ) {
         cig = ICigtoken(_cig);
         punks = ICryptoPunks(_punks);
         durationLimitDays = _claimDays;
         DurationLimitSec = _duration * _claimDays;
+        minBlocks = _minBlocks;
     }
 
     /**
     * @dev updateMinAmount updates the minimum amount required for a new bribe prorposal
     */
     function updateMinAmount() external {
-        require (block.number > cig.taxBurnBlock(), "must be CEO for at least 1 block");
+        require (block.number - cig.taxBurnBlock() > minBlocks, "must be CEO for at least x block");
         minAmount = cig.CEO_price() / 10;
         emit MinAmount(minAmount);
     }
@@ -217,7 +221,7 @@ contract Bribes {
         Bribe storage b = bribes[id];
         require (ceo == msg.sender, "must be called by the CEO");
         require (cig.CEO_punk_index() == b.punkID, "punk not CEO");
-        require (block.number > cig.taxBurnBlock(), "must be CEO for at least 1 block");
+        require (block.number - cig.taxBurnBlock() > minBlocks, "must be CEO for at least x block");
         bribesProposed[_i] = 0; // remove from proposed
         b.state = State.Accepted;
         acceptedBribeID = id;
@@ -395,27 +399,43 @@ contract Bribes {
 
     /**
     * @dev getInfo returns the current state
+    * @param _user the address to reyrn balances for
     */
-    function getInfo(address _user, uint256 _bribeID) view public returns (
-        uint256[] memory, // ret
+    function getInfo(address _user) view public returns (
+        uint256[] memory,   // ret
         uint256[20] memory, // bribesProposed
         uint256[20] memory, // bribesExpired
-        Bribe memory // accepted acceptedBribe (if any)
+        Bribe memory,       // accepted acceptedBribe (if any)
+        Bribe[] memory,     // array of Bribe 0-19 a proposed, 20-39 are expired
+        uint256[] memory    // balances of any deposits for the _user
     ) {
         uint[] memory ret = new uint[](6);
+        uint[] memory balances = new uint[](40);
+        Bribe[] memory all = new Bribe[](40);
         Bribe memory ab;
+        for (uint256 i = 0; i <  40; i++) {
+            uint256 id;
+            if (i < 20) {
+                id = bribesProposed[i];
+            } else {
+                id = bribesExpired[i-20];
+            }
+            if (id > 0) {
+                all[i] = bribes[id];
+                if (_user != address(0)) {
+                    balances[i] = deposit[_user][id];
+                }
+            }
+        }
         ret[0] = cig.balanceOf(address(this));         // balance of CIG in this contract
         ret[1] = acceptedBribeID;
         if (acceptedBribeID > 0) {
             ab = bribes[acceptedBribeID];
         }
-        if (_user != address(0)) {
-            ret[2] = deposit[_user][_bribeID];  // balance of user deposit
-        }
-        ret[3] = block.timestamp;
-        ret[4] = DurationLimitSec; // claim duration limit, in seconds
-        ret[5] = tvl;
-        return (ret, bribesProposed, bribesExpired, ab);
+        ret[2] = block.timestamp;
+        ret[3] = DurationLimitSec;                     // claim duration limit, in seconds
+        ret[4] = tvl;
+        return (ret, bribesProposed, bribesExpired, ab, all, balances);
     }
 
 }

@@ -44,7 +44,9 @@ describe("Bribes", function () {
             cig.address,
             pm.address,
             1,  // claim days how many days the CEO has to claim the bribe
-            5); // duration eg 86400 (seconds in a day)
+            5,
+            0
+            ); // duration eg 86400 (seconds in a day)
         await bribes.deployed();
     });
 
@@ -72,7 +74,7 @@ describe("Bribes", function () {
             // let's check state
             let ret, proposed, expired, bribe;
             [ret, proposed, expired, bribe] = await bribes.getInfo(
-                owner.address, 1);
+                owner.address);
             expect(proposed[0]).to.be.equal("1");
             expect(proposed[1]).to.be.equal("0");
 
@@ -119,9 +121,9 @@ describe("Bribes", function () {
                 .to.emit(bribes, "New");
 
             [ret, proposed, expired, bribe] = await bribes.getInfo(
-                owner.address, 1);
+                owner.address);
             expect(expired[0]).to.be.equal("1"); // proposal 1 expired
-            expect(proposed[0]).to.be.equal("2"); // prposal 2 is the new proposal
+            expect(proposed[0]).to.be.equal("2"); // proposal 2 is the new proposal
 
             // populate the remaining slots
 
@@ -139,7 +141,7 @@ describe("Bribes", function () {
                 id++;
             }
             [ret, proposed, expired, bribe] = await bribes.getInfo(
-                owner.address, 1);
+                owner.address);
             // by now we should have `expired[0] == 1`
             // and `proposed` all populated with id randing from 2 .. 21
             // with `proposed[10]` being empty
@@ -156,6 +158,9 @@ describe("Bribes", function () {
             await expect (bribes.increase(0, 2, peth("0")))
                 .to.be.revertedWith("not enough cig");
 
+            await cig.connect(elizabeth).approve(bribes.address, unlimited);
+            expect (await bribes.connect(elizabeth).increase(4, 6, peth("100000"))).to.emit(bribes, "Increased");
+
         });
 
         it("accept bribe", async function () {
@@ -163,7 +168,7 @@ describe("Bribes", function () {
                 .to.emit(bribes, "Accepted").withArgs(2);
             let ret, proposed, expired, bribe;
             [ret, proposed, expired, bribe] = await bribes.getInfo(
-                owner.address, 1);
+                owner.address);
             expect(proposed[0]).to.be.equal("0"); // should be cleared
             expect(ret[1]).to.be.equal("2");
             expect(bribe.raised).to.be.equal(peth("200000"));
@@ -178,9 +183,9 @@ describe("Bribes", function () {
 
             let ret, proposed, expired, bribe;
             [ret, proposed, expired, bribe] = await bribes.getInfo(
-                owner.address, 1);
-            let perSec = bribe.raised.div(ret[4]);
-            let elapsedSec = ret[3].sub(bribe.updatedAt);
+                owner.address);
+            let perSec = bribe.raised.div(ret[3]);
+            let elapsedSec = ret[2].sub(bribe.updatedAt);
 
             console.log("claimable:::: " + elapsedSec.mul(perSec) + " elapsed:" + elapsedSec, " per sec:" + feth(perSec)); // next second, it will be double.
 
@@ -199,13 +204,49 @@ describe("Bribes", function () {
 
             let ret, proposed, expired, bribe;
             [ret, proposed, expired, bribe] = await bribes.getInfo(
-                owner.address, 1);
+                owner.address);
             expect(expired[0]).to.be.equal(1);
            // console.log(expired);
 
-            expect(await bribes.refund(20, 0, 1)).to.emit(bribes, "Refunded").withArgs(1, peth("100000"), owner.address);
+            expect(await bribes.refund(20, 0, 1))
+                .to.emit(bribes, "Refunded").withArgs(1, peth("100000"), owner.address)
+                .to.emit(bribes, "Defunct");
+        });
 
+        it("set slogan", async function () {
+            let slogan = "hello world";
+            let slogan32 = new Uint8Array(32);
+            for (let i = 0; i < slogan.length; i++) {
+                slogan32[i] = slogan.charCodeAt(i);
+            }
 
+            expect(await bribes.setSlogan(3, slogan32)).to.emit(bribes, "Slogan");
+        });
+
+        it("test expire", async function () {
+            let ret, proposed, expired, bribe, data, balances;
+
+            [ret, proposed, expired, bribe, data, balances] = await bribes.getInfo(
+                owner.address);
+            let id = proposed[4];
+/*
+todo: this ill increase expire, move uo
+            await cig.connect(elizabeth).approve(bribes.address, unlimited);
+            expect (await bribes.connect(elizabeth).increase(4, 6, peth("100000"))).to.emit(bribes, "Increased");
+*/
+            expect(await bribes.expire(4, 4)).to.emit(bribes, "Expired")
+                .to.emit(bribes, "Refunded").withArgs(
+                    6,
+                    peth("100000"),
+                    owner.address);
+
+            [ret, proposed, expired, bribe, data, balances] = await bribes.getInfo(
+                owner.address);
+
+            expect(data[24].state).to.be.equal(2);
+
+            expect(await bribes.connect(elizabeth).refund(20, 4, 6)).to.emit(bribes, "Refunded")
+                .to.emit(bribes, "Defunct");
 
         });
 
