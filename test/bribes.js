@@ -230,11 +230,7 @@ describe("Bribes", function () {
             [ret, proposed, expired, bribe, data, balances] = await bribes.getInfo(
                 owner.address);
             let id = proposed[4];
-/*
-todo: this ill increase expire, move uo
-            await cig.connect(elizabeth).approve(bribes.address, unlimited);
-            expect (await bribes.connect(elizabeth).increase(4, 6, peth("100000"))).to.emit(bribes, "Increased");
-*/
+
             expect(await bribes.expire(4, 4)).to.emit(bribes, "Expired")
                 .to.emit(bribes, "Refunded").withArgs(
                     6,

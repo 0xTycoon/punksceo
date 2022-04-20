@@ -441,7 +441,7 @@ contract Bribes {
         }
         ret[2] = block.timestamp;
         ret[3] = ClaimLimitSec;                     // claim duration limit, in seconds
-        //ret[4] = tvl;
+
         if (acceptedBribeID > 0) {
             uint256 r = ab.raised;
             uint256 claimable = (r / ClaimLimitSec) * (block.timestamp - ab.updatedAt);
@@ -453,7 +453,7 @@ contract Bribes {
             } else {
                 claimable = 0;
             }
-            ret[5] = claimable;
+            ret[4] = claimable;
         }
         return (ret, bribesProposed, bribesExpired, ab, all, balances);
     }
