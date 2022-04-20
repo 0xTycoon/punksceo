@@ -44,6 +44,7 @@ describe("Bribes", function () {
             cig.address,
             pm.address,
             1,  // claim days how many days the CEO has to claim the bribe
+            1, // state days
             5,
             0
             ); // duration eg 86400 (seconds in a day)
@@ -249,9 +250,6 @@ todo: this ill increase expire, move uo
                 .to.emit(bribes, "Defunct");
 
         });
-
-
-
 
     });
 

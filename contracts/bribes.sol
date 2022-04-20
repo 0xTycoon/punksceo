@@ -8,21 +8,33 @@ import "hardhat/console.sol";
 
 /*
 
-expireAfterSec 7776000 90 days
+Creating and contributing to Bribe Proposals:
+1. A new bribe, with a CIG contribution, is created for the Cryptopunk which you'd like to see become the CEO.
+2. 20 bribes can exist as Proposed at one time.
+3. 20 bribes can exist as Expired at one time.
+4. The minimum bribe contribution amount is set to 10% of the asking price of the "CEO of Cryptopunks" title.
+(This is to prevent spam, and ensure serious contributions only)
+5. Anybody can increase a proposed bribe by contributing more of their CIG
+6. A proposed bribe expires after 30 days of no additional contributions
+7. Contributors may not withdraw their CIG from a proposed bribe, they must wait until it is expired.
+8. A bribe stays in the expired list for 30 days until it is defunct.
+9. Defunct bribes will be unlisted from the interface.
+10. Contributors will continue to be able to withdraw their deposit from bribes in the Defunct state
+11. A bribe can have a "slogan" set by the address that holds a punk specified in the Bribe
 
-1. A new bribe is created with the address of who you'd like to become the CEO, plus a minimum bribe amount.
-2. Cannot create a new bribe if there is already an existing bribe for that address, either active or partially claimed.
-3. 20 bribes active at one time.
-4. Others can deposit their own funds into an existing bribe.
-Minimum deposit to a bribe must always be 10% of the current CEO asking price.
-5. While a bribe is active, no deposits can be withdrawn.
-6. A bribe can be deactivated after it had no new deposits in the last 30 days.
-When a bribe is deactivated, it gets placed out of the active bribes list and the funds can be withdrawn
-Claiming bribes: The CEO who is the subject of a bribe will be able to withdraw from the bribe after claiming it, subject to a linear vesting schedule.
-CEO bribe withdrawal vesting: 10% of the total, every 2 epochs
-The CEO can only withdraw if they are the CEO.
-If the CEO hasn't withdrawn all their funds from the bribe, and their last withdrawal was more than 90 days ago, the bribe funds are forfeited and burned.
-Minimum bribe amount is 10% of the current CEO asking price. This value is set by querying the CEO_price value of the CIG token contract. (A requirement is that the CEO must have at least 3600 blocks worth of CIG to be burned)
+Taking Bribes:
+12. A CEO must be a CEO for at least 50 blocks before taking the title
+12. A CEO can take a bribe if no other bribe is active (acceptedBribeID is 0)
+13. The CEO's address must own the punk specified in the bribe.
+14. Once a bribe is active, it gets removed from the Proposed list,
+and the CEO can call the payout function to get paid.
+(But there is a twist: if the CEO loses their CEO title after accepting the bribe, any
+unclaimed payment may be burned! The reason why it's burned is to discourage other CEOs from taking over)
+15. Thee payment is based on a 10 day linear vesting schedule.
+16. After 10 days, the active bribe may be 100% paid out. It then goes in to a PaidOut state.
+
+Refunds:
+17. CIG contributions can be refunded from bribes that have been expired or defunct.
 
 **/
 
@@ -33,15 +45,13 @@ contract Bribes {
     uint256 immutable private minBlocks;
     struct Bribe {
         uint256 punkID;
-        uint256 raised;
-        uint256 claimed;
-        State state;
-        uint256 updatedAt;
-        bytes32 slogan;
+        uint256 raised;   // amount of CIG raised for the bribe, can only increase
+        uint256 claimed;  // amount of CIG claimed by the holder of the punk, (or burned), only after bribe taken
+        State state;      // see the State enum
+        uint256 updatedAt;// timestamp when state changed or amount raised increased
+        bytes32 slogan;   // a message that can be set only by the punk owner
     }
-
-    uint256 public minAmount;
-    uint256 public tvl;
+    uint256 public minAmount; // minimum contribution amount
 
     // balance users address => (bribe id => balance)
     mapping(address => mapping(uint256 => uint256)) public deposit;
@@ -49,18 +59,19 @@ contract Bribes {
     mapping(uint256 => Bribe) public bribes;
     uint256[20] public bribesProposed;
     uint256[20] public bribesExpired;
-    uint256 public bribeHeight;
-    uint256 public acceptedBribeID;
+    uint256 public bribeHeight;                 // the next Bribe ID to be assigned
+    uint256 public acceptedBribeID;             // rge curently active bribe (may be 0)
     uint256 public immutable durationLimitDays; // how many days the CEO has to claim the bribe
-    uint256 private immutable DurationLimitSec; // claimDays expressed in seconds
+    uint256 private immutable ClaimLimitSec;    // claimDays expressed in seconds
+    uint256 private immutable StateExpirySec;   // state expiry expressed in seconds
 
     enum State {
-        Free,
-        Proposed,
-        Expired,
-        Accepted,
-        PaidOut, // accepted -> paid out
-        Defunct  // never been accepted, expired -> defunct
+        Free,     // bribe just created (in memory)
+        Proposed, // bribe stored in the bribesProposed list
+        Expired,  // bribe stored in the bribesExpired list
+        Accepted, // bribe taken by the CEO
+        PaidOut,  // bribe fully paid out (accepted -> paid out)
+        Defunct   // bribe taken out of the bribesExpired list (expired -> defunct)
     }
 
     event New(uint256 indexed id, uint256 amount, address indexed from, uint256 punkID); // new bribe
@@ -80,20 +91,23 @@ contract Bribes {
     * @param _cig address of the Cigarettes contract
     * @param _punks address of the punks contract
     * @param _claimDays how many days the CEO has to claim the bribe
+    * @param _stateDays how many days before proposal expires in a state
     * @param _duration, eg 86400 (seconds in a day)
-    * @param _minBlocks that they must be CEO for eg 3600
+    * @param _minBlocks that they must be CEO for eg 50
     */
     constructor(
-        address _cig,
-        address _punks,
-        uint256 _claimDays,
-        uint256 _duration,
-        uint256 _minBlocks
+        address _cig,       // 0xcb56b52316041a62b6b5d0583dce4a8ae7a3c629
+        address _punks,     // eg. 0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb
+        uint256 _claimDays, // eg. 10
+        uint256 _stateDays, // eg. 30
+        uint256 _duration,  // eg. 86400
+        uint256 _minBlocks  // eg. 50
         ) {
         cig = ICigtoken(_cig);
         punks = ICryptoPunks(_punks);
         durationLimitDays = _claimDays;
-        DurationLimitSec = _duration * _claimDays;
+        ClaimLimitSec = _duration * _claimDays;
+        StateExpirySec = _duration * _stateDays;
         minBlocks = _minBlocks;
     }
 
@@ -131,7 +145,6 @@ contract Bribes {
         // Purge from bribesExpired, defunct _j if expired
         if (_j < 20) {
             bribeID = bribesExpired[_j];
-            //require(bribeID > 0, "bribesExpired is empty at _j");
             if (bribeID > 0) {
                 // There is something in there? We must purge this bribe
                 Bribe storage exb = bribes[bribeID];
@@ -141,7 +154,6 @@ contract Bribes {
             if (_i < 20) {
                 // Purge from bribesProposed: if slot not empty, expire old bribe
                 bribeID = bribesProposed[_i];
-                //require(bribeID > 0, "bribesProposed is empty at _i");
                 if (bribeID > 0) {
                     // There is something there? We must expire
                     Bribe storage ob = bribes[bribeID];
@@ -158,7 +170,6 @@ contract Bribes {
         b.state = State.Proposed;
         b.updatedAt = block.timestamp;
         bribesProposed[_i] = bribeID;
-        tvl += _amount;
         deposit[msg.sender][bribeID] = _amount;
         emit New(bribeID, _amount, msg.sender, _punkID);
     }
@@ -173,14 +184,12 @@ contract Bribes {
         uint256 id = bribesProposed[_i];
         require(id > 0, "no such bribe active");
         require(id == _id, "_id not found");
-        //require(_amount > 0, "need to send cig");
         require(_amount >= minAmount, "not enough cig");
         Bribe storage b = bribes[id];
         b.raised += _amount;
         b.updatedAt = block.timestamp;
         require(cig.transferFrom(msg.sender, address(this), _amount), "cannot send cig");
         deposit[msg.sender][id] += _amount; // record deposit
-        tvl += _amount;
         emit Increased(id, _amount, msg.sender);
     }
 
@@ -276,7 +285,7 @@ contract Bribes {
         if (_b.claimed == r) {
             return state; // "all claimed"
         }
-        uint256 claimable = (r / DurationLimitSec) * (block.timestamp - _b.updatedAt);
+        uint256 claimable = (r / ClaimLimitSec) * (block.timestamp - _b.updatedAt);
         if (claimable > r) {
             claimable = r; // cap
         }
@@ -294,7 +303,6 @@ contract Bribes {
         if (target == _ceo) {
             // if the target of the bribe is the current CEO, send to them
             cig.transfer(target, claimable);
-            tvl -= claimable;
             emit Paid(_id, claimable);
         } else {
             cig.transfer(address(this), claimable); // burn it!
@@ -345,7 +353,6 @@ contract Bribes {
         _b.raised -= _amount;
         deposit[msg.sender][_id] -= _amount; // record refund
         cig.transfer(msg.sender, _amount);
-        tvl -= _amount;
         emit Refunded(_id, _amount, msg.sender);
     }
 
@@ -362,7 +369,7 @@ contract Bribes {
             return s;
         }
         // if the balance is 0, we can defunct early
-        if (_b.raised == 0 || ((block.timestamp - _b.updatedAt) > DurationLimitSec)) {
+        if (_b.raised == 0 || ((block.timestamp - _b.updatedAt) > StateExpirySec)) {
             _b.state = State.Defunct;
             bribesExpired[_index] = 0;
             _b.updatedAt = block.timestamp;
@@ -384,7 +391,7 @@ contract Bribes {
         uint256 _j,
         Bribe storage _b
     ) internal returns (State s) {
-        if ((block.timestamp - _b.updatedAt) > DurationLimitSec) {
+        if ((block.timestamp - _b.updatedAt) > StateExpirySec) {
             uint256 ex = bribesExpired[_j];
             require (ex == 0, "bribesExpired slot not empty");
             bribesExpired[_j] = _id;
@@ -427,17 +434,29 @@ contract Bribes {
                 }
             }
         }
-        ret[0] = cig.balanceOf(address(this));         // balance of CIG in this contract
+        ret[0] = cig.balanceOf(address(this));         // balance of CIG in this contract (tlv)
         ret[1] = acceptedBribeID;
         if (acceptedBribeID > 0) {
             ab = bribes[acceptedBribeID];
         }
         ret[2] = block.timestamp;
-        ret[3] = DurationLimitSec;                     // claim duration limit, in seconds
-        ret[4] = tvl;
+        ret[3] = ClaimLimitSec;                     // claim duration limit, in seconds
+        //ret[4] = tvl;
+        if (acceptedBribeID > 0) {
+            uint256 r = ab.raised;
+            uint256 claimable = (r / ClaimLimitSec) * (block.timestamp - ab.updatedAt);
+            if (claimable > r) {
+                claimable = r; // cap
+            }
+            if (claimable > ab.claimed) {
+                claimable = claimable - ab.claimed;
+            } else {
+                claimable = 0;
+            }
+            ret[5] = claimable;
+        }
         return (ret, bribesProposed, bribesExpired, ab, all, balances);
     }
-
 }
 
 /*
