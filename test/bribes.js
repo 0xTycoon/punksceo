@@ -18,6 +18,12 @@ describe("Bribes", function () {
     let peth = utils.parseEther;
     const unlimited = BigNumber.from("2").pow(BigNumber.from("256")).sub(BigNumber.from("1"));
 
+    let slogan = "hello world";
+    let slogan32 = new Uint8Array(32);
+    for (let i = 0; i < slogan.length; i++) {
+        slogan32[i] = slogan.charCodeAt(i);
+    }
+
     function sleep(ms) {
         return new Promise((resolve) => {
             setTimeout(resolve, ms);
@@ -68,7 +74,8 @@ describe("Bribes", function () {
                 4513, // punk id
                 peth("100000"), // amount
                 0, // index of bribesProposed
-                20 // expiredBribes (will be ignored)
+                20, // expiredBribes (will be ignored)
+                slogan32
             )).to.emit(bribes, "New")
                 .withArgs(1, peth("100000"), owner.address, 4513);
 
@@ -84,7 +91,8 @@ describe("Bribes", function () {
                 10000, // punk id incorrect
                 peth("100000"), // amount
                 0, // index of bribesProposed
-                20 // expiredBribes (will be ignored)
+                20, // expiredBribes (will be ignored)
+                slogan32
             )).to.be.revertedWith("invalid _punkID");
 
             // amount incorrect
@@ -92,7 +100,8 @@ describe("Bribes", function () {
                 4513, // punk id
                 peth("99999"), // amount incorrect
                 0, // index of bribesProposed
-                20 // expiredBribes (will be ignored)
+                20, // expiredBribes (will be ignored)
+                slogan32
             )).to.be.revertedWith("not enough cig");
 
             // nothing is expired yet
@@ -100,7 +109,8 @@ describe("Bribes", function () {
                 4513, // punk id
                 peth("100000"), // amount
                 0, // index of bribesProposed
-                1 // expiredBribes (will be ignored) - incorrect, there is nothing expired yet
+                1, // expiredBribes (will be ignored) - incorrect, there is nothing expired yet
+                slogan32
             )).to.be.revertedWith("cannot expire");
 
             await sleep(2000);
@@ -110,14 +120,16 @@ describe("Bribes", function () {
                 4513, // punk id
                 peth("100000"), // amount
                 0, // index of bribesProposed
-                20 // expiredBribes (will be ignored)
+                20, // expiredBribes (will be ignored)
+                slogan32
             )).to.be.revertedWith("bribesProposed at _i not empty");
 
             expect ( await bribes.newBribe(
                 4513, // punk id
                 peth("100000"), // amount
                 0, // index of bribesProposed
-                0 // expiredBribes (will be ignored)
+                0, // expiredBribes (will be ignored)
+                slogan32
             )).to.emit( bribes, "Expired")
                 .to.emit(bribes, "New");
 
@@ -136,7 +148,8 @@ describe("Bribes", function () {
                     i+4000, // punk id
                     peth("100000"), // amount
                     i, // index of bribesProposed
-                    20 // expiredBribes (will be ignored)
+                    20, // expiredBribes (will be ignored)
+                    slogan32
                 )).to.emit(bribes, "New")
                     .withArgs(id, peth("100000"), owner.address, i+4000);
                 id++;
@@ -215,11 +228,7 @@ describe("Bribes", function () {
         });
 
         it("set slogan", async function () {
-            let slogan = "hello world";
-            let slogan32 = new Uint8Array(32);
-            for (let i = 0; i < slogan.length; i++) {
-                slogan32[i] = slogan.charCodeAt(i);
-            }
+
 
             expect(await bribes.setSlogan(3, slogan32)).to.emit(bribes, "Slogan");
         });
