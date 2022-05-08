@@ -4,7 +4,7 @@
 // Bribe punk holders to become CEOs
 pragma solidity ^0.8.11;
 
-import "hardhat/console.sol";
+//import "hardhat/console.sol";
 
 /*
 
@@ -136,7 +136,8 @@ contract Bribes {
         uint256 _punkID,
         uint256 _amount,
         uint256 _i,
-        uint256 _j
+        uint256 _j,
+        bytes32 _msg
     ) external {
         require (_punkID < 10000, "invalid _punkID");
         require(_amount >= minAmount, "not enough cig");
@@ -167,6 +168,7 @@ contract Bribes {
         Bribe storage b = bribes[bribeID];
         b.punkID = _punkID;
         b.raised = _amount;
+        b.slogan = _msg;
         b.state = State.Proposed;
         b.updatedAt = block.timestamp;
         bribesProposed[_i] = bribeID;
@@ -416,7 +418,7 @@ contract Bribes {
         Bribe[] memory,     // array of Bribe 0-19 a proposed, 20-39 are expired
         uint256[] memory    // balances of any deposits for the _user
     ) {
-        uint[] memory ret = new uint[](6);
+        uint[] memory ret = new uint[](7);
         uint[] memory balances = new uint[](40);
         Bribe[] memory all = new Bribe[](40);
         Bribe memory ab;
@@ -440,7 +442,7 @@ contract Bribes {
             ab = bribes[acceptedBribeID];
         }
         ret[2] = block.timestamp;
-        ret[3] = ClaimLimitSec;                     // claim duration limit, in seconds
+        ret[3] = ClaimLimitSec;                        // claim duration limit, in seconds
 
         if (acceptedBribeID > 0) {
             uint256 r = ab.raised;
@@ -455,6 +457,8 @@ contract Bribes {
             }
             ret[4] = claimable;
         }
+        ret[5] = minAmount;                            // minimum spend
+        ret[6] = cig.allowance(_user, address(this));  // approval
         return (ret, bribesProposed, bribesExpired, ab, all, balances);
     }
 }
