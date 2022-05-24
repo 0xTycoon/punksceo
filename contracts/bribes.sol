@@ -129,7 +129,8 @@ contract Bribes {
     * @param _punkID the punkID to offer the bribe to
     * @param _amount the amount to offer
     * @param _i position in bribesProposed to insert new bribe. Expire any existing bribe
-    * @param _j position in expiredBribes to remove and defunct. (do nothing if greater than 20)
+    * @param _j position in expiredBribes to remove and defunct. (do nothing if greater than 19)
+    * @param _msg bytes32 to be added as message
     *
     */
     function newBribe(
@@ -416,13 +417,16 @@ contract Bribes {
         uint256[20] memory, // bribesExpired
         Bribe memory,       // accepted acceptedBribe (if any)
         Bribe[] memory,     // array of Bribe 0-19 a proposed, 20-39 are expired
-        uint256[] memory    // balances of any deposits for the _user
+        uint256[] memory   // balances of any deposits for the _user
+       // address[40] memory  // all punk owner info
     ) {
-        uint[] memory ret = new uint[](7);
+        uint[] memory ret = new uint[](50);
         uint[] memory balances = new uint[](40);
         Bribe[] memory all = new Bribe[](40);
+        //address[40] memory owners;// = new address[](40);
         Bribe memory ab;
-        for (uint256 i = 0; i <  40; i++) {
+        uint256 i;
+        for (i = 0; i <  40; i++) {
             uint256 id;
             if (i < 20) {
                 id = bribesProposed[i];
@@ -460,18 +464,17 @@ contract Bribes {
         ret[5] = minAmount;                            // minimum spend
         ret[6] = cig.allowance(_user, address(this));  // approval
 
-        if (isContract(address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2))) { // are we on mainnet?
+        if (isContract(address(0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629))) { // are we on mainnet?
             // price info
             ILiquidityPoolERC20 lpToken = ILiquidityPoolERC20(address(0x22b15c7Ee1186A7C7CFfB2D942e20Fc228F6E4Ed));
             IRouterV2 V2ROUTER = IRouterV2(address(0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F));
             uint112[] memory reserves = new uint112[](2);
             (reserves[0], reserves[1], ) = lpToken.getReserves();        // uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast
-            if (lpToken.token0() == address(0xcb56b52316041a62b6b5d0583dce4a8ae7a3c629)) {
+            if (lpToken.token0() == address(0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629)) {
                 ret[7] = V2ROUTER.getAmountOut(1 ether, uint(reserves[0]), uint(reserves[1])); // CIG price in ETH
             } else {
                 ret[7] = V2ROUTER.getAmountOut(1 ether, uint(reserves[1]), uint(reserves[0])); // CIG price in ETH
             }
-
 
             ILiquidityPoolERC20 ethusd = ILiquidityPoolERC20(address(0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f));  // sushi DAI-WETH pool
             uint112 r0;
@@ -479,6 +482,12 @@ contract Bribes {
             (r0, r1, ) = ethusd.getReserves();
             // get the price of ETH in USD
             ret[8] =  V2ROUTER.getAmountOut(1 ether, uint(r0), uint(r1));      // ETH price in USD
+        }
+        ret[9] = cig.balanceOf(address(_user)); // user's balance
+        for (i = 0; i < 40; i++) {
+            if (all[i].raised > 0) {
+                ret[i+10] = uint256(uint160(punks.punkIndexToAddress(all[i].punkID)));
+            }
         }
         return (ret, bribesProposed, bribesExpired, ab, all, balances);
     }
@@ -535,5 +544,5 @@ interface ICigtoken is IERC20 {
 }
 
 interface ICryptoPunks {
-    function punkIndexToAddress(uint256 punkIndex) external returns (address);
+    function punkIndexToAddress(uint256 punkIndex) external view returns (address);
 }

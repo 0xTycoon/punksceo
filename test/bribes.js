@@ -256,6 +256,15 @@ describe("Bribes", function () {
 
         });
 
+        it("test addresses in rate", async function () {
+            let ret, proposed, expired, bribe, data, balances;
+
+            [ret, proposed, expired, bribe, data, balances] = await bribes.getInfo(
+                owner.address);
+
+            expect(utils.hexlify(ret[11])).to.be.equal(owner.address.toLowerCase());
+        });
+
     });
 
 });
