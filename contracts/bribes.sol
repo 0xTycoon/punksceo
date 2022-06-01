@@ -60,7 +60,7 @@ contract Bribes {
     uint256[20] public bribesProposed;
     uint256[20] public bribesExpired;
     uint256 public bribeHeight;                 // the next Bribe ID to be assigned
-    uint256 public acceptedBribeID;             // rge curently active bribe (may be 0)
+    uint256 public acceptedBribeID;             // rge currently active bribe (may be 0)
     uint256 public immutable durationLimitDays; // how many days the CEO has to claim the bribe
     uint256 private immutable ClaimLimitSec;    // claimDays expressed in seconds
     uint256 private immutable StateExpirySec;   // state expiry expressed in seconds
@@ -418,9 +418,9 @@ contract Bribes {
         Bribe memory,       // accepted acceptedBribe (if any)
         Bribe[] memory,     // array of Bribe 0-19 a proposed, 20-39 are expired
         uint256[] memory   // balances of any deposits for the _user
-       // address[40] memory  // all punk owner info
+
     ) {
-        uint[] memory ret = new uint[](50);
+        uint[] memory ret = new uint[](54);
         uint[] memory balances = new uint[](40);
         Bribe[] memory all = new Bribe[](40);
         //address[40] memory owners;// = new address[](40);
@@ -489,6 +489,10 @@ contract Bribes {
                 ret[i+10] = uint256(uint160(punks.punkIndexToAddress(all[i].punkID)));
             }
         }
+        ret[50] = uint256(uint160(cig.The_CEO()));
+        ret[51] = durationLimitDays;
+        ret[52] = ClaimLimitSec;
+        ret[53] = StateExpirySec;
         return (ret, bribesProposed, bribesExpired, ab, all, balances);
     }
     /**
