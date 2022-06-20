@@ -62,8 +62,8 @@ contract Bribes {
     uint256 public bribeHeight;                 // the next Bribe ID to be assigned
     uint256 public acceptedBribeID;             // rge currently active bribe (may be 0)
     uint256 public immutable durationLimitDays; // how many days the CEO has to claim the bribe
-    uint256 private immutable ClaimLimitSec;    // claimDays expressed in seconds
-    uint256 private immutable StateExpirySec;   // state expiry expressed in seconds
+    uint256 private immutable claimLimitSec;    // claimDays expressed in seconds
+    uint256 private immutable stateExpirySec;   // state expiry expressed in seconds
 
     enum State {
         Free,     // bribe just created (in memory)
@@ -106,8 +106,8 @@ contract Bribes {
         cig = ICigtoken(_cig);
         punks = ICryptoPunks(_punks);
         durationLimitDays = _claimDays;
-        ClaimLimitSec = _duration * _claimDays;
-        StateExpirySec = _duration * _stateDays;
+        claimLimitSec = _duration * _claimDays;
+        stateExpirySec = _duration * _stateDays;
         minBlocks = _minBlocks;
     }
 
@@ -288,7 +288,7 @@ contract Bribes {
         if (_b.claimed == r) {
             return state; // "all claimed"
         }
-        uint256 claimable = (r / ClaimLimitSec) * (block.timestamp - _b.updatedAt);
+        uint256 claimable = (r / claimLimitSec) * (block.timestamp - _b.updatedAt);
         if (claimable > r) {
             claimable = r; // cap
         }
@@ -372,7 +372,7 @@ contract Bribes {
             return s;
         }
         // if the balance is 0, we can defunct early
-        if (_b.raised == 0 || ((block.timestamp - _b.updatedAt) > StateExpirySec)) {
+        if (_b.raised == 0 || ((block.timestamp - _b.updatedAt) > stateExpirySec)) {
             _b.state = State.Defunct;
             bribesExpired[_index] = 0;
             _b.updatedAt = block.timestamp;
@@ -394,7 +394,7 @@ contract Bribes {
         uint256 _j,
         Bribe storage _b
     ) internal returns (State s) {
-        if ((block.timestamp - _b.updatedAt) > StateExpirySec) {
+        if ((block.timestamp - _b.updatedAt) > stateExpirySec) {
             uint256 ex = bribesExpired[_j];
             require (ex == 0, "bribesExpired slot not empty");
             bribesExpired[_j] = _id;
@@ -420,7 +420,7 @@ contract Bribes {
         uint256[] memory   // balances of any deposits for the _user
 
     ) {
-        uint[] memory ret = new uint[](54);
+        uint[] memory ret = new uint[](58);
         uint[] memory balances = new uint[](40);
         Bribe[] memory all = new Bribe[](40);
         //address[40] memory owners;// = new address[](40);
@@ -446,11 +446,11 @@ contract Bribes {
             ab = bribes[acceptedBribeID];
         }
         ret[2] = block.timestamp;
-        ret[3] = ClaimLimitSec;                        // claim duration limit, in seconds
+        ret[3] = claimLimitSec;                        // claim duration limit, in seconds
 
         if (acceptedBribeID > 0) {
             uint256 r = ab.raised;
-            uint256 claimable = (r / ClaimLimitSec) * (block.timestamp - ab.updatedAt);
+            uint256 claimable = (r / claimLimitSec) * (block.timestamp - ab.updatedAt);
             if (claimable > r) {
                 claimable = r; // cap
             }
@@ -491,8 +491,17 @@ contract Bribes {
         }
         ret[50] = uint256(uint160(cig.The_CEO()));
         ret[51] = durationLimitDays;
-        ret[52] = ClaimLimitSec;
-        ret[53] = StateExpirySec;
+        ret[52] = claimLimitSec;
+        ret[53] = stateExpirySec;
+        ret[54] = block.number;
+        ret[55] = cig.taxBurnBlock();
+        ret[56] = minBlocks;
+        if (acceptedBribeID > 0) {
+            ret[57] = uint256(uint160(
+                    punks.punkIndexToAddress(bribes[acceptedBribeID].punkID // address of active bribe
+                    )));
+        }
+
         return (ret, bribesProposed, bribesExpired, ab, all, balances);
     }
     /**
