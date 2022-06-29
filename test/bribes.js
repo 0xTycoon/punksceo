@@ -163,17 +163,20 @@ describe("Bribes", function () {
         });
 
         it("increase bribe", async function () {
-            expect (await bribes.increase(0, 2, peth("100000")))
+            // bribe #2
+            expect (await bribes.increase(0, peth("100000"), 20, 0, 20))
                 .to.emit(bribes, "Increased");
 
-            await expect (bribes.increase(10, 2, peth("100000")))
+            await expect (bribes.increase(10, peth("100000"), 20, 0, 20))
                 .to.be.revertedWith("no such bribe active");
 
-            await expect (bribes.increase(0, 2, peth("0")))
+            await expect (bribes.increase(0, peth("0"), 20, 0, 20))
                 .to.be.revertedWith("not enough cig");
 
             await cig.connect(elizabeth).approve(bribes.address, unlimited);
-            expect (await bribes.connect(elizabeth).increase(4, 6, peth("100000"))).to.emit(bribes, "Increased");
+            // bribe #6
+            expect (await bribes.connect(elizabeth).increase(4, peth("100000"), 20, 0, 20))
+                .to.emit(bribes, "Increased");
 
         });
 

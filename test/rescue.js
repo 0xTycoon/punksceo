@@ -1,6 +1,6 @@
 const {expect} = require("chai");
 const {ContractFactory, utils, BigNumber} = require('ethers');
-const keccak256 = require('keccak256')
+const keccak256 = require('keccak256');
 const fs = require("fs");
 const {MerkleTree} = require("merkletreejs");
 

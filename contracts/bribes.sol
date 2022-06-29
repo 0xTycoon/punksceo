@@ -112,7 +112,7 @@ contract Bribes {
     }
 
     /**
-    * @dev updateMinAmount updates the minimum amount required for a new bribe prorposal
+    * @dev updateMinAmount updates the minimum amount required for a new bribe proposal
     */
     function updateMinAmount() external {
         require (block.number - cig.taxBurnBlock() > minBlocks, "must be CEO for at least x block");
@@ -177,36 +177,76 @@ contract Bribes {
         emit New(bribeID, _amount, msg.sender, _punkID);
     }
 
+    function _defunctBribesExpired(uint256 _i) internal returns (uint256) {
+        uint256 id = bribesExpired[_i];
+        require(id > 0, "no such bribe in bribesExpired");
+        Bribe storage b = bribes[id];
+        if (_defunct(id, _i, b) == State.Defunct) {
+            return id;
+        }
+        return 0;
+    }
+
+    /**
+    * @dev _expireBribesProposed expires a proposed bribe
+    * @param _i index of bribesProposed
+    * @param _j index of bribesExpired to place the bribe to
+    * returns id of bribe if changed to expired, or 0 if none changed.
+    */
+    function _expireBribesProposed(uint256 _i, uint256 _j) internal returns (uint256)  {
+        uint256 id = bribesProposed[_i];
+        require(id > 0, "no such bribe in bribesProposed");
+        Bribe storage b = bribes[id];
+        if (_expire(id, _i, _j, b) == State.Expired) {
+            return id;
+        }
+        return 0;
+    }
+
     /**
     * @dev increase increase the bribe offering amount
     * @param _i the index of the bribesProposed array that stores the bribeID
-    * @param _id the id of the bribe (to confirm)
+
     * @param _amount the amount in CIG to be added. Must be at least minAmount
+    * @param _j the index of the bribesProposed array to expire (0 if will ignore)
+    * @param _k the index of the bribesExpired array to put expired proposal to (if >19, ignore)
+    * @param _l the index of the bribesExpired array to purge (if >19, ignore)
     */
-    function increase(uint256 _i, uint256 _id, uint256 _amount) external {
-        uint256 id = bribesProposed[_i];
-        require(id > 0, "no such bribe active");
-        require(id == _id, "_id not found");
+    function increase(
+        uint256 _i,
+        uint256 _amount,
+        uint256 _j,
+        uint256 _k,
+        uint256 _l) external returns (uint256 idExpired, uint256 idDefunct, uint256 id) {
         require(_amount >= minAmount, "not enough cig");
+        if (_l < 20) {
+            idDefunct = _defunctBribesExpired(_l);
+        }
+        if (_j < 20) {
+            idExpired = _expireBribesProposed(_j, _k);
+        }
+        id = bribesProposed[_i];
+        require(id > 0, "no such bribe active");
         Bribe storage b = bribes[id];
         b.raised += _amount;
         b.updatedAt = block.timestamp;
         require(cig.transferFrom(msg.sender, address(this), _amount), "cannot send cig");
         deposit[msg.sender][id] += _amount; // record deposit
         emit Increased(id, _amount, msg.sender);
+        return (idExpired, idDefunct, id);
     }
 
     /**
     * @dev expire expires a bribe. The bribe is considered expired if not updated for more than DurationLimitSec
-    * @param _i the position in bribesProposed to get the id of the bibe to expire
+    * @param _i the position in bribesProposed to get the id of the bribe to expire
     * @param _j the position in bribesExpired to place the expired bribe to
     */
     function expire(uint256 _i, uint256 _j) external {
-        uint256 id = bribesProposed[_i];
-        require(id > 0, "no such bribe active");
-        Bribe storage b = bribes[id];
-        _expire(id, _i, _j, b);
-        _sendRefund(id, b);
+        uint256 id = _expireBribesProposed(_i, _j);
+        if (id > 0) {
+            Bribe storage b = bribes[id];
+            _sendRefund(id, b);
+        }
     }
 
     /**
@@ -273,7 +313,7 @@ contract Bribes {
     /**
     * @dev pay calculates the payout that is vested from the bribe
     * If target of the bribe is not the CEO, claim will be burned, otherwise sent to the CEO.
-    * @param _b is a bribe record ponting to storage
+    * @param _b is a bribe record pointing to storage
     * @param _ceo is the address of the current CEO
     * @param _id is the id of the bribe
     */
@@ -409,7 +449,7 @@ contract Bribes {
 
     /**
     * @dev getInfo returns the current state
-    * @param _user the address to reyrn balances for
+    * @param _user the address to return the balances for
     */
     function getInfo(address _user) view public returns (
         uint256[] memory,   // ret
@@ -420,7 +460,7 @@ contract Bribes {
         uint256[] memory   // balances of any deposits for the _user
 
     ) {
-        uint[] memory ret = new uint[](58);
+        uint[] memory ret = new uint[](59);
         uint[] memory balances = new uint[](40);
         Bribe[] memory all = new Bribe[](40);
         //address[40] memory owners;// = new address[](40);
@@ -447,7 +487,6 @@ contract Bribes {
         }
         ret[2] = block.timestamp;
         ret[3] = claimLimitSec;                        // claim duration limit, in seconds
-
         if (acceptedBribeID > 0) {
             uint256 r = ab.raised;
             uint256 claimable = (r / claimLimitSec) * (block.timestamp - ab.updatedAt);
@@ -463,7 +502,6 @@ contract Bribes {
         }
         ret[5] = minAmount;                            // minimum spend
         ret[6] = cig.allowance(_user, address(this));  // approval
-
         if (isContract(address(0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629))) { // are we on mainnet?
             // price info
             ILiquidityPoolERC20 lpToken = ILiquidityPoolERC20(address(0x22b15c7Ee1186A7C7CFfB2D942e20Fc228F6E4Ed));
@@ -501,7 +539,7 @@ contract Bribes {
                     punks.punkIndexToAddress(bribes[acceptedBribeID].punkID // address of active bribe
                     )));
         }
-
+        ret[58] = cig.CEO_punk_index();
         return (ret, bribesProposed, bribesExpired, ab, all, balances);
     }
     /**
