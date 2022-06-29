@@ -111,7 +111,7 @@ describe("Bribes", function () {
                 0, // index of bribesProposed
                 1, // expiredBribes (will be ignored) - incorrect, there is nothing expired yet
                 slogan32
-            )).to.be.revertedWith("cannot expire");
+            )).to.be.revertedWith("no such bribe in bribesExpired");
 
             await sleep(2000);
 
@@ -137,7 +137,6 @@ describe("Bribes", function () {
                 owner.address);
             expect(expired[0]).to.be.equal("1"); // proposal 1 expired
             expect(proposed[0]).to.be.equal("2"); // proposal 2 is the new proposal
-
             // populate the remaining slots
 
             let id = 3;
@@ -267,6 +266,7 @@ describe("Bribes", function () {
 
             expect(utils.hexlify(ret[11])).to.be.equal(owner.address.toLowerCase());
         });
+
 
     });
 

@@ -139,32 +139,20 @@ contract Bribes {
         uint256 _i,
         uint256 _j,
         bytes32 _msg
-    ) external {
+    ) external returns (uint256 idExisting, uint256 idDefunct, uint256 bribeID) {
         require (_punkID < 10000, "invalid _punkID");
         require(_amount >= minAmount, "not enough cig");
         require(cig.transferFrom(msg.sender, address(this), _amount), "cannot send cig");
-        uint256 bribeID;
-        // Purge from bribesExpired, defunct _j if expired
-        if (_j < 20) {
-            bribeID = bribesExpired[_j];
-            if (bribeID > 0) {
-                // There is something in there? We must purge this bribe
-                Bribe storage exb = bribes[bribeID];
-                require (exb.state == State.Expired, "_j must be expired");
-                require(_defunct(bribeID, _j, exb) == State.Defunct, "expected _j to defunct");
-            }
-            if (_i < 20) {
-                // Purge from bribesProposed: if slot not empty, expire old bribe
-                bribeID = bribesProposed[_i];
-                if (bribeID > 0) {
-                    // There is something there? We must expire
-                    Bribe storage ob = bribes[bribeID];
-                    require (ob.state == State.Proposed, "must be proposed");
-                    require(_expire(bribeID, _i, _j, ob) == State.Expired, "cannot expire");
-                }
+        idExisting = bribesProposed[_i]; // is there any existing bribe id?
+        if (_j < 20 && idExisting > 0) { // existing bribe present, attempt expire it.
+            if (_expireBribesProposed(_i, _j) > 0) {
+                idExisting = 0; // successfully expired
             }
         }
-        require (bribesProposed[_i] == 0, "bribesProposed at _i not empty");
+        if (_j < 20) {
+            idDefunct = _defunctBribesExpired(_j);
+        }
+        require (idExisting == 0, "bribesProposed at _i not empty");
         bribeID = ++bribeHeight; // starts from 1
         Bribe storage b = bribes[bribeID];
         b.punkID = _punkID;
@@ -175,6 +163,7 @@ contract Bribes {
         bribesProposed[_i] = bribeID;
         deposit[msg.sender][bribeID] = _amount;
         emit New(bribeID, _amount, msg.sender, _punkID);
+        return (idExisting, idDefunct, bribeID);
     }
 
     function _defunctBribesExpired(uint256 _i) internal returns (uint256) {
