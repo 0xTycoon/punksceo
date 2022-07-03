@@ -128,8 +128,10 @@ contract Bribes {
     * Finally if bribesProposed[_i] then create a new proposal
     * @param _punkID the punkID to offer the bribe to
     * @param _amount the amount to offer
-    * @param _i position in bribesProposed to insert new bribe. Expire any existing bribe
-    * @param _j position in expiredBribes to remove and defunct. (do nothing if greater than 19)
+    * @param _i position in bribesProposed to insert new bribe.
+    * @param _j position in bribesProposed to expire
+    * @param _k position in expiredBribes to place _j to
+    * @param _l position in expiredBribes to remove and defunct. (do nothing if greater than 19)
     * @param _msg bytes32 to be added as message
     *
     */
@@ -138,21 +140,21 @@ contract Bribes {
         uint256 _amount,
         uint256 _i,
         uint256 _j,
+        uint256 _k,
+        uint256 _l,
         bytes32 _msg
-    ) external returns (uint256 idExisting, uint256 idDefunct, uint256 bribeID) {
+    ) external returns (uint256 idExpired, uint256 idDefunct, uint256 bribeID) {
         require (_punkID < 10000, "invalid _punkID");
         require(_amount >= minAmount, "not enough cig");
         require(cig.transferFrom(msg.sender, address(this), _amount), "cannot send cig");
-        idExisting = bribesProposed[_i]; // is there any existing bribe id?
-        if (_j < 20 && idExisting > 0) { // existing bribe present, attempt expire it.
-            if (_expireBribesProposed(_i, _j) > 0) {
-                idExisting = 0; // successfully expired
-            }
-        }
+
         if (_j < 20) {
-            idDefunct = _defunctBribesExpired(_j);
+            idExpired = _expireBribesProposed(_j, _k);
         }
-        require (idExisting == 0, "bribesProposed at _i not empty");
+        if (_l < 20) {
+            idDefunct = _defunctBribesExpired(_l);
+        }
+        require (bribesProposed[_i] == 0, "bribesProposed at _i not empty");
         bribeID = ++bribeHeight; // starts from 1
         Bribe storage b = bribes[bribeID];
         b.punkID = _punkID;
@@ -163,7 +165,7 @@ contract Bribes {
         bribesProposed[_i] = bribeID;
         deposit[msg.sender][bribeID] = _amount;
         emit New(bribeID, _amount, msg.sender, _punkID);
-        return (idExisting, idDefunct, bribeID);
+        return (idExpired, idDefunct, bribeID);
     }
 
     function _defunctBribesExpired(uint256 _i) internal returns (uint256) {
@@ -198,7 +200,7 @@ contract Bribes {
 
     * @param _amount the amount in CIG to be added. Must be at least minAmount
     * @param _j the index of the bribesProposed array to expire (0 if will ignore)
-    * @param _k the index of the bribesExpired array to put expired proposal to (if >19, ignore)
+    * @param _k the index of the bribesExpired array to put expired proposal to
     * @param _l the index of the bribesExpired array to purge (if >19, ignore)
     */
     function increase(
@@ -241,12 +243,13 @@ contract Bribes {
     /**
     * @dev accept can be called by the existing CEO to accept the bribe
     * @param _i the index position of the bribe in the bribesProposed list
-    * @param _id the bribe id (to confirm)
+    * @param _j the index of the bribesProposed array to expire (0 if will ignore)
+    * @param _k the index of the bribesExpired array to put expired proposal to
     * The bribe can be accepted if there is currently no accepted bribe.
     * The CEO must be in charge for at least 1 block, and this is checked by looking at the cig.taxBurnBlock slot
 
     */
-    function accept(uint256 _i, uint256 _id) external {
+    function accept(uint256 _i, uint256 _j, uint256 _k) external returns (uint256 idExpired) {
         uint256 id = acceptedBribeID;
         address ceo = cig.The_CEO();
         if (id != 0) {
@@ -255,10 +258,12 @@ contract Bribes {
             require(_pay(ab, ceo, id) == State.PaidOut, "acceptedBribe not PaidOut");
             // assuming that acceptedBribe will be 0 by now
         }
+        if (_j < 20) {
+            idExpired = _expireBribesProposed(_j, _k);
+        }
         require (acceptedBribeID == 0, "a bribe is currently accepted");
         id = bribesProposed[_i];
         require(id > 0, "no such bribe active");
-        require(id == _id, "_id not found");
         Bribe storage b = bribes[id];
         require (ceo == msg.sender, "must be called by the CEO");
         require (cig.CEO_punk_index() == b.punkID, "punk not CEO");
@@ -268,6 +273,7 @@ contract Bribes {
         acceptedBribeID = id;
         b.updatedAt = block.timestamp;
         emit Accepted(id);
+        return (idExpired);
     }
 
     /**
@@ -289,14 +295,28 @@ contract Bribes {
     * It reads the id of the current bribe
     * checks to make sure there's still balance to pay out
     * calculates the claimable amount based on a linear vesting schedule (per second)
+    * @param _j the index of the bribesProposed array to expire (0 if will ignore)
+    * @param _k the index of the bribesExpired array to put expired proposal to (if >19, ignore)
+    * @param _l the index of the bribesExpired array to purge (if >19, ignore)
     */
-    function payout() external {
-        uint256 id = acceptedBribeID; // read the id of the currently accepted bribe
+    function payout(
+        uint256 _j,
+        uint256 _k,
+        uint256 _l
+    ) external returns (uint256 idExpired, uint256 idDefunct, uint256 id)  {
+        id = acceptedBribeID; // read the id of the currently accepted bribe
         require (id != 0, "no bribe accepted");
         Bribe storage b = bribes[id];
         require (b.updatedAt != block.timestamp, "timestamp must not equal");
         _pay(b, cig.The_CEO(), id);
         b.updatedAt = block.timestamp;
+        if (_l < 20) {
+            idDefunct = _defunctBribesExpired(_l);
+        }
+        if (_j < 20) {
+            idExpired = _expireBribesProposed(_j, _k);
+        }
+        return (idExpired, idDefunct, id);
     }
 
     /**
@@ -358,18 +378,25 @@ contract Bribes {
     * @param _i the index in the bribesProposed bribe to expire (set to > 20 to ignore)
     * @param _j the index to use for the expiry slot
     */
-    function refund(uint256 _i, uint256 _j, uint256 _id) external {
+    function refund(
+        uint256 _id,
+        uint256 _i,
+        uint256 _j,
+        uint256 _k) external returns(uint256 idExpired, uint256 idDefunct, uint256) {
         Bribe storage b = bribes[_id];
         State s = b.state;
-        if (_i < 20 && bribesProposed[_i] == _id) {
-            require(_expire(_id, _i, _j, b) == State.Expired, "cannot be expired");
-            s = State.Expired;
+        if (_i < 20 && bribesProposed[_i] > 0) {
+            idExpired = _expireBribesProposed(_i, _j);
+            if (idExpired > 0 && idExpired == _id) {
+                s = State.Expired;
+            }
         }
         require(s == State.Expired || s == State.Defunct, "invalid bribe state");
         _sendRefund(_id, b);
-        if (s == State.Expired) {
-            _defunct(_id, _j, b); // attempt to defunct
+        if (_k < 20) {
+            idDefunct = _defunctBribesExpired(_k);
         }
+        return (idExpired, idDefunct, _id);
     }
 
     /**
