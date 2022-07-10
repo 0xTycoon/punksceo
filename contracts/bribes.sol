@@ -15,16 +15,18 @@ Creating and contributing to Bribe Proposals:
 4. The minimum bribe contribution amount is set to 10% of the asking price of the "CEO of Cryptopunks" title.
 (This is to prevent spam, and ensure serious contributions only)
 5. Anybody can increase a proposed bribe by contributing more of their CIG
-6. A proposed bribe expires after 30 days of no additional contributions
+6. A proposed bribe expires 30 days after the last contribution (each new contribution increases expiry
+by 30 days)
 7. Contributors may not withdraw their CIG from a proposed bribe, they must wait until it is expired.
 8. A bribe stays in the expired list for 30 days until it is defunct.
 9. Defunct bribes will be unlisted from the interface.
 10. Contributors will continue to be able to withdraw their deposit from bribes in the Defunct state
-11. A bribe can have a "slogan" set by the address that holds a punk specified in the Bribe
+11. A bribe can have a "slogan" set by the address that holds a punk specified in the Bribe. This can be any
+text, 32 bytes in length max, such as a Twitter handle.
 
 Taking Bribes:
 12. A CEO must be a CEO for at least 50 blocks before taking the title
-12. A CEO can take a bribe if no other bribe is active (acceptedBribeID is 0)
+12. A CEO can take a bribe only if no other bribe is active (acceptedBribeID is 0)
 13. The CEO's address must own the punk specified in the bribe.
 14. Once a bribe is active, it gets removed from the Proposed list,
 and the CEO can call the payout function to get paid.
@@ -35,6 +37,11 @@ unclaimed payment may be burned! The reason why it's burned is to discourage oth
 
 Refunds:
 17. CIG contributions can be refunded from bribes that have been expired or defunct.
+
+Permissions info:
+
+This contract reads from the CryptoPunks contract, but never writes to it.
+Appriving CIG
 
 **/
 
@@ -147,7 +154,6 @@ contract Bribes {
         require (_punkID < 10000, "invalid _punkID");
         require(_amount >= minAmount, "not enough cig");
         require(cig.transferFrom(msg.sender, address(this), _amount), "cannot send cig");
-
         if (_j < 20) {
             idExpired = _expireBribesProposed(_j, _k);
         }
@@ -155,7 +161,7 @@ contract Bribes {
             idDefunct = _defunctBribesExpired(_l);
         }
         require (bribesProposed[_i] == 0, "bribesProposed at _i not empty");
-        bribeID = ++bribeHeight; // starts from 1
+        unchecked{bribeID = ++bribeHeight;} // starts from 1
         Bribe storage b = bribes[bribeID];
         b.punkID = _punkID;
         b.raised = _amount;
@@ -219,10 +225,10 @@ contract Bribes {
         id = bribesProposed[_i];
         require(id > 0, "no such bribe active");
         Bribe storage b = bribes[id];
-        b.raised += _amount;
+        unchecked {b.raised += _amount;}
         b.updatedAt = block.timestamp;
         require(cig.transferFrom(msg.sender, address(this), _amount), "cannot send cig");
-        deposit[msg.sender][id] += _amount; // record deposit
+        unchecked{deposit[msg.sender][id] += _amount;} // record deposit
         emit Increased(id, _amount, msg.sender);
         return (idExpired, idDefunct, id);
     }
@@ -350,7 +356,7 @@ contract Bribes {
             return state;
         }
         // pay out
-        _b.claimed += claimable;
+        unchecked {_b.claimed += claimable;}
         address target = punks.punkIndexToAddress(_b.punkID);
         if (target == _ceo) {
             // if the target of the bribe is the current CEO, send to them
@@ -375,8 +381,10 @@ contract Bribes {
     * by setting the _i to less than 20 (indicating the bribe to expire)
     * Bribe must be either Proposed, Expired or Defunct
     * If Proposed, it will need to be Expired before a refund can be sent.
+    * @param _id of the bribe to refund (must be expired or defunct to work)
     * @param _i the index in the bribesProposed bribe to expire (set to > 20 to ignore)
     * @param _j the index to use for the expiry slot
+    * @param _k the index of the bribesExpired array to purge (if >19, ignore)
     */
     function refund(
         uint256 _id,
@@ -409,8 +417,10 @@ contract Bribes {
         if (_amount == 0) {
             return;
         }
-        _b.raised -= _amount;
-        deposit[msg.sender][_id] -= _amount; // record refund
+        unchecked {
+            _b.raised -= _amount;
+            deposit[msg.sender][_id] -= _amount; // record refund
+        }
         cig.transfer(msg.sender, _amount);
         emit Refunded(_id, _amount, msg.sender);
     }
@@ -479,7 +489,6 @@ contract Bribes {
         uint[] memory ret = new uint[](59);
         uint[] memory balances = new uint[](40);
         Bribe[] memory all = new Bribe[](40);
-        //address[40] memory owners;// = new address[](40);
         Bribe memory ab;
         uint256 i;
         for (i = 0; i <  40; i++) {
