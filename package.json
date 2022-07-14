@@ -6,7 +6,8 @@
     "chai": "^4.3.4",
     "ethereum-waffle": "^3.3.0",
     "ethers": "^5.2.0",
-    "hardhat": "^2.8.0"
+    "hardhat": "^2.8.0",
+    "hardhat-gas-reporter": "^1.0.8"
   },
   "dependencies": {
     "keccak256": "^1.0.6",

@@ -2,7 +2,7 @@
 // Author: 0xTycoon
 // Project: Cigarettes (CEO of CryptoPunks)
 // Bribe punk holders to become CEOs
-pragma solidity ^0.8.11;
+pragma solidity ^0.8.15;
 
 //import "hardhat/console.sol";
 
@@ -38,10 +38,20 @@ unclaimed payment may be burned! The reason why it's burned is to discourage oth
 Refunds:
 17. CIG contributions can be refunded from bribes that have been expired or defunct.
 
+This contract has no admin keys.
+
 Permissions info:
 
 This contract reads from the CryptoPunks contract, but never writes to it.
-Appriving CIG
+
+Deployment args:
+
+_cig 0xcb56b52316041a62b6b5d0583dce4a8ae7a3c629
+_punks 0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb
+_claimDays 10
+_stateDays 30
+_duration 86400
+_minBlocks 50
 
 **/
 
