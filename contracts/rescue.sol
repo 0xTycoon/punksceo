@@ -49,7 +49,7 @@ END
 
 */
 
-//import "hardhat/console.sol";
+import "hardhat/console.sol";
 
 contract RescueMission {
     address payable public admin;
@@ -147,7 +147,7 @@ contract RescueMission {
         require (claimed < max, "max amount already claimed");
         uint256 credit = _balance - claimed;                                       // credit is the amount yet to pay
         if (credit > max) {
-            credit = max;                                                         // cap to the max
+            credit = max - claimed;
         }
         require(_amount <= credit, "_amount exceeds credit");
         require (oldCig.transferFrom(_to, address(cig), _amount), "need old CIG"); // take old CIG

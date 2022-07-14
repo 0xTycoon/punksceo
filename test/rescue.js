@@ -1,6 +1,6 @@
 const {expect} = require("chai");
 const {ContractFactory, utils, BigNumber} = require('ethers');
-const keccak256 = require('keccak256')
+const keccak256 = require('keccak256');
 const fs = require("fs");
 const {MerkleTree} = require("merkletreejs");
 
@@ -157,7 +157,7 @@ describe("Rescue", function () {
             //console.log(info);
 
             console.log("waiting 5 sec");
-            await sleep(4000); // wait 4 sec
+            await sleep(5000); // wait 4 sec
 
             await expect(rescue.kill()).to.be.revertedWith("cannot kill yet");
 
