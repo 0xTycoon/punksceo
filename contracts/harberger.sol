@@ -1,6 +1,6 @@
 // Author: 0xTycoon
 // Project: Cigarettes (CEO of CryptoPunks)
-// Place NFT under harberger tax
+// Place your NFTs under harberger tax & earn
 pragma solidity ^0.8.15;
 
 
@@ -10,19 +10,20 @@ contract Harberger {
 
     // Structs
     struct Deed {
-        address creator; // address of the creator of the deed
-        address holder; // address of current holder and tax payer
-        IERC721Metadata nftContract;
         uint256 nftTokenID;
         uint256 price;
-        uint256 bond;
-        IERC20 priceToken;
-        uint256 state;
+        uint256 bond; // amount of CIG taken for a new deed (returned later)
         uint256 taxBalance; // amount of tax pre-paid
-        uint256 taxBurnBlock; // block number when tax was last burned
-        uint256 taxRate; // a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
-        uint256 blockStamp; // block number when NFT transferred owners
         bytes32 graffiti;
+        address originator; // address of the creator of the deed
+        address holder; // address of current holder and tax payer
+        address nftContract;
+        IERC20 priceToken;
+        uint64 taxBurnBlock; // block number when tax was last burned
+        uint64 blockStamp; // block number when NFT transferred owners
+        uint16 taxRate; // a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
+        uint16 share; // % that goes to originator
+        uint8 state;
     }
 
     // Storage
@@ -67,19 +68,19 @@ contract Harberger {
             uint256 _tokenID,
             uint256 _price, // initial price
             address _priceToken,
-            uint256 _taxRate
+            uint16 _taxRate
     ) external returns (uint256 deedID) {
         unchecked{deedID = ++deedHeight;} // starts from 1
         Deed storage d = deeds[deedID];
-        d.creator = msg.sender;
-        d.nftContract = IERC721Metadata(_nftContract);
+        d.originator = msg.sender;
+        d.nftContract = _nftContract;
         d.nftTokenID = _tokenID;
         d.priceToken = IERC20(_priceToken);
         d.price = _price;
         d.taxRate = _taxRate;
         cig.transferFrom(msg.sender, address(this), deedBond);
         d.bond = deedBond;
-        d.nftContract.safeTransferFrom(msg.sender, address(this), _tokenID);
+        IERC721(d.nftContract).safeTransferFrom(msg.sender, address(this), _tokenID);
         emit NewDeed(deedID);
         return (deedID);
     }
@@ -93,7 +94,7 @@ contract Harberger {
     ) external {
         Deed memory d = deeds[_deedID];
         require (d.bond > 0, "no such deed");
-        if (d.state == 1 && (d.taxBurnBlock != block.number)) {
+        if (d.state == 1 && (d.taxBurnBlock != uint64(block.number))) {
             d.state = _consumeTax(
                 _deedID,
                 d.price,
@@ -103,7 +104,7 @@ contract Harberger {
                 d.holder,
                 d.priceToken
             ); // _burnTax can change d.state to 2
-            deeds[_deedID].taxBurnBlock = block.number;                   // store the block number of last burn
+            deeds[_deedID].taxBurnBlock = uint64(block.number);                   // store the block number of last burn
         }
         if (d.state == 2) {
              // Auction state. The price goes down 10% every `CEO_auction_blocks` blocks
@@ -124,7 +125,7 @@ contract Harberger {
         deeds[_deedID].taxBalance = _tax_amount;                            // store the tax deposit amount
         _transfer(d.holder, msg.sender, _deedID);                           // transfer deed to buyer
         deeds[_deedID].price = _new_price;                                  // set the new price
-        deeds[_deedID].blockStamp = block.number;                           // record the block of state change
+        deeds[_deedID].blockStamp = uint64(block.number);                   // record the block of state change
         deeds[_deedID].state = 1;                                           // make available for sale
         deeds[_deedID].graffiti = _graffiti;                                // save the graffiti
         emit TaxDeposit(_deedID, msg.sender, _tax_amount);
@@ -146,7 +147,7 @@ contract Harberger {
             deeds[_deedID].taxBalance = d.taxBalance;        // record the balance
             emit TaxDeposit(_deedID, msg.sender, _amount);
         }
-        if (d.taxBurnBlock != block.number) {
+        if (d.taxBurnBlock != uint64(block.number)) {
             _consumeTax(
                 _deedID,
                 d.price,
@@ -155,7 +156,7 @@ contract Harberger {
                 d.taxBalance,
                 d.holder,
                 d.priceToken);                                         // settle any tax debt
-            deeds[_deedID].taxBurnBlock = block.number;
+            deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
     }
 
@@ -171,7 +172,7 @@ contract Harberger {
     function consumeTax(uint256 _deedID) external  {
         Deed memory d = deeds[_deedID];
         require (d.state == 1, "deed not active");
-        if (d.taxBurnBlock == block.number) return;
+        if (d.taxBurnBlock == uint64(block.number)) return;
         _consumeTax(
             _deedID,
             d.price,
@@ -180,7 +181,7 @@ contract Harberger {
             d.taxBalance,
             d.holder,
             d.priceToken);
-        deeds[_deedID].taxBurnBlock = block.number;
+        deeds[_deedID].taxBurnBlock = uint64(block.number);
     }
 
     /**
@@ -201,7 +202,7 @@ contract Harberger {
                 d.taxBalance,
                 d.holder,
                 d.priceToken);
-            deeds[_deedID].taxBurnBlock = block.number;
+            deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
         // The state is 1 if the holder hasn't defaulted on tax
         if (d.state == 1) {
@@ -224,12 +225,12 @@ contract Harberger {
     function _consumeTax(
         uint256 _deedID,
         uint256 _price,
-        uint256 _taxRate,
-        uint256 _taxBurnBlock,
+        uint16 _taxRate,
+        uint64 _taxBurnBlock,
         uint256 _taxBalance,
         address _holder,
         IERC20 _token
-    ) internal returns(uint256 /*state*/) {
+    ) internal returns(uint8 /*state*/) {
         uint256 tpb = _price / SCALE * _taxRate / epochBlocks;  // calculate tax-per-block
         uint256 debt = (block.number - _taxBurnBlock) * tpb;
         if (_taxBalance !=0 && _taxBalance >= debt) {    // Does holder have enough deposit to pay debt?
@@ -253,7 +254,7 @@ contract Harberger {
     /**
     * @dev _calcDiscount calculates the discount for the holder title based on how many blocks passed
     */
-    function _calcDiscount(uint256 _price, uint256 _taxBurnBlock) internal view returns (uint256) {
+    function _calcDiscount(uint256 _price, uint64 _taxBurnBlock) internal view returns (uint256) {
     unchecked {
         uint256 d = (_price / 10)           // 10% discount
         // multiply by the number of discounts accrued
@@ -298,7 +299,7 @@ contract Harberger {
     }
 
     function deedNFTMetadata(uint256 _deedID) public view returns (string memory, string memory) {
-        IERC721Metadata t = deeds[_deedID].nftContract;
+        IERC721Metadata t = IERC721Metadata(deeds[_deedID].nftContract);
         return (t.name(), t.symbol());
     }
 
@@ -362,7 +363,7 @@ contract Harberger {
         require (_tokenId < deedHeight, "index out of range");
         Deed storage d = deeds[_tokenId];
         // todo: ens names do not have tokenURI, see https://metadata.ens.domains/docs
-        return d.nftContract.tokenURI(d.nftTokenID);
+        return IERC721Metadata(d.nftContract).tokenURI(d.nftTokenID);
     }
 
     /**
@@ -502,14 +503,13 @@ contract Harberger {
         delete ownedDeeds[from][height]; // delete last slot
     }
 
-    // we do not allow NFTs to be send to this contract, except intrenally
+    // we do not allow NFTs to be send to this contract, except internally
     function onERC721Received(address /*_operator*/, address /*_from*/, uint256 /*_tokenId*/, bytes memory /*_data*/) external view returns (bytes4) {
         if (msg.sender == address(this)) {
             return RECEIVED;
         }
         revert("nope");
     }
-
 
 }
 
@@ -536,11 +536,32 @@ interface IERC165 {
     function supportsInterface(bytes4 interfaceId) external view returns (bool);
 }
 
+/**
+ * @title ERC-721 Non-Fungible Token Standard, optional metadata extension
+ * @dev See https://eips.ethereum.org/EIPS/eip-721
+ */
+interface IERC721Metadata  {
+    function name() external view returns (string memory);
+    function symbol() external view returns (string memory);
+    function tokenURI(uint256 tokenId) external view returns (string memory);
+}
 
+interface IERC721TokenReceiver {
+    function onERC721Received(address _operator, address _from, uint256 _tokenId, bytes memory _data) external returns (bytes4);
+}
+
+/// @title ERC-721 Non-Fungible Token Standard, optional enumeration extension
+/// @dev See https://eips.ethereum.org/EIPS/eip-721
+///  Note: the ERC-165 identifier for this interface is 0x780e9d63.
+interface IERC721Enumerable {
+    function totalSupply() external view returns (uint256);
+    function tokenByIndex(uint256 _index) external view returns (uint256);
+    function tokenOfOwnerByIndex(address _owner, uint256 _index) external view returns (uint256);
+}
 /**
  * @dev Required interface of an ERC721 compliant contract.
  */
-interface IERC721 is IERC165 {
+interface IERC721 is IERC165, IERC721Metadata, IERC721Enumerable, IERC721TokenReceiver {
 
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
@@ -569,28 +590,7 @@ interface IERC721 is IERC165 {
     ) external;
 }
 
-/**
- * @title ERC-721 Non-Fungible Token Standard, optional metadata extension
- * @dev See https://eips.ethereum.org/EIPS/eip-721
- */
-interface IERC721Metadata is IERC721 {
-    function name() external view returns (string memory);
-    function symbol() external view returns (string memory);
-    function tokenURI(uint256 tokenId) external view returns (string memory);
-}
 
-interface IERC721TokenReceiver {
-    function onERC721Received(address _operator, address _from, uint256 _tokenId, bytes memory _data) external returns (bytes4);
-}
-
-/// @title ERC-721 Non-Fungible Token Standard, optional enumeration extension
-/// @dev See https://eips.ethereum.org/EIPS/eip-721
-///  Note: the ERC-165 identifier for this interface is 0x780e9d63.
-interface IERC721Enumerable {
-    function totalSupply() external view returns (uint256);
-    function tokenByIndex(uint256 _index) external view returns (uint256);
-    function tokenOfOwnerByIndex(address _owner, uint256 _index) external view returns (uint256);
-}
 
 /**
  * @title ERC721 token receiver interface
