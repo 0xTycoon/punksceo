@@ -1,10 +1,34 @@
 // Author: 0xTycoon
 // Project: Cigarettes (CEO of CryptoPunks)
 // Place your NFTs under harberger tax & earn
-pragma solidity ^0.8.15;
-
+pragma solidity ^0.8.17;
 
 import "hardhat/console.sol";
+
+/**
+
+Welcome to BurgerMarket, a unique NFT marketplace where the NFTs are always for sale!
+
+A deed wraps an NFT. The deed causes the NFT to be always for sale.
+The user who wraps the NFT is called an "Originator
+
+Rules:
+
+- Taking out: The NFT can be taken out by the Originator, if they also own the deed.
+The bond will be returned upon taking it out. The Originator is required to wait 7 days in order to take out the NFT.
+This means that the originator will need to be a holder of the deed for at least 7 days.
+
+- if the NFT being wrapped as a Deed is an ENS, then reclaim() is called after wrapping. Reclaim will be called again
+after un-wrapping
+
+* states
+* 0 = initial
+* 1 = CEO reigning
+* 2 = Dutch auction
+* 3 = Taken out
+
+todo: set the fee via CEO governance, ens proxy, getInfo
+*/
 
 contract Harberger {
 
@@ -37,7 +61,9 @@ contract Harberger {
     // Constants
     uint256 private immutable epochBlocks;   // secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
     uint256 private immutable auctionBlocks; // 3600 blocks
-    IERC20 private immutable cig;
+    IERC20 private immutable cig; // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
+    IENS private immutable ens; // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
+    ICryptoPunks private immutable punks;
     uint private constant SCALE = 1e3;
     bytes4 private constant RECEIVED = 0x150b7a02; // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
     uint256 constant MIN_PRICE = 1e12;            // 0.000001
@@ -56,11 +82,19 @@ contract Harberger {
     event Defaulted(uint256 indexed deedID, address indexed called_by, uint256 reward); // when owner defaulted on tax
     // CEOPriceChange -> PriceChange
     event PriceChange(uint256 indexed deedID, uint256 price);                           // when owner changed price
-
-    constructor(uint256 _epochBlocks, uint256 _auctionBlocks, address _cig) {
+    event Takeout(uint256 indexed deedID, address indexed user);
+    constructor(
+        uint256 _epochBlocks,
+        uint256 _auctionBlocks,
+        address _cig, // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
+        address _ens, // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
+        address _punks
+    ){
         epochBlocks = _epochBlocks;
         auctionBlocks = _auctionBlocks;
         cig = IERC20(_cig);
+        ens = IENS(_ens);
+        punks = ICryptoPunks(_punks);
     }
 
     function newDeed(
@@ -80,12 +114,20 @@ contract Harberger {
         d.taxRate = _taxRate;
         cig.transferFrom(msg.sender, address(this), deedBond);
         d.bond = deedBond;
-        IERC721(d.nftContract).safeTransferFrom(msg.sender, address(this), _tokenID);
+        if (d.nftContract == address(punks)) {
+            punks.buyPunk(_tokenID); // wrap the punk
+        } else {
+            IERC721(d.nftContract).safeTransferFrom(msg.sender, address(this), _tokenID); // wrap the nft
+            if (d.nftContract == address(ens)) {
+                ens.reclaim(_tokenID, address(this)); // become the controller
+            }
+        }
+        _mint(msg.sender, deedID);
         emit NewDeed(deedID);
         return (deedID);
     }
 
-    function buyNFT(
+    function buyDeed(
         uint256 _deedID,
         uint256 _max_spend,
         uint256 _new_price,
@@ -187,14 +229,16 @@ contract Harberger {
     /**
      * @dev setPrice changes the price for the holder title.
      * @param _price the price to be paid. The new price most be larger tan MIN_PRICE and not default on debt
+     * @return state
      */
-    function setPrice(uint256 _deedID, uint256 _price) external  {
+    function setPrice(uint256 _deedID, uint256 _price) external returns (uint8 state) {
         Deed memory d = deeds[_deedID];
+        require (d.holder == msg.sender, "only holdoor");
         require (d.state == 1, "deed not active");
         require (_price >= MIN_PRICE, "price 2 smol");
         require (d.taxBalance >= _price / SCALE * d.taxRate, "price would default"); // need at least tax for 1 epoch
         if (block.number != d.taxBurnBlock) {
-            d.state = _consumeTax(
+            state = _consumeTax(
                 _deedID,
                 d.price,
                 d.taxRate,
@@ -205,22 +249,59 @@ contract Harberger {
             deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
         // The state is 1 if the holder hasn't defaulted on tax
-        if (d.state == 1) {
+        if (state == 1) {
             deeds[_deedID].price = _price;                                   // set the new price
             emit PriceChange(_deedID, _price);
         }
+        return state;
     }
 
-    function getInfo(address _user, uint256 _deedID) view public returns (
-        uint256[] memory   // ret
-    ) {
-        uint[] memory ret = new uint[](10);
-        return ret;
+    /**
+    * @dev takeout allows the deed's originator to unwrap and remove the nft
+    */
+    function takeout(uint256 _deedID) external returns (uint8 state) {
+        Deed memory d = deeds[_deedID];
+        require (d.holder == msg.sender, "only holdoor");
+        require (d.state == 1, "deed not active");
+        require (d.blockStamp + (epochBlocks*7) >= block.number, "must wait 7 epochs");
+        require (d.originator == msg.sender, "only originatoor");
+        if (d.taxBurnBlock == uint64(block.number)) return d.state;
+        state = _consumeTax(
+            _deedID,
+            d.price,
+            d.taxRate,
+            d.taxBurnBlock,
+            d.taxBalance,
+            d.holder,
+            d.priceToken);
+        if (state != 1 ) { // defaulted on tax?
+            return state;
+        }
+        deeds[_deedID].state = 3;
+        deeds[_deedID].taxBurnBlock = uint64(block.number);
+        d.nftTokenID;
+        if (d.nftContract == address(punks)) {
+            punks.offerPunkForSaleToAddress(d.nftTokenID, 0, msg.sender);
+        } else {
+            if (d.nftContract == address(ens)) {
+                ens.reclaim(d.nftTokenID, msg.sender); // relinquish the controller
+            }
+            IERC721(d.nftContract).safeTransferFrom(address(this), msg.sender, d.nftTokenID); // unwrap
+        }
+        if (d.taxBalance + d.bond > 0) {
+            safeERC20Transfer(d.priceToken, d.holder, d.taxBalance + d.bond);        // return deposited tax back to old holder
+            deeds[_deedID].taxBalance = 0;                                   // not needed, will be overwritten
+            deeds[_deedID].bond = 0;
+        }
+
+        _transfer(d.holder, address(0), _deedID); // burn the deed
+        emit Takeout(d.nftTokenID, msg.sender);
+        return 3;
     }
 
     /**
     * @dev _burnTax burns any tax debt. Boots the owner if defaulted, assuming can state is 1
-    * @return uint256 state 2 if if defaulted, 1 if not
+    * @return uint8 state 2 if if defaulted, 1 if not
     */
     function _consumeTax(
         uint256 _deedID,
@@ -270,6 +351,17 @@ contract Harberger {
         return price;
     }
     }
+
+    function getInfo(address _user, uint256 _deedID) view public returns (
+        uint256[] memory   // ret
+    ) {
+        uint[] memory ret = new uint[](10);
+        return ret;
+    }
+
+    /** Proxy functions for ENS
+
+    **/
 
     /**
     * @dev burn some tokens
@@ -362,7 +454,17 @@ contract Harberger {
     function tokenURI(uint256 _tokenId) public view returns (string memory) {
         require (_tokenId < deedHeight, "index out of range");
         Deed storage d = deeds[_tokenId];
-        // todo: ens names do not have tokenURI, see https://metadata.ens.domains/docs
+        if (d.nftContract == address(punks)) {
+            ICryptoPunksTokenURI uri = ICryptoPunksTokenURI(0x93b919324ec9D144c1c49EF33D443dE0c045601e);
+            return uri.tokenURI(_tokenId);
+        }
+        if (d.nftContract == address(ens)) {
+            //ens names do not have tokenURI, see https://metadata.ens.domains/docs
+            return string(
+            abi.encodePacked('https://metadata.ens.domains/mainnet/0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85/',
+            _tokenId
+            ));
+        }
         return IERC721Metadata(d.nftContract).tokenURI(d.nftTokenID);
     }
 
@@ -485,10 +587,22 @@ contract Harberger {
         emit Transfer(_from, _to, _tokenId);
     }
 
-    function addEnumeration(address to, uint256 tokenId) internal {
-        uint256 length = balances[to];
-        ownedDeeds[to][length] = tokenId;
-        ownedDeedsIndex[tokenId] = length;
+    /**
+    * @dev _mint mints a new deed
+    * @param _to address to mint to
+    * @param _tokenId to mint
+    */
+    function _mint(address _to, uint256 _tokenId) internal {
+        balances[_to]++;
+        deeds[_tokenId].holder = _to;
+        addEnumeration(_to, _tokenId);
+        emit Transfer(address(0), _to, _tokenId);
+    }
+
+    function addEnumeration(address _to, uint256 _tokenId) internal {
+        uint256 length = balances[_to];
+        ownedDeeds[_to][length] = _tokenId;
+        ownedDeedsIndex[_tokenId] = length;
     }
     function removeEnumeration(address from, uint256 _tokenId) internal {
         uint256 height = balances[from]-1; // last index
@@ -605,3 +719,26 @@ interface IERC721Receiver {
         bytes calldata data
     ) external returns (bytes4);
 }
+
+
+
+interface IENS {
+    function reclaim(uint256 id, address owner) external;
+}
+
+/**
+* @dev ICryptoPunk used to query the cryptopunks contract to verify the owner
+*/
+interface ICryptoPunks {
+    //function balanceOf(address account) external view returns (uint256);
+    //function punkIndexToAddress(uint256 punkIndex) external returns (address);
+    //function punksOfferedForSale(uint256 punkIndex) external returns (bool, uint256, address, uint256, address);
+    function buyPunk(uint punkIndex) external payable;
+    //function transferPunk(address to, uint punkIndex) external;
+    function offerPunkForSaleToAddress(uint punkIndex, uint minSalePriceInWei, address toAddress) external;
+}
+
+interface ICryptoPunksTokenURI {
+    function tokenURI(uint256 _tokenId) external view returns (string memory);
+}
+
