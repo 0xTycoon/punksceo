@@ -352,6 +352,14 @@ contract Harberger {
     }
     }
 
+    /**
+    * @dev deedBond updates the minimum bond amount required for a deed (spam prevention)
+    */
+    function updateMinAmount() external {
+        require (block.number - cig.taxBurnBlock() > 50, "must be CEO for at least 50 blocks");
+        deedBond = cig.CEO_price() / 10;
+    }
+
     function getInfo(address _user, uint256 _deedID) view public returns (
         uint256[] memory   // ret
     ) {
@@ -740,5 +748,10 @@ interface ICryptoPunks {
 
 interface ICryptoPunksTokenURI {
     function tokenURI(uint256 _tokenId) external view returns (string memory);
+}
+
+interface ICigtoken is IERC20 {
+    function taxBurnBlock() external view returns (uint256);
+    function CEO_price() external view returns (uint256);
 }
 
