@@ -61,7 +61,7 @@ contract Harberger {
     // Constants
     uint256 private immutable epochBlocks;   // secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
     uint256 private immutable auctionBlocks; // 3600 blocks
-    IERC20 private immutable cig; // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
+    ICigtoken private immutable cig; // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
     IENS private immutable ens; // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
     ICryptoPunks private immutable punks;
     uint private constant SCALE = 1e3;
@@ -92,7 +92,7 @@ contract Harberger {
     ){
         epochBlocks = _epochBlocks;
         auctionBlocks = _auctionBlocks;
-        cig = IERC20(_cig);
+        cig = ICigtoken(_cig);
         ens = IENS(_ens);
         punks = ICryptoPunks(_punks);
     }
@@ -360,11 +360,42 @@ contract Harberger {
         deedBond = cig.CEO_price() / 10;
     }
 
+    /**
+    * @return _ret - array of uin256 with state info
+    * @return deed - deed state selected by _deedID
+    * @return symbol - ERC20 symbol of deed.
+    */
     function getInfo(address _user, uint256 _deedID) view public returns (
-        uint256[] memory   // ret
+        uint256[] memory,   // ret
+        Deed memory deed,
+        string memory symbol,
+        string memory nftName,
+        string memory nftSymbol,
+        string memory nftTokenURI
     ) {
-        uint[] memory ret = new uint[](10);
-        return ret;
+        uint[] memory ret = new uint[](11);
+        deed = deeds[_deedID];
+        ret[0] = deedBond;
+        ret[1] = epochBlocks;
+        ret[2] = auctionBlocks;
+        ret[3] = cig.balanceOf(_user);
+        ret[4] = cig.allowance(_user, address(this));
+        if (deed.state != 0) {
+            ret[5] = IERC20(deed.priceToken).balanceOf(_user);
+            ret[6] = IERC20(deed.priceToken).allowance(_user, address(this));
+        }
+        ret[7] = deedHeight;
+        ret[8] = balanceOf(_user); //deed balance
+        ret[9] = cig.taxBurnBlock();
+        ret[10] = cig.CEO_price();
+        if (deed.state != 0) {
+            ret[10] = uint256(IERC20(deed.priceToken).decimals());
+            symbol = IERC20(deed.priceToken).symbol();
+            nftName = IERC721(deed.nftContract).name();
+            nftSymbol = IERC721(deed.nftContract).symbol();
+            nftTokenURI = tokenURI(_deedID);
+        }
+        return (ret, deed, symbol, nftName, nftSymbol, nftTokenURI);
     }
 
     /** Proxy functions for ENS
@@ -646,6 +677,8 @@ interface IERC20 {
     function allowance(address owner, address spender) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    function symbol() external view returns (string memory);
+    function decimals() external view returns (uint8);
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 }
