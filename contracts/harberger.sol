@@ -1,6 +1,6 @@
 // Author: 0xTycoon
-// Project: Cigarettes (CEO of CryptoPunks)
-// Place your NFTs under harberger tax & earn
+// Project: Hamburger Hut
+// About: Place your NFTs under harberger tax & earn
 pragma solidity ^0.8.17;
 
 import "hardhat/console.sol";
@@ -27,7 +27,8 @@ after un-wrapping
 * 2 = Dutch auction
 * 3 = Taken out
 
-todo: set the fee via CEO governance, ens proxy, getInfo
+todo: ens proxy, split earnings from sale with originator / holder, send some tax back to originator
+todo: check if ens reg expired
 */
 
 contract Harberger {
@@ -68,6 +69,14 @@ contract Harberger {
     bytes4 private constant RECEIVED = 0x150b7a02; // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
     uint256 constant MIN_PRICE = 1e12;            // 0.000001
 
+    uint8 internal locked = 1; // 2 = entered, 1 not
+    modifier notReentrant() {
+        require(locked == 1, "already entered");
+        locked = 2; // enter
+        _;
+        locked = 1; // exit
+    }
+
     // Events
     // NewCEO -> Takeover
     event NewDeed(uint256 indexed deedID);
@@ -84,8 +93,8 @@ contract Harberger {
     event PriceChange(uint256 indexed deedID, uint256 price);                           // when owner changed price
     event Takeout(uint256 indexed deedID, address indexed user);
     constructor(
-        uint256 _epochBlocks,
-        uint256 _auctionBlocks,
+        uint256 _epochBlocks, // 7200
+        uint256 _auctionBlocks, // 3600
         address _cig, // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
         address _ens, // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
         address _punks
@@ -97,13 +106,22 @@ contract Harberger {
         punks = ICryptoPunks(_punks);
     }
 
+    /**
+    * @dev create a new Deed by wrapping an NFT, putting it under a Harberger tax system
+    *   A new Deed token will be issued with the next available id.
+    * @param _nftContract address of the nft to wrap, can be an ERC721 or a punk
+    * @param _tokenID the token id from the _nftContract address
+    * @param _priceToken address of the ERC20 to use as the payment token
+    * @param _taxRate a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
+    */
     function newDeed(
             address _nftContract,
             uint256 _tokenID,
             uint256 _price, // initial price
             address _priceToken,
             uint16 _taxRate
-    ) external returns (uint256 deedID) {
+    // todo: share
+    ) external notReentrant returns (uint256 deedID) {
         unchecked{deedID = ++deedHeight;} // starts from 1
         Deed storage d = deeds[deedID];
         d.originator = msg.sender;
@@ -127,13 +145,20 @@ contract Harberger {
         return (deedID);
     }
 
+    /**
+    * @dev buyDeed buys the deed and transfers it to the new holder.
+    * @param _deedID the deed id
+    * @param _max_spend in wei. Since d.price can change after signing the tx, this can protect the buyer in
+    *    case the the d.price gets set to a high value
+    * @param _new_price the new takeover price
+    */
     function buyDeed(
         uint256 _deedID,
         uint256 _max_spend,
         uint256 _new_price,
         uint256 _tax_amount,
         bytes32 _graffiti
-    ) external {
+    ) external notReentrant {
         Deed memory d = deeds[_deedID];
         require (d.bond > 0, "no such deed");
         if (d.state == 1 && (d.taxBurnBlock != uint64(block.number))) {
@@ -152,9 +177,10 @@ contract Harberger {
              // Auction state. The price goes down 10% every `CEO_auction_blocks` blocks
              d.price = _calcDiscount(d.price, d.taxBurnBlock);
         }
-        require (d.price + _tax_amount <= _max_spend, "overpaid");         // prevent from over-payment
+        require (_max_spend >= d.price + _tax_amount , "overpaid");        // prevent from over-payment
         require (_new_price >= MIN_PRICE, "price 2 smol");                 // price cannot be under 0.000001
         require (_tax_amount >= _new_price / 1000, "insufficient tax" );   // at least %0.1 fee paid for 1 epoch
+        require (msg.sender != d.holder, "you already own it");
         safeERC20TransferFrom(
             d.priceToken, msg.sender, address(this), d.price + _tax_amount
         );                                                                 // pay for the deed + deposit tax
@@ -179,15 +205,15 @@ contract Harberger {
     * It may also burn any tax debt the holder may have.
     * @param _amount amount of tax to pre-pay
     */
-    function depositTax(uint256 _deedID, uint256 _amount) external {
+    function depositTax(uint256 _deedID, uint256 _amount) notReentrant external {
         Deed memory d = deeds[_deedID];
         require (d.state == 1, "not active");
         require (d.holder == msg.sender, "only holdoor");
         if (_amount > 0) {
-            safeERC20TransferFrom(d.priceToken, msg.sender, address(this), _amount); // place the tax on deposit
             d.taxBalance += _amount;
             deeds[_deedID].taxBalance = d.taxBalance;        // record the balance
             emit TaxDeposit(_deedID, msg.sender, _amount);
+            safeERC20TransferFrom(d.priceToken, msg.sender, address(this), _amount); // place the tax on deposit
         }
         if (d.taxBurnBlock != uint64(block.number)) {
             _consumeTax(
@@ -211,7 +237,7 @@ contract Harberger {
     * A Dutch auction begins where the price decreases 10% every hour.
     */
 
-    function consumeTax(uint256 _deedID) external  {
+    function consumeTax(uint256 _deedID) notReentrant external  {
         Deed memory d = deeds[_deedID];
         require (d.state == 1, "deed not active");
         if (d.taxBurnBlock == uint64(block.number)) return;
@@ -231,7 +257,7 @@ contract Harberger {
      * @param _price the price to be paid. The new price most be larger tan MIN_PRICE and not default on debt
      * @return state
      */
-    function setPrice(uint256 _deedID, uint256 _price) external returns (uint8 state) {
+    function setPrice(uint256 _deedID, uint256 _price) external notReentrant returns (uint8 state) {
         Deed memory d = deeds[_deedID];
         require (d.holder == msg.sender, "only holdoor");
         require (d.state == 1, "deed not active");
@@ -259,7 +285,7 @@ contract Harberger {
     /**
     * @dev takeout allows the deed's originator to unwrap and remove the nft
     */
-    function takeout(uint256 _deedID) external returns (uint8 state) {
+    function takeout(uint256 _deedID) external notReentrant returns (uint8 state) {
         Deed memory d = deeds[_deedID];
         require (d.holder == msg.sender, "only holdoor");
         require (d.state == 1, "deed not active");
@@ -356,8 +382,10 @@ contract Harberger {
     * @dev deedBond updates the minimum bond amount required for a deed (spam prevention)
     */
     function updateMinAmount() external {
-        require (block.number - cig.taxBurnBlock() > 50, "must be CEO for at least 50 blocks");
-        deedBond = cig.CEO_price() / 10;
+        unchecked {
+            require (block.number - cig.taxBurnBlock() > 50, "must be CEO for at least 50 blocks");
+            deedBond = cig.CEO_price() / 10;
+        }
     }
 
     /**
@@ -455,8 +483,8 @@ contract Harberger {
     /// @return The token identifier for the `_index`th NFT,
     ///  (sort order not specified)
     function tokenByIndex(uint256 _index) external view returns (uint256) {
-        require (_index > 0 && _index < deedHeight, "index out of range");
-        return _index++;
+        require (_index < deedHeight, "index out of range");
+        return ++_index; // index starts from 0
     }
 
     /// @notice Enumerate NFTs assigned to an owner
@@ -491,7 +519,7 @@ contract Harberger {
      * @dev Returns the Uniform Resource Identifier (URI) for `tokenId` token.
      */
     function tokenURI(uint256 _tokenId) public view returns (string memory) {
-        require (_tokenId < deedHeight, "index out of range");
+        require (_tokenId > 0 && _tokenId < deedHeight+1, "index out of range");
         Deed storage d = deeds[_tokenId];
         if (d.nftContract == address(punks)) {
             ICryptoPunksTokenURI uri = ICryptoPunksTokenURI(0x93b919324ec9D144c1c49EF33D443dE0c045601e);
@@ -515,7 +543,7 @@ contract Harberger {
      * - `tokenId` must exist.
      */
     function ownerOf(uint256 _tokenId) public view returns (address) {
-        require (_tokenId < deedHeight, "index out of range");
+        require (_tokenId > 0 && _tokenId < deedHeight+1, "index out of range");
         Deed storage d = deeds[_tokenId];
         address holder = d.holder;
         require (holder != address(0), "not minted.");
@@ -532,7 +560,7 @@ contract Harberger {
     * @param _tokenId The NFT to transfer
     */
     function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes memory _data) external  {
-        require(msg.sender == address(this), "not allowed"); // call must come from this contract
+        require(msg.sender == address(this), "not allowed"); // transfer can only be made with buyDeed
     }
 
     /**
@@ -545,11 +573,11 @@ contract Harberger {
     * @param _tokenId The NFT to transfer
     */
     function safeTransferFrom(address _from, address _to, uint256 _tokenId) external  {
-        require(msg.sender == address(this), "not allowed"); // call must come from this contract
+        require(msg.sender == address(this), "not allowed"); // transfer can only be made with buyDeed
     }
 
     function transferFrom(address _from, address _to, uint256 _tokenId) external  {
-        require(msg.sender == address(this), "not allowed"); // call must come from this contract
+        require(msg.sender == address(this), "not allowed"); // transfer can only be made with buyDeed
     }
 
     /**
@@ -578,7 +606,7 @@ contract Harberger {
     * @return Will always return address(this)
     */
     function getApproved(uint256 _tokenId) public view returns (address) {
-        require (_tokenId < deedHeight, "index out of range");
+        require (_tokenId > 0 &&  _tokenId < deedHeight+1, "index out of range");
         return address(this);
     }
 
@@ -639,21 +667,23 @@ contract Harberger {
     }
 
     function addEnumeration(address _to, uint256 _tokenId) internal {
-        uint256 length = balances[_to];
-        ownedDeeds[_to][length] = _tokenId;
-        ownedDeedsIndex[_tokenId] = length;
+        uint256 last = balances[_to]-1;
+        ownedDeeds[_to][last] = _tokenId;
+        ownedDeedsIndex[_tokenId] = last;
+console.log(_to, last, _tokenId);
     }
-    function removeEnumeration(address from, uint256 _tokenId) internal {
-        uint256 height = balances[from]-1; // last index
+    function removeEnumeration(address _from, uint256 _tokenId) internal {
+        uint256 height = balances[_from]; // last index
         uint256 i = ownedDeedsIndex[_tokenId]; // index
+console.log("remove", height, i);
         if (i != height) {
             // If not last, move the last token to the slot of the token to be deleted
-            uint256 lastTokenId = ownedDeeds[from][height];
-            ownedDeeds[from][i] = lastTokenId; // Move the last token to the slot of the to-delete token
+            uint256 lastTokenId = ownedDeeds[_from][height];
+            ownedDeeds[_from][i] = lastTokenId; // Move the last token to the slot of the to-delete token
             ownedDeedsIndex[lastTokenId] = i; // Update the moved token's index
         }
         delete ownedDeedsIndex[_tokenId];// delete from index
-        delete ownedDeeds[from][height]; // delete last slot
+        delete ownedDeeds[_from][height]; // delete last slot
     }
 
     // we do not allow NFTs to be send to this contract, except internally

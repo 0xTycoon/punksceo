@@ -11,23 +11,42 @@ import "hardhat/console.sol";
 // a mock contract used for testing
 contract PunkMock {
 
-    address tester;
+    struct Offer {
+        uint256 minSalePriceInWei;
+        address toAddress;
+    }
+    mapping(uint256 => address) private registry; // ownership registry
+    mapping(uint256 => Offer) private offers;
 
+    event PunkBought(uint indexed punkIndex, uint value, address indexed fromAddress, address indexed toAddress);
+    event PunkOffered(uint indexed punkIndex, uint minValue, address indexed toAddress);
     function punkIndexToAddress(uint256 punkIndex) external returns (address) {
-        if (
-            (punkIndex != 4513)
-            && (punkIndex != 4514)
-            && (punkIndex != 4515)
-            && (punkIndex != 4519)
-            && (punkIndex != 4001)
-        ) {
-            return address(0);
-        }
-        return tester;
+        return registry[punkIndex];
     }
-    constructor(address _addr) {
-        tester = _addr;
+    constructor(address _addr1, address _addr2, address _addr3) {
+        registry[4513] = _addr1;
+        registry[4514] = _addr1;
+        registry[4515] = _addr2;
+        registry[4519] = _addr2;
+        registry[4520] = _addr2;
+        registry[4001] = _addr3;
     }
+
+    function offerPunkForSaleToAddress(uint punkIndex, uint minSalePriceInWei, address toAddress) external {
+        offers[punkIndex].toAddress = toAddress;
+        offers[punkIndex].minSalePriceInWei = minSalePriceInWei;
+        emit PunkOffered(punkIndex, minSalePriceInWei, toAddress);
+    }
+
+    function buyPunk(uint punkIndex) external payable {
+        require(offers[punkIndex].toAddress == msg.sender, "you are not the toAddress");
+        address seller = registry[punkIndex];
+        registry[punkIndex] = msg.sender;
+        offers[punkIndex].toAddress = address(0);
+        emit PunkBought(punkIndex, msg.value, seller, msg.sender);
+
+    }
+
 }
 
 import "hardhat/console.sol";
@@ -153,6 +172,48 @@ contract MasterChefV2 {
 
     function _simulateCallback(address _user) internal {
         rewarder.onSushiReward(0, _user, _user, 10 ether, balances[_user]);
+    }
+}
+
+contract ERC721Mock {
+    // Just a simulation, do not use in any live code
+    mapping(address => uint256) private balances;              // counts of ownership
+    mapping(uint256  => address) private ownership;
+    mapping(uint256  => address) private approval;
+    //mapping(address => mapping(address => bool)) private approvalAll; // operator approvals
+
+    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+
+    /**
+     * @dev Approval is fired when `owner` enables `approved` to manage the `tokenId` token.
+     */
+    event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
+
+    /**
+     * @dev ApprovalForAll is fired when `owner` enables or disables (`approved`) `operator` to manage all of its assets.
+     */
+    event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
+
+    function tokenURI(uint256 _tokenId) public view returns (string memory) {
+        return ""; // todo: return uri
+    }
+
+    function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes memory _data) external {
+        address o = ownership[_tokenId];
+        require (o == _from, "_from must be owner");
+        address a = approval[_tokenId];
+        require (o == msg.sender || (a == msg.sender) /* || (approvalAll[o][msg.sender])*/, "not permitted");
+        balances[_to]++;
+        balances[_from]--;
+        ownership[_tokenId] = _to;
+        emit Transfer(_from, _to, _tokenId);
+    }
+
+    function approve(address _to, uint256 _tokenId) external {
+        address o = ownership[_tokenId];
+        require (o == msg.sender, "action not token permitted");
+        approval[_tokenId] = _to;
+        emit Approval(msg.sender, _to, _tokenId);
     }
 }
 
