@@ -27,8 +27,7 @@ after un-wrapping
 * 2 = Dutch auction
 * 3 = Taken out
 
-todo: ens proxy, split earnings from sale with originator / holder, send some tax back to originator
-todo: check if ens reg expired
+todo: ens proxy, check if ens reg expired, getinfo could also return details about ENS
 */
 
 contract Harberger {
@@ -432,11 +431,14 @@ contract Harberger {
         ret[9] = cig.taxBurnBlock();
         ret[10] = cig.CEO_price();
         if (deed.state != 0) {
-            ret[10] = uint256(IERC20(deed.priceToken).decimals());
+            ret[11] = uint256(IERC20(deed.priceToken).decimals());
             symbol = IERC20(deed.priceToken).symbol();
             nftName = IERC721(deed.nftContract).name();
             nftSymbol = IERC721(deed.nftContract).symbol();
             nftTokenURI = tokenURI(_deedID);
+            if (deed.state == 2) {
+                deed.price = _calcDiscount(deed.price, deed.taxBurnBlock);
+            }
         }
         return (ret, deed, symbol, nftName, nftSymbol, nftTokenURI);
     }
