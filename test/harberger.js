@@ -63,7 +63,8 @@ describe("Hamburgers", function () {
                 4513,
                 peth("10000"),
                 cig.address,
-                10 // 10% tax
+                10, // 1% tax,
+                1000, // 100% to originator
             )).to.be.revertedWith("you are not the toAddress");
 
             expect (await punks.offerPunkForSaleToAddress(4513, 0, burger.address))
@@ -73,7 +74,8 @@ describe("Hamburgers", function () {
                 4513,
                 peth("10000"),
                 cig.address,
-                10
+                10,
+                1000
             )).to.emit(burger, "NewDeed").withArgs(1);
 
 
@@ -97,21 +99,24 @@ describe("Hamburgers", function () {
                 4515,
                 peth("10000"),
                 cig.address,
-                10
+                10,
+                1000
             )).to.emit(burger, "NewDeed").withArgs(2);
             expect(await burger.connect(simp).newDeed(
                 punks.address, // a cryptopunk
                 4519,
                 peth("10000"),
                 cig.address,
-                10
+                10,
+                1000
             )).to.emit(burger, "NewDeed").withArgs(3);
             expect(await burger.connect(simp).newDeed(
                 punks.address, // a cryptopunk
                 4520,
                 peth("10000"),
                 cig.address,
-                10
+                10,
+                1000
             )).to.emit(burger, "NewDeed").withArgs(4);
 
             // sanity check
@@ -173,6 +178,11 @@ describe("Hamburgers", function () {
             expect(await burger.balanceOf(simp.address)).to.equal(0);
             await expect(burger.tokenOfOwnerByIndex(simp.address, 0)).to.be.revertedWith("index out of range");
             expect(await burger.balanceOf(elizabeth.address)).to.equal(3);
+
+        });
+
+        it("deposit tax", async function () {
+
 
         });
     });

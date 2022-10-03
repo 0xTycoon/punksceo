@@ -35,19 +35,20 @@ contract Harberger {
 
     // Structs
     struct Deed {
-        uint256 nftTokenID;
-        uint256 price;
-        uint256 bond; // amount of CIG taken for a new deed (returned later)
+        uint256 nftTokenID; // the token id of the NFT that is wrapped in this deed
+        uint256 price;      // takeover price in 'priceToken'
+        uint256 bond;       // amount of CIG taken for a new deed (returned later)
         uint256 taxBalance; // amount of tax pre-paid
-        bytes32 graffiti;
+        bytes32 graffiti;   // a 32 character graffiti set when buying a deed
         address originator; // address of the creator of the deed
-        address holder; // address of current holder and tax payer
-        address nftContract;
-        IERC20 priceToken;
-        uint64 taxBurnBlock; // block number when tax was last burned
-        uint64 blockStamp; // block number when NFT transferred owners
-        uint16 taxRate; // a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
-        uint16 share; // % that goes to originator
+        address holder;     // address of current holder and tax payer
+        address nftContract;// address of the NFT that is wrapped in this deed
+        IERC20 priceToken;  // address of the payment token
+        uint64 taxBurnBlock;// block number when tax was last burned
+        uint64 blockStamp;  // block number when NFT transferred owners
+        uint32 index;       // stores the index for deed enumeration
+        uint16 [2] rate;    // a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
+                            // rate[0] is the tax %, rate[1] is the share
         uint8 state;
     }
 
@@ -68,8 +69,9 @@ contract Harberger {
     uint private constant SCALE = 1e3;
     bytes4 private constant RECEIVED = 0x150b7a02; // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
     uint256 constant MIN_PRICE = 1e12;            // 0.000001
-
     uint8 internal locked = 1; // 2 = entered, 1 not
+
+    // Modifiers
     modifier notReentrant() {
         require(locked == 1, "already entered");
         locked = 2; // enter
@@ -78,20 +80,19 @@ contract Harberger {
     }
 
     // Events
-    // NewCEO -> Takeover
     event NewDeed(uint256 indexed deedID);
     event Takeover(uint256 indexed deedID, address indexed user, uint256 new_price, bytes32 graffiti); // when a NFT is bought
-    // TaxDeposit
     event TaxDeposit(uint256 indexed deedID, address indexed user, uint256 amount);     // when tax is deposited
-    // RevenueBurned
-    event RevenueBurned(uint256 indexed deedID, address indexed user, uint256 amount);  // when tax is burned
-    // TaxBurned
-    event TaxBurned(uint256 indexed deedID, address indexed user, uint256 amount);      // when tax is burned
-    // CEODefaulted -> CEODefaulted
+    event RevenueSplit(
+        uint256 indexed deedID,
+        address indexed user,
+        uint256 amount,
+        uint16 split,
+        address indexed originator);                                                    // revenue paid out
     event Defaulted(uint256 indexed deedID, address indexed called_by, uint256 reward); // when owner defaulted on tax
-    // CEOPriceChange -> PriceChange
     event PriceChange(uint256 indexed deedID, uint256 price);                           // when owner changed price
-    event Takeout(uint256 indexed deedID, address indexed user);
+    event Takeout(uint256 indexed deedID, address indexed user);                        // when NFT taken out from deed
+
     constructor(
         uint256 _epochBlocks, // 7200
         uint256 _auctionBlocks, // 3600
@@ -113,14 +114,15 @@ contract Harberger {
     * @param _tokenID the token id from the _nftContract address
     * @param _priceToken address of the ERC20 to use as the payment token
     * @param _taxRate a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
+    * @param _share of revenue that goes to originator, remainder is burned. The type is same as _taxRate
     */
     function newDeed(
             address _nftContract,
             uint256 _tokenID,
             uint256 _price, // initial price
             address _priceToken,
-            uint16 _taxRate
-    // todo: share
+            uint16 _taxRate,
+            uint16 _share
     ) external notReentrant returns (uint256 deedID) {
         unchecked{deedID = ++deedHeight;} // starts from 1
         Deed storage d = deeds[deedID];
@@ -129,7 +131,8 @@ contract Harberger {
         d.nftTokenID = _tokenID;
         d.priceToken = IERC20(_priceToken);
         d.price = _price;
-        d.taxRate = _taxRate;
+        d.rate[0] = _taxRate;
+        d.rate[1] = _share;
         cig.transferFrom(msg.sender, address(this), deedBond);
         d.bond = deedBond;
         if (d.nftContract == address(punks)) {
@@ -165,10 +168,12 @@ contract Harberger {
             d.state = _consumeTax(
                 _deedID,
                 d.price,
-                d.taxRate,
+                d.rate[0],
+                d.rate[1],
                 d.taxBurnBlock,
                 d.taxBalance,
                 d.holder,
+                d.originator,
                 d.priceToken
             ); // _burnTax can change d.state to 2
             deeds[_deedID].taxBurnBlock = uint64(block.number);                   // store the block number of last burn
@@ -184,8 +189,8 @@ contract Harberger {
         safeERC20TransferFrom(
             d.priceToken, msg.sender, address(this), d.price + _tax_amount
         );                                                                 // pay for the deed + deposit tax
-        safeERC20Transfer(d.priceToken, address(0), d.price);              // burn the revenue
-        emit RevenueBurned(_deedID, msg.sender, d.price);
+        _splitRevenue(d.priceToken, d.price, d.rate[1], d.originator);     // split the revenue
+        emit RevenueSplit(_deedID, msg.sender, d.price, d.rate[1], d.originator);
         if (d.taxBalance > 0) {
             safeERC20Transfer(d.priceToken, d.holder, d.taxBalance);        // return deposited tax back to old holder
             // deeds[_deedID].taxBalance                                    // not needed, will be overwritten
@@ -219,10 +224,12 @@ contract Harberger {
             _consumeTax(
                 _deedID,
                 d.price,
-                d.taxRate,
+                d.rate[0],
+                d.rate[1],
                 d.taxBurnBlock,
                 d.taxBalance,
                 d.holder,
+                d.originator,
                 d.priceToken);                                         // settle any tax debt
             deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
@@ -244,10 +251,12 @@ contract Harberger {
         _consumeTax(
             _deedID,
             d.price,
-            d.taxRate,
+            d.rate[1],
+            d.rate[0],
             d.taxBurnBlock,
             d.taxBalance,
             d.holder,
+            d.originator,
             d.priceToken);
         deeds[_deedID].taxBurnBlock = uint64(block.number);
     }
@@ -262,15 +271,17 @@ contract Harberger {
         require (d.holder == msg.sender, "only holdoor");
         require (d.state == 1, "deed not active");
         require (_price >= MIN_PRICE, "price 2 smol");
-        require (d.taxBalance >= _price / SCALE * d.taxRate, "price would default"); // need at least tax for 1 epoch
+        require (d.taxBalance >= _price / SCALE * d.rate[0], "price would default"); // need at least tax for 1 epoch
         if (block.number != d.taxBurnBlock) {
             state = _consumeTax(
                 _deedID,
                 d.price,
-                d.taxRate,
+                d.rate[0],
+                d.rate[1],
                 d.taxBurnBlock,
                 d.taxBalance,
                 d.holder,
+                d.originator,
                 d.priceToken);
             deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
@@ -295,10 +306,12 @@ contract Harberger {
         state = _consumeTax(
             _deedID,
             d.price,
-            d.taxRate,
+            d.rate[0],
+            d.rate[1],
             d.taxBurnBlock,
             d.taxBalance,
             d.holder,
+            d.originator,
             d.priceToken);
         if (state != 1 ) { // defaulted on tax?
             return state;
@@ -333,25 +346,27 @@ contract Harberger {
         uint256 _deedID,
         uint256 _price,
         uint16 _taxRate,
+        uint16 _split,
         uint64 _taxBurnBlock,
         uint256 _taxBalance,
         address _holder,
+        address _originator,
         IERC20 _token
     ) internal returns(uint8 /*state*/) {
-        uint256 tpb = _price / SCALE * _taxRate / epochBlocks;  // calculate tax-per-block
+        uint256 tpb = _price / SCALE * _taxRate / epochBlocks;      // calculate tax-per-block
         uint256 debt = (block.number - _taxBurnBlock) * tpb;
-        if (_taxBalance !=0 && _taxBalance >= debt) {    // Does holder have enough deposit to pay debt?
-            _taxBalance = _taxBalance - debt;            // deduct tax
-            _burn(_token, debt);                     // burn the tax
-            emit TaxBurned(_deedID, msg.sender, debt);
+        if (_taxBalance !=0 && _taxBalance >= debt) {               // Does holder have enough deposit to pay debt?
+            _taxBalance = _taxBalance - debt;                       // deduct tax
+            _splitRevenue(_token, debt, _split, _originator);       // burn the tax
+            emit RevenueSplit(_deedID, msg.sender, debt, _split, _originator);
         } else {
             // Holder defaulted
-            uint256 default_amount = debt - _taxBalance;     // calculate how much defaulted
-            _burn(_token, _taxBalance);                // burn the tax
-            emit TaxBurned(_deedID, msg.sender, _taxBalance);
-            deeds[_deedID].state = 2;                                      // initiate a Dutch auction.
+            uint256 default_amount = debt - _taxBalance;             // calculate how much defaulted
+            _splitRevenue(_token, _taxBalance, _split, _originator); // burn the tax
+            emit RevenueSplit(_deedID, msg.sender, _taxBalance, _split, _originator);
+            deeds[_deedID].state = 2;                                 // initiate a Dutch auction.
             deeds[_deedID].taxBalance = 0;
-            _transfer(_holder, address(this), _deedID); // Strip the deed from the holder
+            _transfer(_holder, address(this), _deedID);               // Strip the deed from the holder
             emit Defaulted(_deedID, msg.sender, default_amount);
             return 2;
         }
@@ -426,7 +441,7 @@ contract Harberger {
         return (ret, deed, symbol, nftName, nftSymbol, nftTokenURI);
     }
 
-    /** Proxy functions for ENS
+    /** todo Proxy functions for ENS
 
     **/
 
@@ -434,9 +449,21 @@ contract Harberger {
     * @dev burn some tokens
     * @param _token The token to burn
     * @param _amount The amount to burn
+    * @param _split The % to send to originator, burn remainder
+    * @param _originator address to send the revenue split, burn any remainder
     */
-    function _burn(IERC20 _token,  uint256 _amount) internal {
-        safeERC20Transfer(_token, address(0), _amount);
+    function _splitRevenue(IERC20 _token,  uint256 _amount, uint16 _split, address _originator) internal {
+
+        if (_split == 1000) {
+            safeERC20Transfer(_token, _originator, _amount);             // distribute all
+        } else if (_split > 0) {
+            uint256 distribute = _amount / SCALE * _split;
+            safeERC20Transfer(_token, _originator, distribute);          // distribute portion
+            safeERC20Transfer(_token, address(0), _amount - distribute); // burn remainder
+        } else if (_split == 0) {
+            safeERC20Transfer(_token, address(0), _amount);              // burn all
+        }
+
     }
 
     function safeERC20Transfer(IERC20 _token, address _to, uint256 _amount) internal {
@@ -666,23 +693,26 @@ contract Harberger {
         emit Transfer(address(0), _to, _tokenId);
     }
 
+    /**
+    * @dev called after an erc721 token transfer, after the counts have been updated
+    */
     function addEnumeration(address _to, uint256 _tokenId) internal {
-        uint256 last = balances[_to]-1;
-        ownedDeeds[_to][last] = _tokenId;
-        ownedDeedsIndex[_tokenId] = last;
-console.log(_to, last, _tokenId);
+        uint256 last = balances[_to]-1;   // the index of the last position
+        ownedDeeds[_to][last] = _tokenId; // add a new entry
+        deeds[_tokenId].index = uint32(last);
+
     }
     function removeEnumeration(address _from, uint256 _tokenId) internal {
-        uint256 height = balances[_from]; // last index
-        uint256 i = ownedDeedsIndex[_tokenId]; // index
+        uint256 height = balances[_from];  // last index
+        uint256 i = deeds[_tokenId].index; // index
 console.log("remove", height, i);
         if (i != height) {
             // If not last, move the last token to the slot of the token to be deleted
             uint256 lastTokenId = ownedDeeds[_from][height];
-            ownedDeeds[_from][i] = lastTokenId; // Move the last token to the slot of the to-delete token
-            ownedDeedsIndex[lastTokenId] = i; // Update the moved token's index
+            ownedDeeds[_from][i] = lastTokenId;   // move the last token to the slot of the to-delete token
+            deeds[lastTokenId].index = uint32(i); // update the moved token's index
         }
-        delete ownedDeedsIndex[_tokenId];// delete from index
+        deeds[_tokenId].index = 0;        // delete from index
         delete ownedDeeds[_from][height]; // delete last slot
     }
 
@@ -775,8 +805,6 @@ interface IERC721 is IERC165, IERC721Metadata, IERC721Enumerable, IERC721TokenRe
     ) external;
 }
 
-
-
 /**
  * @title ERC721 token receiver interface
  * @dev Interface for any contract that wants to support safeTransfers
@@ -790,8 +818,6 @@ interface IERC721Receiver {
         bytes calldata data
     ) external returns (bytes4);
 }
-
-
 
 interface IENS {
     function reclaim(uint256 id, address owner) external;
