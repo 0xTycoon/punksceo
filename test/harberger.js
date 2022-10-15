@@ -3,6 +3,7 @@ const {ContractFactory, utils, BigNumber} = require('ethers');
 
 describe("Hamburgers", function () {
     let burger, Harberger, PunkMock, punks, CigTokenMock, cig, ERC721Mock, nft1, nft2;
+    let PunkTokenURIMock, punksURI;
     let owner, simp, elizabeth;
 
     let feth = utils.formatEther;
@@ -32,6 +33,10 @@ describe("Hamburgers", function () {
         punks = await PunkMock.deploy(owner.address, simp.address, elizabeth.address);
         await punks.deployed();
 
+        PunkTokenURIMock = await ethers.getContractFactory("CryptoPunksTokenURIMock");
+        punksURI = await PunkTokenURIMock.deploy();
+        await punksURI.deployed();
+
         ERC721Mock = await ethers.getContractFactory("ERC721Mock");
         nft1 = await ERC721Mock.deploy(); // simulates a regular 721 nft
         await nft1.deployed();
@@ -44,7 +49,8 @@ describe("Hamburgers", function () {
             5, // change dutch auction every 5 blocks
             cig.address,
             nft2.address,
-            punks.address
+            punks.address,
+            punksURI.address
             );
         await burger.deployed();
 
@@ -182,6 +188,9 @@ describe("Hamburgers", function () {
         });
 
         it("deposit tax", async function () {
+
+            let [stats, deed, symbol, nftName, nftSymbol, nftTokenURI] = await burger.getInfo(elizabeth.address, 2);
+            console.log(nftTokenURI);
 
 
         });

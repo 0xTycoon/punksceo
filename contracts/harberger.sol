@@ -57,14 +57,18 @@ contract Harberger {
     uint256 public deedHeight; // highest deedID
     mapping(address => uint256) private balances;      // counts of ownership
     //mapping(uint256  => address) private ownership; // deeds track ownership
-    mapping(uint256 => uint256) private ownedDeedsIndex;
     mapping(address => mapping(uint256 => uint256)) private ownedDeeds;
+    mapping(uint256 => string) public names; // .eth names wrapped in the deeds
     // Constants
     uint256 private immutable epochBlocks;   // secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
     uint256 private immutable auctionBlocks; // 3600 blocks
     ICigtoken private immutable cig; // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
-    IENS private immutable ens; // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
-    ICryptoPunks private immutable punks;
+    IENSRegistrar private immutable dotEthReg; // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
+    IENSResolver private immutable dotEthRes; // 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41
+    ICryptoPunks private immutable punks; // 0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB
+    ICryptoPunksTokenURI private immutable punksUri; // 0x4e776fCbb241a0e0Ea2904d642baa4c7E171a1E9
+    //IENS private immutable ens; // 0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e
+
     uint private constant SCALE = 1e3;
     bytes4 private constant RECEIVED = 0x150b7a02; // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
     uint256 constant MIN_PRICE = 1e12;            // 0.000001
@@ -93,17 +97,21 @@ contract Harberger {
     event Takeout(uint256 indexed deedID, address indexed user);                        // when NFT taken out from deed
 
     constructor(
-        uint256 _epochBlocks, // 7200
+        uint256 _epochBlocks,   // 7200
         uint256 _auctionBlocks, // 3600
-        address _cig, // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
-        address _ens, // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
-        address _punks
+        address _cig,           // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
+        address _ensReg,        // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85 (BaseRegistrarImplementation - ERC721)
+        address _ensRes,        // 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41
+        address _punks,         // 0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB
+        address _punksUri       // 0x4e776fCbb241a0e0Ea2904d642baa4c7E171a1E9
     ){
         epochBlocks = _epochBlocks;
         auctionBlocks = _auctionBlocks;
         cig = ICigtoken(_cig);
-        ens = IENS(_ens);
+        dotEthReg = IENSRegistrar(_ensReg);
+        dotEthRes = IENSResolver(_ensRes);
         punks = ICryptoPunks(_punks);
+        punksUri = ICryptoPunksTokenURI(_punksUri);
     }
 
     /**
@@ -114,6 +122,7 @@ contract Harberger {
     * @param _priceToken address of the ERC20 to use as the payment token
     * @param _taxRate a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
     * @param _share of revenue that goes to originator, remainder is burned. The type is same as _taxRate
+    * @param _ensName .eth name, required if nft is an ENS .eth (without the .eth suffix, normalized)
     */
     function newDeed(
             address _nftContract,
@@ -121,7 +130,8 @@ contract Harberger {
             uint256 _price, // initial price
             address _priceToken,
             uint16 _taxRate,
-            uint16 _share
+            uint16 _share,
+            string memory _ensName
     ) external notReentrant returns (uint256 deedID) {
         unchecked{deedID = ++deedHeight;} // starts from 1
         Deed storage d = deeds[deedID];
@@ -138,8 +148,10 @@ contract Harberger {
             punks.buyPunk(_tokenID); // wrap the punk
         } else {
             IERC721(d.nftContract).safeTransferFrom(msg.sender, address(this), _tokenID); // wrap the nft
-            if (d.nftContract == address(ens)) {
-                ens.reclaim(_tokenID, address(this)); // become the controller
+            if (d.nftContract == address(dotEthReg)) { // it's a .eth name
+                require (node(_ensName) == bytes32(_tokenID), 'invalid .eth name');
+                names[deedID] = _ensName;
+                dotEthReg.reclaim(_tokenID, address(this)); // become the controller
             }
         }
         _mint(msg.sender, deedID);
@@ -321,10 +333,11 @@ contract Harberger {
         if (d.nftContract == address(punks)) {
             punks.offerPunkForSaleToAddress(d.nftTokenID, 0, msg.sender);
         } else {
-            if (d.nftContract == address(ens)) {
-                ens.reclaim(d.nftTokenID, msg.sender); // relinquish the controller
+            if (d.nftContract == address(dotEthReg)) {
+                dotEthReg.reclaim(d.nftTokenID, msg.sender); // relinquish the controller
             }
             IERC721(d.nftContract).safeTransferFrom(address(this), msg.sender, d.nftTokenID); // unwrap
+            delete names[_deedID];
         }
         if (d.taxBalance + d.bond > 0) {
             safeERC20Transfer(d.priceToken, d.holder, d.taxBalance + d.bond);        // return deposited tax back to old holder
@@ -415,27 +428,42 @@ contract Harberger {
         string memory nftSymbol,
         string memory nftTokenURI
     ) {
-        uint[] memory ret = new uint[](11);
+        uint[] memory ret = new uint[](12);
         deed = deeds[_deedID];
         ret[0] = deedBond;
         ret[1] = epochBlocks;
         ret[2] = auctionBlocks;
         ret[3] = cig.balanceOf(_user);
         ret[4] = cig.allowance(_user, address(this));
+
         if (deed.state != 0) {
             ret[5] = IERC20(deed.priceToken).balanceOf(_user);
             ret[6] = IERC20(deed.priceToken).allowance(_user, address(this));
         }
+
         ret[7] = deedHeight;
         ret[8] = balanceOf(_user); //deed balance
         ret[9] = cig.taxBurnBlock();
         ret[10] = cig.CEO_price();
+
         if (deed.state != 0) {
+
             ret[11] = uint256(IERC20(deed.priceToken).decimals());
+
             symbol = IERC20(deed.priceToken).symbol();
-            nftName = IERC721(deed.nftContract).name();
-            nftSymbol = IERC721(deed.nftContract).symbol();
+            if (deed.nftContract == address(punks)) {
+                nftName = "CryptoPunks";
+                nftSymbol =  unicode"Ͼ";
+            } else if (deed.nftContract == address(dotEthReg)) {
+                nftName = names[_deedID]; // the .eth name
+                nftSymbol = "";
+            } else if (IERC721(deed.nftContract).supportsInterface(type(IERC721Metadata).interfaceId)) {
+                nftName = IERC721(deed.nftContract).name();
+                nftSymbol = IERC721(deed.nftContract).symbol();
+            }
+
             nftTokenURI = tokenURI(_deedID);
+
             if (deed.state == 2) {
                 deed.price = _calcDiscount(deed.price, deed.taxBurnBlock);
             }
@@ -443,9 +471,87 @@ contract Harberger {
         return (ret, deed, symbol, nftName, nftSymbol, nftTokenURI);
     }
 
-    /** todo Proxy functions for ENS
-
+    /**
+    * Proxy functions for ENS .eth names
+    *
     **/
+
+
+    /**
+    * @dev getENSInfo
+    */
+    function getENSInfo(
+        bytes32 _node,
+        uint _coinType,
+        bytes32 _DNSName,
+        uint16 _DNSResource,
+        string[6] calldata _keys
+    ) view public returns (
+        address addr,
+        bytes memory coinAddr,
+        bytes memory contentHash,
+        bytes memory DNSRecord,
+        string memory name,
+        bytes32 x, bytes32 y,
+        string[6] memory text
+    ) {
+        addr = dotEthRes.addr(_node);
+        if (_coinType > 0) {
+            coinAddr = dotEthRes.addr(_node, _coinType);
+        }
+        contentHash = dotEthRes.contenthash(_node);
+        if (_DNSName != 0x0) {
+            DNSRecord = dotEthRes.dnsRecord(_node, _DNSName, _DNSResource);
+        }
+        name = dotEthRes.name(_node);
+        (x, y) = dotEthRes.pubkey(_node);
+        for(uint i = 0; i < 6; i++) {
+           text[i] = dotEthRes.text(_node, _keys[i]);
+        }
+        return (addr, coinAddr, contentHash, DNSRecord, name, x, y, text);
+    }
+
+    /**
+    *
+    */
+    function setENSInfo(
+        uint256 _deedID,
+        address _addr,
+        uint _coinType,
+        bytes memory _coinAddr,
+        bytes memory _contentHash,
+        bytes memory _DNSRecord,
+        string memory _name,
+        bytes32 _x, bytes32 _y,
+        string[6] calldata _keys,
+        string[6] calldata _values
+    ) external {
+        Deed memory deed = deeds[_deedID];
+        require (deed.holder == msg.sender, "only holder of deed");
+        require (deed.state == 2, "deed must be on sale");
+        require (deed.nftContract == address(dotEthReg), "not .eth reg");
+        bytes32 node = bytes32(deed.nftTokenID);
+        dotEthRes.setAddr(node, _addr);
+        if (_coinType > 0) {
+            dotEthRes.setAddr(node, _coinType, _coinAddr);
+        }
+        if (_contentHash.length > 0) {
+            dotEthRes.setContenthash(node, _contentHash);
+        }
+        if (_DNSRecord.length > 0) {
+            dotEthRes.setDNSRecords(node, _DNSRecord);
+        }
+        if (bytes(_name).length > 0) {
+            dotEthRes.setName(node, _name);
+        }
+        if (_x > 0x0) {
+            dotEthRes.setPubkey(node, _x, _y);
+        }
+        for(uint i = 0; i < 6; i++) {
+            dotEthRes.setText(node, _keys[i], _values[i]);
+        }
+    }
+
 
     /**
     * @dev burn some tokens
@@ -486,10 +592,18 @@ contract Harberger {
         }
     }
 
-    function deedNFTMetadata(uint256 _deedID) public view returns (string memory, string memory) {
-        IERC721Metadata t = IERC721Metadata(deeds[_deedID].nftContract);
-        return (t.name(), t.symbol());
+    /***
+    * ENS stuff
+    */
+
+
+    bytes32 public constant ADDR_DOT_ETH_NODE = 0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae;
+
+    function node(string memory _n) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(ADDR_DOT_ETH_NODE, keccak256(abi.encodePacked(_n))));
     }
+
+
 
     /***
     * ERC721 stuff
@@ -551,10 +665,9 @@ contract Harberger {
         require (_tokenId > 0 && _tokenId < deedHeight+1, "index out of range");
         Deed storage d = deeds[_tokenId];
         if (d.nftContract == address(punks)) {
-            ICryptoPunksTokenURI uri = ICryptoPunksTokenURI(0x93b919324ec9D144c1c49EF33D443dE0c045601e);
-            return uri.tokenURI(_tokenId);
+            return punksUri.tokenURI(_tokenId);
         }
-        if (d.nftContract == address(ens)) {
+        if (d.nftContract == address(dotEthReg)) {
             //ens names do not have tokenURI, see https://metadata.ens.domains/docs
             return string(
             abi.encodePacked('https://metadata.ens.domains/mainnet/0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85/',
@@ -821,8 +934,87 @@ interface IERC721Receiver {
     ) external returns (bytes4);
 }
 
+// ENS Registry 0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e
 interface IENS {
+    function setApprovalForAll(address operator, bool approved) external;
+    function isApprovedForAll(address owner, address operator) external view returns (bool);
+    /* node is the namehash of tld */
+    function owner(bytes32 node) external view returns (address); // eg. namehash for .eth is: 0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae will return 0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85 which is the .eth registrar
+    function resolver(bytes32 node) external view returns (address); // for the .eth namehash it returns 0x30200E0cb040F38E474E53EF437c95A1bE723b2B
+    function setRecord(bytes32 node, address owner, address resolver, uint64 ttl) external;
+    function setSubnodeRecord(bytes32 node, bytes32 label, address owner, address resolver, uint64 ttl) external;
+    function setSubnodeOwner(bytes32 node, bytes32 label, address owner) external returns(bytes32);
+    function setResolver(bytes32 node, address resolver) external;
+    function setOwner(bytes32 node, address owner) external;
+    function setTTL(bytes32 node, uint64 ttl) external;
+    function ttl(bytes32 node) external view returns (uint64);
+    function recordExists(bytes32 node) external view returns (bool);
+}
+
+// Registrar (where domains are NFTs) 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
+// https://docs.ens.domains/contract-api-reference/.eth-permanent-registrar
+interface IENSRegistrar is IERC721 {
+    function controllers(address) external returns(bool);
     function reclaim(uint256 id, address owner) external;
+    function nameExpires(uint256 id) external view returns(uint);
+    function addController(address controller) external;
+    function removeController(address controller) external;
+    function setResolver(address resolver) external;
+    function available(uint256 id) external view returns(bool);
+    function renew(uint256 id, uint duration) external returns(uint);
+}
+
+
+// Public resolver 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41
+interface IENSResolver {
+    /*
+    * AddrResolver
+    */
+    function addr(bytes32 node) external view returns (address);
+    function setAddr(bytes32 node, address a) external;
+    function setAddr(bytes32 node, uint coinType, bytes memory a) external;
+    function addr(bytes32 node, uint coinType) external view returns(bytes memory);
+
+    /**
+    * ContentHashResolver
+    */
+    function setContenthash(bytes32 node, bytes calldata hash) external;
+    function contenthash(bytes32 node) external view returns (bytes memory);
+    /*
+    * DNSResolver
+    */
+    function setDNSRecords(bytes32 node, bytes calldata data) external;
+    function dnsRecord(bytes32 node, bytes32 name, uint16 resource) external view returns (bytes memory);
+    function hasDNSRecords(bytes32 node, bytes32 name) external view returns (bool);
+    function clearDNSZone(bytes32 node) external;
+    /*
+    * NameResolver
+    */
+    function setName(bytes32 node, string calldata name) external;
+    function name(bytes32 node) external view returns (string memory);
+    /*
+    * PubkeyResolver
+    */
+    function setPubkey(bytes32 node, bytes32 x, bytes32 y) external;
+    function pubkey(bytes32 node) external view returns (bytes32 x, bytes32 y);
+    /*
+    * TextResolver
+    */
+    function setText(bytes32 node, string calldata key, string calldata value) external;
+    function text(bytes32 node, string calldata key) external view returns (string memory);
+}
+
+interface IENSReverseRegistrar { // 0x084b1c3C81545d370f3634392De611CaaBFf8148
+    function setName(string memory name) external;
+    function node(address addr) external pure returns (bytes32);
+    function claim(address owner) external returns (bytes32); // set name does this
+    function claimWithResolver(address owner, address resolver) external returns (bytes32);
+    function defaultResolver() external pure returns(IENSReverseResolver);
+}
+
+interface IENSReverseResolver { // 0xA2C122BE93b0074270ebeE7f6b7292C7deB45047
+    function setName(bytes32 node, string memory name) external;
+    function node(address addr) external pure returns (bytes32);
 }
 
 /**
@@ -845,4 +1037,5 @@ interface ICigtoken is IERC20 {
     function taxBurnBlock() external view returns (uint256);
     function CEO_price() external view returns (uint256);
 }
+
 
