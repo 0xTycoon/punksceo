@@ -1,6 +1,7 @@
 // Author: tycoon.eth
 // Project: Hamburger Hut
 // About: Harberger tax marketplace & protocol for NFTs
+// 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
 pragma solidity ^0.8.17;
 
 import "hardhat/console.sol";
@@ -21,11 +22,6 @@ This means that the originator will need to be a holder of the deed for at least
 - if the NFT being wrapped as a Deed is an ENS, then reclaim() is called after wrapping. Reclaim will be called again
 after un-wrapping
 
-* states
-* 0 = initial
-* 1 = CEO reigning
-* 2 = Dutch auction
-* 3 = Taken out
 
 todo: finish rules comment
 
@@ -38,10 +34,10 @@ contract Harberger {
      */
 
     enum State {
-        New,
-        OnSale,
-        Auction,
-        TakenOut
+        New,     // initial
+        OnSale,  // Deed can be bought
+        Auction, // owner default on tax and deed is sold off under a dutch auction
+        TakenOut // NFT was taken out from the deed
     }
 
     /**
@@ -179,7 +175,7 @@ contract Harberger {
             address _priceToken,
             uint16 _taxRate,
             uint16 _share,
-            string memory _ensName
+            string calldata _ensName
     ) external notReentrant returns (uint256 deedID) {
         unchecked{deedID = ++deedHeight;}                                                 // starts from 1
         Deed storage d = deeds[deedID];
@@ -251,7 +247,13 @@ contract Harberger {
         safeERC20TransferFrom(
             d.priceToken, msg.sender, address(this), d.price + _tax_amount
         );                                                                 // pay for the deed + deposit tax
-        _splitRevenue(d.priceToken, d.price, d.rate[1], d.originator);     // split the revenue
+        _splitRevenue(
+            d.priceToken,
+            d.price,
+            d.rate[1],
+            d.originator,
+            d.holder
+        );                                                                  // split the revenue from the sale
         emit RevenueSplit(_deedID, msg.sender, d.price, d.rate[1], d.originator);
         if (d.taxBalance > 0) {
             safeERC20Transfer(d.priceToken, d.holder, d.taxBalance);        // return deposited tax back to old holder
@@ -398,15 +400,15 @@ contract Harberger {
             deeds[_deedID].taxBalance = 0;                                    // not needed, will be overwritten
             deeds[_deedID].bond = 0;
         }
-
-        _transfer(d.holder, address(0), _deedID); // burn the deed
+        _transfer(d.holder, address(0), _deedID);                             // burn the deed
         emit Takeout(d.nftTokenID, msg.sender);
         return State.TakenOut;
     }
 
     /**
-    * @dev _consumeTax burns any tax debt. Boots the owner if defaulted, assuming can state is 1
-    * @return State state.Auction if defaulted, State.OnSale if not
+    * @dev _consumeTax distributes any tax debt. Boots the owner if defaulted, assuming called
+    *    assuming that the deed's state is State.OnSale
+    * @return State state.Auction if defaulted
     */
     function _consumeTax(
         uint256 _deedID,
@@ -419,24 +421,35 @@ contract Harberger {
         address _originator,
         IERC20 _token
     ) internal returns(State /*state*/) {
-        uint256 tpb = _price / SCALE * _taxRate / epochBlocks;      // calculate tax-per-block
+        State s = State.OnSale;                                 // assume it's on sale
+        uint256 tpb = _price / SCALE * _taxRate / epochBlocks;  // calculate tax-per-block
         uint256 debt = (block.number - _taxBurnBlock) * tpb;
-        if (_taxBalance !=0 && _taxBalance >= debt) {               // Does holder have enough deposit to pay debt?
-            _taxBalance = _taxBalance - debt;                       // deduct tax
-            _splitRevenue(_token, debt, _split, _originator);       // burn the tax
-            emit RevenueSplit(_deedID, msg.sender, debt, _split, _originator);
+        if (_taxBalance !=0 && _taxBalance >= debt) {           // Does holder have enough deposit to pay debt?
+            deeds[_deedID].taxBalance = _taxBalance - debt;     // update tax balance
         } else {
             // Holder defaulted
-            uint256 default_amount = debt - _taxBalance;             // calculate how much defaulted
-            _splitRevenue(_token, _taxBalance, _split, _originator); // burn the tax
-            emit RevenueSplit(_deedID, msg.sender, _taxBalance, _split, _originator);
-            deeds[_deedID].state = State.Auction;                    // initiate a Dutch auction.
-            deeds[_deedID].taxBalance = 0;
-            _transfer(_holder, address(this), _deedID);               // Strip the deed from the holder
-            emit Defaulted(_deedID, msg.sender, default_amount);
-            return State.Auction;
+            s = State.Auction;                                  // initiate a Dutch auction.
+            debt = _taxBalance;                                 // debt exceeds _taxBalance, it's all we can pay
+            deeds[_deedID].state = s;                           // save state
+            deeds[_deedID].taxBalance = 0;                      // update the tax balance
+            _transfer(_holder, address(this), _deedID);         // Strip the deed from the holder
+            emit Defaulted(_deedID, msg.sender, _taxBalance);
         }
-        return State.OnSale;
+        _splitRevenue(
+            _token,
+            debt,
+            _split,
+            _originator,
+            address(0)
+        );                                                      // distribute only to _originator (burn _holder's)
+        emit RevenueSplit(
+            _deedID,
+            msg.sender,
+            debt,
+            _split,
+            _originator
+        );
+        return s;
     }
 
     /**
@@ -475,7 +488,7 @@ contract Harberger {
     * @return symbol - ERC20 symbol of deed.
     */
     function getInfo(address _user, uint256 _deedID) view public returns (
-        uint256[] memory,   // ret
+        uint256[] memory,                                                     // ret
         Deed memory deed,
         string memory symbol,
         string memory nftName,
@@ -489,35 +502,28 @@ contract Harberger {
         ret[2] = auctionBlocks;
         ret[3] = cig.balanceOf(_user);
         ret[4] = cig.allowance(_user, address(this));
-
         if (deed.state != State.New) {
             ret[5] = IERC20(deed.priceToken).balanceOf(_user);
             ret[6] = IERC20(deed.priceToken).allowance(_user, address(this));
         }
-
         ret[7] = deedHeight;
-        ret[8] = balanceOf(_user); //deed balance
+        ret[8] = balanceOf(_user);                                            // deed balance
         ret[9] = cig.taxBurnBlock();
         ret[10] = cig.CEO_price();
-
         if (deed.state != State.New) {
-
             ret[11] = uint256(IERC20(deed.priceToken).decimals());
-
             symbol = IERC20(deed.priceToken).symbol();
             if (deed.nftContract == address(punks)) {
                 nftName = "CryptoPunks";
                 nftSymbol =  unicode"Ͼ";
             } else if (deed.nftContract == address(dotEthReg)) {
-                nftName = names[_deedID]; // the .eth name
+                nftName = names[_deedID];                                     // the .eth name
                 nftSymbol = "";
             } else if (IERC721(deed.nftContract).supportsInterface(type(IERC721Metadata).interfaceId)) {
                 nftName = IERC721(deed.nftContract).name();
                 nftSymbol = IERC721(deed.nftContract).symbol();
             }
-
             nftTokenURI = tokenURI(_deedID);
-
             if (deed.state == State.Auction) {
                 deed.price = _calcDiscount(deed.price, deed.taxBurnBlock);
             }
@@ -527,7 +533,6 @@ contract Harberger {
 
     /**
     * Proxy functions for ENS .eth names 🚬
-    *
     **/
 
 
@@ -566,7 +571,7 @@ contract Harberger {
     }
 
     /**
-    *
+    * @dev setENSInfo only holder of a deed that is State.OnSale can use
     */
     function setENSInfo(
         uint256 _deedID,
@@ -608,22 +613,29 @@ contract Harberger {
 
 
     /**
-    * @dev burn some tokens
-    * @param _token The token to burn
-    * @param _amount The amount to burn
-    * @param _split The % to send to originator, burn remainder
-    * @param _originator address to send the revenue split, burn any remainder
+    * @dev distribute revenue
+    * @param _token The token to distribute
+    * @param _amount The amount to distribute
+    * @param _split The % to send to originator
+    * @param _originator address to send the revenue split
+    * @param _holder send remainder to here. (May be 0x0 to burn it)
     */
-    function _splitRevenue(IERC20 _token,  uint256 _amount, uint16 _split, address _originator) internal {
+    function _splitRevenue(
+        IERC20 _token,
+        uint256 _amount,
+        uint16 _split,
+        address _originator,
+        address _holder
+    ) internal {
 
         if (_split == 1000) {
-            safeERC20Transfer(_token, _originator, _amount);             // distribute all
+            safeERC20Transfer(_token, _originator, _amount);          // distribute all
         } else if (_split > 0) {
             uint256 distribute = _amount / SCALE * _split;
-            safeERC20Transfer(_token, _originator, distribute);          // distribute portion
-            safeERC20Transfer(_token, address(0), _amount - distribute); // burn remainder
+            safeERC20Transfer(_token, _originator, distribute);       // distribute portion
+            safeERC20Transfer(_token, _holder, _amount - distribute); // send remainder _holder (or to 0x0)
         } else if (_split == 0) {
-            safeERC20Transfer(_token, address(0), _amount);              // burn all
+            safeERC20Transfer(_token, _holder, _amount);              // send all to _holder (may be 0x0)
         }
 
     }
