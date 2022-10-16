@@ -63,7 +63,7 @@ contract Harberger {
         uint32 index;       // stores the index for deed enumeration
         uint16 [2] rate;    // a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
                             // rate[0] is the tax %, rate[1] is the share
-        uint8 state;        // what state the deed is in, described above
+        State state;        // what state the deed is in, described above
     }
 
     /**
@@ -190,7 +190,7 @@ contract Harberger {
         d.price = _price;
         d.rate[0] = _taxRate;
         d.rate[1] = _share;
-        d.state = 1; // State.OnSale;
+        d.state = State.OnSale;
         cig.transferFrom(msg.sender, address(this), deedBond);                            // take the CIG bond
         d.bond = deedBond;
         if (d.nftContract == address(punks)) {                                            // if it's a punk
@@ -226,7 +226,7 @@ contract Harberger {
     ) external notReentrant {
         Deed memory d = deeds[_deedID];
         require (d.bond > 0, "no such deed");
-        if (d.state == 1 && (d.taxBurnBlock != uint64(block.number))) {
+        if (d.state == State.OnSale && (d.taxBurnBlock != uint64(block.number))) {
             d.state = _consumeTax(
                 _deedID,
                 d.price,
@@ -240,7 +240,7 @@ contract Harberger {
             );                                                             // _consumeTax can change d.state to 2
             deeds[_deedID].taxBurnBlock = uint64(block.number);            // store the block number of last burn
         }
-        if (d.state == 2) {
+        if (d.state == State.Auction) {
              // Auction state. The price goes down 10% every `CEO_auction_blocks` blocks
              d.price = _calcDiscount(d.price, d.taxBurnBlock);
         }
@@ -261,7 +261,7 @@ contract Harberger {
         _transfer(d.holder, msg.sender, _deedID);                           // transfer deed to buyer
         deeds[_deedID].price = _new_price;                                  // set the new price
         deeds[_deedID].blockStamp = uint64(block.number);                   // record the block of state change
-        deeds[_deedID].state = 1;                                           // make available for sale
+        deeds[_deedID].state = State.OnSale;                                // make available for sale
         deeds[_deedID].graffiti = _graffiti;                                // save the graffiti
         emit TaxDeposit(_deedID, msg.sender, _tax_amount);
         emit Takeover(_deedID, msg.sender, _new_price, _graffiti);
@@ -274,7 +274,7 @@ contract Harberger {
     */
     function depositTax(uint256 _deedID, uint256 _amount) notReentrant external {
         Deed memory d = deeds[_deedID];
-        require (d.state == 1, "not active");
+        require (d.state == State.OnSale, "not active");
         require (d.holder == msg.sender, "only holdoor");
         if (_amount > 0) {
             safeERC20TransferFrom(d.priceToken, msg.sender, address(this), _amount); // place the tax on deposit
@@ -308,7 +308,7 @@ contract Harberger {
 
     function consumeTax(uint256 _deedID) notReentrant external  {
         Deed memory d = deeds[_deedID];
-        require (d.state == 1, "deed not active");
+        require (d.state == State.OnSale, "deed not active");
         if (d.taxBurnBlock == uint64(block.number)) return;
         _consumeTax(
             _deedID,
@@ -326,12 +326,12 @@ contract Harberger {
     /**
      * @dev setPrice changes the price for the holder title.
      * @param _price the price to be paid. The new price most be larger tan MIN_PRICE and not default on debt
-     * @return state
+     * @return state State
      */
-    function setPrice(uint256 _deedID, uint256 _price) external notReentrant returns (uint8 state) {
+    function setPrice(uint256 _deedID, uint256 _price) external notReentrant returns (State state) {
         Deed memory d = deeds[_deedID];
         require (d.holder == msg.sender, "only holdoor");
-        require (d.state == 1, "deed not active");
+        require (d.state == State.OnSale, "deed not active");
         require (_price >= MIN_PRICE, "price 2 smol");
         require (d.taxBalance >= _price / SCALE * d.rate[0], "price would default"); // need at least tax for 1 epoch
         if (block.number != d.taxBurnBlock) {
@@ -347,8 +347,8 @@ contract Harberger {
                 d.priceToken);
             deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
-        // The state is 1 if the holder hasn't defaulted on tax
-        if (state == 1) {
+        // The state is not OnSale if owner defaulted on tax
+        if (state == State.OnSale) {
             deeds[_deedID].price = _price;                                   // set the new price
             emit PriceChange(_deedID, _price);
         }
@@ -358,10 +358,10 @@ contract Harberger {
     /**
     * @dev takeout allows the deed's originator to unwrap and remove the nft
     */
-    function takeout(uint256 _deedID) external notReentrant returns (uint8 state) {
+    function takeout(uint256 _deedID) external notReentrant returns (State state) {
         Deed memory d = deeds[_deedID];
         require (d.holder == msg.sender, "only holdoor");
-        require (d.state == 1, "deed not active");
+        require (d.state == State.OnSale, "deed not active");
         require (d.blockStamp + (epochBlocks*7) >= block.number, "must wait 7 epochs");
         require (d.originator == msg.sender, "only originatoor");
         if (d.taxBurnBlock == uint64(block.number)) return d.state;
@@ -375,34 +375,38 @@ contract Harberger {
             d.holder,
             d.originator,
             d.priceToken);
-        if (state != 1 ) { // defaulted on tax?
+        if (state != State.OnSale) { // defaulted on tax?
             return state;
         }
-        deeds[_deedID].state = 3;
+        deeds[_deedID].state = State.TakenOut;
         deeds[_deedID].taxBurnBlock = uint64(block.number);
-        if (d.nftContract == address(punks)) {
-            punks.offerPunkForSaleToAddress(d.nftTokenID, 0, msg.sender);
+        if (d.nftContract == address(punks)) {                               // if punk
+            punks.offerPunkForSaleToAddress(d.nftTokenID, 0, msg.sender);    // allow originator to take it out
         } else {
-            if (d.nftContract == address(dotEthReg)) {
-                dotEthReg.reclaim(d.nftTokenID, msg.sender); // relinquish the controller
+            if (d.nftContract == address(dotEthReg)) {                       // if ENS
+                dotEthReg.reclaim(d.nftTokenID, msg.sender);                 // relinquish the controller
             }
-            IERC721(d.nftContract).safeTransferFrom(address(this), msg.sender, d.nftTokenID); // unwrap
+            IERC721(d.nftContract).safeTransferFrom(
+                address(this),
+                msg.sender,
+                d.nftTokenID
+            );                                                                // send back the NFT
             delete names[_deedID];
         }
         if (d.taxBalance + d.bond > 0) {
-            safeERC20Transfer(d.priceToken, d.holder, d.taxBalance + d.bond);        // return deposited tax back to old holder
-            deeds[_deedID].taxBalance = 0;                                   // not needed, will be overwritten
+            safeERC20Transfer(d.priceToken, d.holder, d.taxBalance + d.bond); // return deposited tax back to old holder
+            deeds[_deedID].taxBalance = 0;                                    // not needed, will be overwritten
             deeds[_deedID].bond = 0;
         }
 
         _transfer(d.holder, address(0), _deedID); // burn the deed
         emit Takeout(d.nftTokenID, msg.sender);
-        return 3;
+        return State.TakenOut;
     }
 
     /**
     * @dev _consumeTax burns any tax debt. Boots the owner if defaulted, assuming can state is 1
-    * @return uint8 state 2 if if defaulted, 1 if not
+    * @return State state.Auction if defaulted, State.OnSale if not
     */
     function _consumeTax(
         uint256 _deedID,
@@ -414,7 +418,7 @@ contract Harberger {
         address _holder,
         address _originator,
         IERC20 _token
-    ) internal returns(uint8 /*state*/) {
+    ) internal returns(State /*state*/) {
         uint256 tpb = _price / SCALE * _taxRate / epochBlocks;      // calculate tax-per-block
         uint256 debt = (block.number - _taxBurnBlock) * tpb;
         if (_taxBalance !=0 && _taxBalance >= debt) {               // Does holder have enough deposit to pay debt?
@@ -426,13 +430,13 @@ contract Harberger {
             uint256 default_amount = debt - _taxBalance;             // calculate how much defaulted
             _splitRevenue(_token, _taxBalance, _split, _originator); // burn the tax
             emit RevenueSplit(_deedID, msg.sender, _taxBalance, _split, _originator);
-            deeds[_deedID].state = 2;                                 // initiate a Dutch auction.
+            deeds[_deedID].state = State.Auction;                    // initiate a Dutch auction.
             deeds[_deedID].taxBalance = 0;
             _transfer(_holder, address(this), _deedID);               // Strip the deed from the holder
             emit Defaulted(_deedID, msg.sender, default_amount);
-            return 2;
+            return State.Auction;
         }
-        return 1;
+        return State.OnSale;
     }
 
     /**
@@ -486,7 +490,7 @@ contract Harberger {
         ret[3] = cig.balanceOf(_user);
         ret[4] = cig.allowance(_user, address(this));
 
-        if (deed.state != 0) {
+        if (deed.state != State.New) {
             ret[5] = IERC20(deed.priceToken).balanceOf(_user);
             ret[6] = IERC20(deed.priceToken).allowance(_user, address(this));
         }
@@ -496,7 +500,7 @@ contract Harberger {
         ret[9] = cig.taxBurnBlock();
         ret[10] = cig.CEO_price();
 
-        if (deed.state != 0) {
+        if (deed.state != State.New) {
 
             ret[11] = uint256(IERC20(deed.priceToken).decimals());
 
@@ -514,7 +518,7 @@ contract Harberger {
 
             nftTokenURI = tokenURI(_deedID);
 
-            if (deed.state == 2) {
+            if (deed.state == State.Auction) {
                 deed.price = _calcDiscount(deed.price, deed.taxBurnBlock);
             }
         }
@@ -522,7 +526,7 @@ contract Harberger {
     }
 
     /**
-    * Proxy functions for ENS .eth names
+    * Proxy functions for ENS .eth names 🚬
     *
     **/
 
@@ -578,7 +582,7 @@ contract Harberger {
     ) external {
         Deed memory deed = deeds[_deedID];
         require (deed.holder == msg.sender, "only holder of deed");
-        require (deed.state == 1, "deed must be on sale");
+        require (deed.state == State.OnSale, "deed must be on sale");
         require (deed.nftContract == address(dotEthReg), "not .eth reg");
         bytes32 node = bytes32(deed.nftTokenID);
         dotEthRes.setAddr(node, _addr);
@@ -886,6 +890,10 @@ contract Harberger {
     }
 
 }
+
+/**
+ * Interfaces 🚬
+ */
 
 /*
  * @dev Interface of the ERC20 standard as defined in the EIP.
