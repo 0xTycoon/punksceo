@@ -1,6 +1,6 @@
-// Author: 0xTycoon
+// Author: tycoon.eth
 // Project: Hamburger Hut
-// About: Place your NFTs under harberger tax & earn
+// About: Harberger tax marketplace & protocol for NFTs
 pragma solidity ^0.8.17;
 
 import "hardhat/console.sol";
@@ -27,12 +27,27 @@ after un-wrapping
 * 2 = Dutch auction
 * 3 = Taken out
 
-todo: ens proxy, check if ens reg expired, getinfo could also return details about ENS
+todo: finish rules comment
+
 */
 
 contract Harberger {
 
-    // Structs
+    /**
+     * Enums 🚬
+     */
+
+    enum State {
+        New,
+        OnSale,
+        Auction,
+        TakenOut
+    }
+
+    /**
+     * Structs 🚬
+     */
+
     struct Deed {
         uint256 nftTokenID; // the token id of the NFT that is wrapped in this deed
         uint256 price;      // takeover price in 'priceToken'
@@ -48,62 +63,94 @@ contract Harberger {
         uint32 index;       // stores the index for deed enumeration
         uint16 [2] rate;    // a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
                             // rate[0] is the tax %, rate[1] is the share
-        uint8 state;
+        uint8 state;        // what state the deed is in, described above
     }
 
-    // Storage
-    uint256 public deedBond = 100000 ether; // price in CIG (to prevent spam)
-    mapping(uint256 => Deed) public deeds; // a deed is also an NFT
-    uint256 public deedHeight; // highest deedID
-    mapping(address => uint256) private balances;      // counts of ownership
-    //mapping(uint256  => address) private ownership; // deeds track ownership
-    mapping(address => mapping(uint256 => uint256)) private ownedDeeds;
-    mapping(uint256 => string) public names; // .eth names wrapped in the deeds
-    // Constants
-    uint256 private immutable epochBlocks;   // secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
-    uint256 private immutable auctionBlocks; // 3600 blocks
-    ICigtoken private immutable cig; // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
-    IENSRegistrar private immutable dotEthReg; // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
-    IENSResolver private immutable dotEthRes; // 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41
-    ICryptoPunks private immutable punks; // 0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB
-    ICryptoPunksTokenURI private immutable punksUri; // 0x4e776fCbb241a0e0Ea2904d642baa4c7E171a1E9
-    //IENS private immutable ens; // 0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e
+    /**
+     * Storage 🚬
+     */
+
+    uint256 public deedBond = 100000 ether;                             // price in CIG (to prevent spam)
+    mapping(uint256 => Deed) public deeds;                              // a deed is also an NFT
+    uint256 public deedHeight;                                          // highest deedID
+    mapping(address => uint256) private balances;                       // counts of ownership
+    mapping(address => mapping(uint256 => uint256)) private ownedDeeds; // track enumeration
+    mapping(uint256 => string) public names;                            // .eth names wrapped in the deeds
+    uint8 internal locked = 1;                                          // reentrancy guard. 2 = entered, 1 not
+
+    /**
+     * Constants - initialized at deployment 🚬
+     */
+
+    uint256 private immutable epochBlocks;           // secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
+    uint256 private immutable auctionBlocks;         // 3600 blocks
+    ICigtoken private immutable cig;                 // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
+    IENSRegistrar private immutable dotEthReg;       // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
+    IENSResolver private immutable dotEthRes;        // 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41
+    ICryptoPunks private immutable punks;            // 0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB
+    ICryptoPunksTokenURI private immutable punksURI; // 0x4e776fCbb241a0e0Ea2904d642baa4c7E171a1E9
+
+    /**
+     * Constants - hard-coded 🚬
+     */
 
     uint private constant SCALE = 1e3;
     bytes4 private constant RECEIVED = 0x150b7a02; // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
-    uint256 constant MIN_PRICE = 1e12;            // 0.000001
-    uint8 internal locked = 1; // 2 = entered, 1 not
+    uint256 constant MIN_PRICE = 1e12;             // 0.000001
 
-    // Modifiers
-    modifier notReentrant() {
+    /**
+     * Modifiers 🚬
+     */
+
+    modifier notReentrant() { // notReentrant is a reentrancy guard
         require(locked == 1, "already entered");
         locked = 2; // enter
         _;
         locked = 1; // exit
     }
 
-    // Events
-    event NewDeed(uint256 indexed deedID);
-    event Takeover(uint256 indexed deedID, address indexed user, uint256 new_price, bytes32 graffiti); // when a NFT is bought
+    /**
+     * Events 🚬
+     */
+
+    // NewDeed is fired when a new deed is created
+    event NewDeed(uint256 indexed deedID, address indexed user);
+    // Takeover is fired when a deed is bought and ownership is transferred
+    event Takeover(uint256 indexed deedID, address indexed user, uint256 new_price, bytes32 graffiti);
+    // TaxDeposit
     event TaxDeposit(uint256 indexed deedID, address indexed user, uint256 amount);     // when tax is deposited
+    // RevenueSplit when tax revenue is paid out and split between owner and originator
     event RevenueSplit(
         uint256 indexed deedID,
         address indexed user,
         uint256 amount,
         uint16 split,
-        address indexed originator);                                                    // revenue paid out
-    event Defaulted(uint256 indexed deedID, address indexed called_by, uint256 reward); // when owner defaulted on tax
-    event PriceChange(uint256 indexed deedID, uint256 price);                           // when owner changed price
-    event Takeout(uint256 indexed deedID, address indexed user);                        // when NFT taken out from deed
+        address indexed originator);
+    // Defaulted when owner defaulted on tax
+    event Defaulted(uint256 indexed deedID, address indexed called_by, uint256 reward);
+    // PriceChange // when owner changed price
+    event PriceChange(uint256 indexed deedID, uint256 price);
+    // Takeout when NFT taken out from deed
+    event Takeout(uint256 indexed deedID, address indexed user);
 
+    /**
+    * @dev Construct the Hamburger Hut 🚬
+    * @param _epochBlocks - how many blocks is 1 epoch
+    * @param _auctionBlocks - how many blocks for each dutch auction discount
+    * @param _cig - cigarette token address
+    * @param _ensReg - ENS .eth registry address (an ERC721)
+    * @param _ensRes - EMS .eth resolver address
+    * @param _punks - CryptoPunks contract address
+    * @param _punksURI - CryptoPunks URI info contract
+    */
     constructor(
-        uint256 _epochBlocks,   // 7200
-        uint256 _auctionBlocks, // 3600
+        uint256 _epochBlocks,   // 7200, secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
+        uint256 _auctionBlocks, // 3600 blocks, every 12 hours, assuming 12 sec blocks
         address _cig,           // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
         address _ensReg,        // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85 (BaseRegistrarImplementation - ERC721)
         address _ensRes,        // 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41
         address _punks,         // 0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB
-        address _punksUri       // 0x4e776fCbb241a0e0Ea2904d642baa4c7E171a1E9
+        address _punksURI       // 0x4e776fCbb241a0e0Ea2904d642baa4c7E171a1E9
     ){
         epochBlocks = _epochBlocks;
         auctionBlocks = _auctionBlocks;
@@ -111,7 +158,7 @@ contract Harberger {
         dotEthReg = IENSRegistrar(_ensReg);
         dotEthRes = IENSResolver(_ensRes);
         punks = ICryptoPunks(_punks);
-        punksUri = ICryptoPunksTokenURI(_punksUri);
+        punksURI = ICryptoPunksTokenURI(_punksURI);
     }
 
     /**
@@ -119,6 +166,7 @@ contract Harberger {
     *   A new Deed token will be issued with the next available id.
     * @param _nftContract address of the nft to wrap, can be an ERC721 or a punk
     * @param _tokenID the token id from the _nftContract address
+    * @param _price initial price, in '_priceToken'
     * @param _priceToken address of the ERC20 to use as the payment token
     * @param _taxRate a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
     * @param _share of revenue that goes to originator, remainder is burned. The type is same as _taxRate
@@ -127,13 +175,13 @@ contract Harberger {
     function newDeed(
             address _nftContract,
             uint256 _tokenID,
-            uint256 _price, // initial price
+            uint256 _price,
             address _priceToken,
             uint16 _taxRate,
             uint16 _share,
             string memory _ensName
     ) external notReentrant returns (uint256 deedID) {
-        unchecked{deedID = ++deedHeight;} // starts from 1
+        unchecked{deedID = ++deedHeight;}                                                 // starts from 1
         Deed storage d = deeds[deedID];
         d.originator = msg.sender;
         d.nftContract = _nftContract;
@@ -142,21 +190,22 @@ contract Harberger {
         d.price = _price;
         d.rate[0] = _taxRate;
         d.rate[1] = _share;
-        cig.transferFrom(msg.sender, address(this), deedBond);
+        d.state = 1; // State.OnSale;
+        cig.transferFrom(msg.sender, address(this), deedBond);                            // take the CIG bond
         d.bond = deedBond;
-        if (d.nftContract == address(punks)) {
-            punks.buyPunk(_tokenID); // wrap the punk
+        if (d.nftContract == address(punks)) {                                            // if it's a punk
+            punks.buyPunk(_tokenID);                                                      // wrap the punk
         } else {
             IERC721(d.nftContract).safeTransferFrom(msg.sender, address(this), _tokenID); // wrap the nft
-            if (d.nftContract == address(dotEthReg)) { // it's a .eth name
+            if (d.nftContract == address(dotEthReg)) {                                    // if it's a .eth name
                 require (node(_ensName) == bytes32(_tokenID), 'invalid .eth name');
                 names[deedID] = _ensName;
-                dotEthReg.reclaim(_tokenID, address(this)); // become the controller
+                dotEthReg.reclaim(_tokenID, address(this));                               // become the controller
             }
         }
-        _mint(msg.sender, deedID);
-        emit NewDeed(deedID);
-        return (deedID);
+        _mint(msg.sender, deedID);                                                        // mint a deed as an ERC721
+        emit NewDeed(deedID, msg.sender);
+        return deedID;
     }
 
     /**
@@ -165,6 +214,8 @@ contract Harberger {
     * @param _max_spend in wei. Since d.price can change after signing the tx, this can protect the buyer in
     *    case the the d.price gets set to a high value
     * @param _new_price the new takeover price
+    * @param _tax_amount amount token to deposit for paying tax
+    * @param _graffiti a graffiti message can be set to anything
     */
     function buyDeed(
         uint256 _deedID,
@@ -186,8 +237,8 @@ contract Harberger {
                 d.holder,
                 d.originator,
                 d.priceToken
-            ); // _burnTax can change d.state to 2
-            deeds[_deedID].taxBurnBlock = uint64(block.number);                   // store the block number of last burn
+            );                                                             // _consumeTax can change d.state to 2
+            deeds[_deedID].taxBurnBlock = uint64(block.number);            // store the block number of last burn
         }
         if (d.state == 2) {
              // Auction state. The price goes down 10% every `CEO_auction_blocks` blocks
@@ -226,10 +277,10 @@ contract Harberger {
         require (d.state == 1, "not active");
         require (d.holder == msg.sender, "only holdoor");
         if (_amount > 0) {
-            d.taxBalance += _amount;
-            deeds[_deedID].taxBalance = d.taxBalance;        // record the balance
-            emit TaxDeposit(_deedID, msg.sender, _amount);
             safeERC20TransferFrom(d.priceToken, msg.sender, address(this), _amount); // place the tax on deposit
+            d.taxBalance += _amount;
+            deeds[_deedID].taxBalance = d.taxBalance;                                // record the deposit balance
+            emit TaxDeposit(_deedID, msg.sender, _amount);
         }
         if (d.taxBurnBlock != uint64(block.number)) {
             _consumeTax(
@@ -241,7 +292,7 @@ contract Harberger {
                 d.taxBalance,
                 d.holder,
                 d.originator,
-                d.priceToken);                                         // settle any tax debt
+                d.priceToken);                                                       // settle any tax debt
             deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
     }
@@ -329,7 +380,6 @@ contract Harberger {
         }
         deeds[_deedID].state = 3;
         deeds[_deedID].taxBurnBlock = uint64(block.number);
-        d.nftTokenID;
         if (d.nftContract == address(punks)) {
             punks.offerPunkForSaleToAddress(d.nftTokenID, 0, msg.sender);
         } else {
@@ -351,7 +401,7 @@ contract Harberger {
     }
 
     /**
-    * @dev _burnTax burns any tax debt. Boots the owner if defaulted, assuming can state is 1
+    * @dev _consumeTax burns any tax debt. Boots the owner if defaulted, assuming can state is 1
     * @return uint8 state 2 if if defaulted, 1 if not
     */
     function _consumeTax(
@@ -528,7 +578,7 @@ contract Harberger {
     ) external {
         Deed memory deed = deeds[_deedID];
         require (deed.holder == msg.sender, "only holder of deed");
-        require (deed.state == 2, "deed must be on sale");
+        require (deed.state == 1, "deed must be on sale");
         require (deed.nftContract == address(dotEthReg), "not .eth reg");
         bytes32 node = bytes32(deed.nftTokenID);
         dotEthRes.setAddr(node, _addr);
@@ -593,9 +643,8 @@ contract Harberger {
     }
 
     /***
-    * ENS stuff
+    * ENS stuff 🚬
     */
-
 
     bytes32 public constant ADDR_DOT_ETH_NODE = 0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae;
 
@@ -603,10 +652,8 @@ contract Harberger {
         return keccak256(abi.encodePacked(ADDR_DOT_ETH_NODE, keccak256(abi.encodePacked(_n))));
     }
 
-
-
     /***
-    * ERC721 stuff
+    * ERC721 stuff 🚬
     */
 
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
@@ -665,7 +712,7 @@ contract Harberger {
         require (_tokenId > 0 && _tokenId < deedHeight+1, "index out of range");
         Deed storage d = deeds[_tokenId];
         if (d.nftContract == address(punks)) {
-            return punksUri.tokenURI(_tokenId);
+            return punksURI.tokenURI(_tokenId);
         }
         if (d.nftContract == address(dotEthReg)) {
             //ens names do not have tokenURI, see https://metadata.ens.domains/docs
@@ -812,23 +859,22 @@ contract Harberger {
     * @dev called after an erc721 token transfer, after the counts have been updated
     */
     function addEnumeration(address _to, uint256 _tokenId) internal {
-        uint256 last = balances[_to]-1;   // the index of the last position
-        ownedDeeds[_to][last] = _tokenId; // add a new entry
+        uint256 last = balances[_to]-1;           // the index of the last position
+        ownedDeeds[_to][last] = _tokenId;         // add a new entry
         deeds[_tokenId].index = uint32(last);
 
     }
     function removeEnumeration(address _from, uint256 _tokenId) internal {
-        uint256 height = balances[_from];  // last index
-        uint256 i = deeds[_tokenId].index; // index
-console.log("remove", height, i);
+        uint256 height = balances[_from];         // last index
+        uint256 i = deeds[_tokenId].index;        // index
         if (i != height) {
             // If not last, move the last token to the slot of the token to be deleted
             uint256 lastTokenId = ownedDeeds[_from][height];
             ownedDeeds[_from][i] = lastTokenId;   // move the last token to the slot of the to-delete token
             deeds[lastTokenId].index = uint32(i); // update the moved token's index
         }
-        deeds[_tokenId].index = 0;        // delete from index
-        delete ownedDeeds[_from][height]; // delete last slot
+        deeds[_tokenId].index = 0;                // delete from index
+        delete ownedDeeds[_from][height];         // delete last slot
     }
 
     // we do not allow NFTs to be send to this contract, except internally
@@ -934,7 +980,7 @@ interface IERC721Receiver {
     ) external returns (bytes4);
 }
 
-// ENS Registry 0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e
+// ENS 0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e
 interface IENS {
     function setApprovalForAll(address operator, bool approved) external;
     function isApprovedForAll(address owner, address operator) external view returns (bool);
