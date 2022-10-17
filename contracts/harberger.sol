@@ -1,27 +1,83 @@
+// 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 // Author: tycoon.eth
 // Project: Hamburger Hut
 // About: Harberger tax marketplace & protocol for NFTs
-// 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
+// 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 pragma solidity ^0.8.17;
 
 import "hardhat/console.sol";
 
 /**
 
-Welcome to BurgerMarket, a unique NFT marketplace where the NFTs are always for sale!
+Welcome to BurgerMarket 🍔, a unique NFT marketplace where the NFTs are always for sale!
 
-A deed wraps an NFT. The deed causes the NFT to be always for sale.
-The user who wraps the NFT is called an "Originator
+Say good-bye to royalties!
+BurgerMarket provides an alternative revenue model for NFTs, based on Harberger Taxes.
 
-Rules:
+For CryptoPunk owners
+====
 
-- Taking out: The NFT can be taken out by the Originator, if they also own the deed.
-The bond will be returned upon taking it out. The Originator is required to wait 7 days in order to take out the NFT.
-This means that the originator will need to be a holder of the deed for at least 7 days.
+You can deposit your punk into the contract and that will issue you a NFT that wraps your punk.
+This wrapped punk is then called a "Deed" and you become the "Initiator" of the deed.
+The twist here is that when you create a wrapped punk, that wrapped punk will be always be for sale, and whoever holds
+this wrapped punk will need to pay a tax.
 
+The rate of the tax depends on the price of the NFT. You can change the price at any time while you are holding
+this deed. The rate may vary and it's configured by the Initiator when the deed is first created. For example,
+the usual rate may be %0.1 per day. So, if your "buy" price is 10 WETH, then it means somebody will need to pay 0.01 ETH
+per day to hold the wrapped punk in their wallet.
+
+If someone buys the wrapped punk, a portion of the revenue from the sale will be sent to you, the "Initiator".
+This also can be set up so that a portion goes to the previous owner (seller).
+
+Want your punk back? No problem, just take-over the wrapped punk by buying back the deed, then take take it out
+after 2 days of holding it.
+
+For .eth name owners
+====
+
+Got a cool .eth .eth name, and you want to make some money by renting it out?
+Wrap your .eth in the BurgerMarket wrapper, and you may.
+
+People who takeover your .eth name will need to pay a fee that will be distributed to you.
+Additionally, when someone else does a takeover of the .eth name, a portion of the revenue from the sale will be sent
+to you, the "Initiator". This also can be set up so that a portion goes to the previous owner (seller).
+
+Also, the person who taken over the .eth name will have full control over it - they will be able to set
+their own address, content and other records for that name.
+
+
+For ERC721 owners
+===
+
+Got a cool NFT that everyone wants to take turns in holding? Wrap it on BurgerMarket.
+
+By wrapping your grail on BurgerMarket, you can let others hold your NFT without having to worry if you'll ever
+get it back.
+
+The wrapped version of your NFT
+
+Burger Market Rules:
+===
+
+- A bond paid in CIG is required when creating each deed. This to discourage spam deeds. The bond amount is governed by
+The CEO of CryptoPunks, that lives on cigtoken.eth contract.
+- You cannot transfer the Deed to any other wallet. The only way to transfer it by buying the deed. (BuyDeed function)
+- Unwrapping: The NFT can be taken out by the Initiator, if they also hold the deed.
+The bond will be returned upon taking it out. The Initiator is required to wait 2 days in order to take out the NFT.
+This means that the Initiator will need to be a holder of the deed for at least 2 days.
 - if the NFT being wrapped as a Deed is an ENS, then reclaim() is called after wrapping. Reclaim will be called again
-after un-wrapping
-
+after un-wrapping. Additionally, the holder of the deed can administer the .eth name as if they own it. This means
+they can set the ENS records, such as the address, content hash, text records and so on.
+- You cannot buy a deed from yourself
+- When paying tax, the revenue is split to the initiator and any remaining revenue is burned. It can be configured
+so that revenue goes to the initiator.
+- When paying tax for a deed which you are also the "initiator", the revenue from consuming the tax is burned rather
+than split with you. This is to encourage you to sell the deed. Otherwise, if the tax went to you, then you'd be
+just paying yourself, which would not make any sense.
+- When buying a deed, the revenue from the sale can be split with the initiator and seller, according to a percentage.
+- The percentage that the revenue is split can only be configured once by the initiator, during deed creation.
+- You can only pay tax from the holder's account, nobody else can pay tax for you.
 
 todo: finish rules comment
 
@@ -30,7 +86,7 @@ todo: finish rules comment
 contract Harberger {
 
     /**
-     * Enums 🚬
+     * Enums 🍔
      */
 
     enum State {
@@ -41,7 +97,7 @@ contract Harberger {
     }
 
     /**
-     * Structs 🚬
+     * Structs 🍔
      */
 
     struct Deed {
@@ -50,7 +106,7 @@ contract Harberger {
         uint256 bond;       // amount of CIG taken for a new deed (returned later)
         uint256 taxBalance; // amount of tax pre-paid
         bytes32 graffiti;   // a 32 character graffiti set when buying a deed
-        address originator; // address of the creator of the deed
+        address initiator;  // address of the creator of the deed
         address holder;     // address of current holder and tax payer
         address nftContract;// address of the NFT that is wrapped in this deed
         IERC20 priceToken;  // address of the payment token
@@ -63,7 +119,7 @@ contract Harberger {
     }
 
     /**
-     * Storage 🚬
+     * Storage 🍔
      */
 
     uint256 public deedBond = 100000 ether;                             // price in CIG (to prevent spam)
@@ -75,7 +131,7 @@ contract Harberger {
     uint8 internal locked = 1;                                          // reentrancy guard. 2 = entered, 1 not
 
     /**
-     * Constants - initialized at deployment 🚬
+     * Constants - initialized at deployment 🍔
      */
 
     uint256 private immutable epochBlocks;           // secs per day divided by 12 (86400 / 12), assuming 12 sec blocks
@@ -87,7 +143,7 @@ contract Harberger {
     ICryptoPunksTokenURI private immutable punksURI; // 0x4e776fCbb241a0e0Ea2904d642baa4c7E171a1E9
 
     /**
-     * Constants - hard-coded 🚬
+     * Constants - hard-coded 🍔
      */
 
     uint private constant SCALE = 1e3;
@@ -95,7 +151,7 @@ contract Harberger {
     uint256 constant MIN_PRICE = 1e12;             // 0.000001
 
     /**
-     * Modifiers 🚬
+     * Modifiers 🍔
      */
 
     modifier notReentrant() { // notReentrant is a reentrancy guard
@@ -106,7 +162,7 @@ contract Harberger {
     }
 
     /**
-     * Events 🚬
+     * Events 🍔
      */
 
     // NewDeed is fired when a new deed is created
@@ -115,13 +171,13 @@ contract Harberger {
     event Takeover(uint256 indexed deedID, address indexed user, uint256 new_price, bytes32 graffiti);
     // TaxDeposit
     event TaxDeposit(uint256 indexed deedID, address indexed user, uint256 amount);     // when tax is deposited
-    // RevenueSplit when tax revenue is paid out and split between owner and originator
+    // RevenueSplit when tax revenue is paid out and split between owner and initiator
     event RevenueSplit(
         uint256 indexed deedID,
         address indexed user,
         uint256 amount,
         uint16 split,
-        address indexed originator);
+        address indexed initiator);
     // Defaulted when owner defaulted on tax
     event Defaulted(uint256 indexed deedID, address indexed called_by, uint256 reward);
     // PriceChange // when owner changed price
@@ -130,7 +186,7 @@ contract Harberger {
     event Takeout(uint256 indexed deedID, address indexed user);
 
     /**
-    * @dev Construct the Hamburger Hut 🚬
+    * @dev Construct the Hamburger Hut 🍔
     * @param _epochBlocks - how many blocks is 1 epoch
     * @param _auctionBlocks - how many blocks for each dutch auction discount
     * @param _cig - cigarette token address
@@ -165,7 +221,7 @@ contract Harberger {
     * @param _price initial price, in '_priceToken'
     * @param _priceToken address of the ERC20 to use as the payment token
     * @param _taxRate a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
-    * @param _share of revenue that goes to originator, remainder is burned. The type is same as _taxRate
+    * @param _share of revenue that goes to initiator, remainder is burned. The type is same as _taxRate
     * @param _ensName .eth name, required if nft is an ENS .eth (without the .eth suffix, normalized)
     */
     function newDeed(
@@ -179,7 +235,7 @@ contract Harberger {
     ) external notReentrant returns (uint256 deedID) {
         unchecked{deedID = ++deedHeight;}                                                 // starts from 1
         Deed storage d = deeds[deedID];
-        d.originator = msg.sender;
+        d.initiator = msg.sender;
         d.nftContract = _nftContract;
         d.nftTokenID = _tokenID;
         d.priceToken = IERC20(_priceToken);
@@ -231,7 +287,7 @@ contract Harberger {
                 d.taxBurnBlock,
                 d.taxBalance,
                 d.holder,
-                d.originator,
+                d.initiator,
                 d.priceToken
             );                                                             // _consumeTax can change d.state to 2
             deeds[_deedID].taxBurnBlock = uint64(block.number);            // store the block number of last burn
@@ -243,7 +299,7 @@ contract Harberger {
         require (_max_spend >= d.price + _tax_amount , "overpaid");        // prevent from over-payment
         require (_new_price >= MIN_PRICE, "price 2 smol");                 // price cannot be under 0.000001
         require (_tax_amount >= _new_price / 1000, "insufficient tax" );   // at least %0.1 fee paid for 1 epoch
-        require (msg.sender != d.holder, "you already own it");
+        require (msg.sender != d.holder, "you already own it");            // cannot buy from yourself
         safeERC20TransferFrom(
             d.priceToken, msg.sender, address(this), d.price + _tax_amount
         );                                                                 // pay for the deed + deposit tax
@@ -251,10 +307,10 @@ contract Harberger {
             d.priceToken,
             d.price,
             d.rate[1],
-            d.originator,
+            d.initiator,
             d.holder
         );                                                                  // split the revenue from the sale
-        emit RevenueSplit(_deedID, msg.sender, d.price, d.rate[1], d.originator);
+        emit RevenueSplit(_deedID, msg.sender, d.price, d.rate[1], d.initiator);
         if (d.taxBalance > 0) {
             safeERC20Transfer(d.priceToken, d.holder, d.taxBalance);        // return deposited tax back to old holder
             // deeds[_deedID].taxBalance                                    // not needed, will be overwritten
@@ -293,7 +349,7 @@ contract Harberger {
                 d.taxBurnBlock,
                 d.taxBalance,
                 d.holder,
-                d.originator,
+                d.initiator,
                 d.priceToken);                                                       // settle any tax debt
             deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
@@ -320,7 +376,7 @@ contract Harberger {
             d.taxBurnBlock,
             d.taxBalance,
             d.holder,
-            d.originator,
+            d.initiator,
             d.priceToken);
         deeds[_deedID].taxBurnBlock = uint64(block.number);
     }
@@ -345,7 +401,7 @@ contract Harberger {
                 d.taxBurnBlock,
                 d.taxBalance,
                 d.holder,
-                d.originator,
+                d.initiator,
                 d.priceToken);
             deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
@@ -358,14 +414,14 @@ contract Harberger {
     }
 
     /**
-    * @dev takeout allows the deed's originator to unwrap and remove the nft
+    * @dev takeout allows the deed's initiator to unwrap and remove the nft
     */
     function takeout(uint256 _deedID) external notReentrant returns (State state) {
         Deed memory d = deeds[_deedID];
         require (d.holder == msg.sender, "only holdoor");
         require (d.state == State.OnSale, "deed not active");
-        require (d.blockStamp + (epochBlocks*7) >= block.number, "must wait 7 epochs");
-        require (d.originator == msg.sender, "only originatoor");
+        require (d.blockStamp + (epochBlocks*2) >= block.number, "must wait 2 epochs");
+        require (d.initiator == msg.sender, "only initinatoor");
         if (d.taxBurnBlock == uint64(block.number)) return d.state;
         state = _consumeTax(
             _deedID,
@@ -375,7 +431,7 @@ contract Harberger {
             d.taxBurnBlock,
             d.taxBalance,
             d.holder,
-            d.originator,
+            d.initiator,
             d.priceToken);
         if (state != State.OnSale) { // defaulted on tax?
             return state;
@@ -383,7 +439,7 @@ contract Harberger {
         deeds[_deedID].state = State.TakenOut;
         deeds[_deedID].taxBurnBlock = uint64(block.number);
         if (d.nftContract == address(punks)) {                               // if punk
-            punks.offerPunkForSaleToAddress(d.nftTokenID, 0, msg.sender);    // allow originator to take it out
+            punks.offerPunkForSaleToAddress(d.nftTokenID, 0, msg.sender);    // allow initiator to take it out
         } else {
             if (d.nftContract == address(dotEthReg)) {                       // if ENS
                 dotEthReg.reclaim(d.nftTokenID, msg.sender);                 // relinquish the controller
@@ -418,7 +474,7 @@ contract Harberger {
         uint64 _taxBurnBlock,
         uint256 _taxBalance,
         address _holder,
-        address _originator,
+        address _initiator,
         IERC20 _token
     ) internal returns(State /*state*/) {
         State s = State.OnSale;                                 // assume it's on sale
@@ -439,15 +495,15 @@ contract Harberger {
             _token,
             debt,
             _split,
-            _originator,
-            address(0)
-        );                                                      // distribute only to _originator (burn _holder's)
+            _initiator,
+            address(0) // holder's portion burned
+        );                                                      // distribute only to _initiator (burn _holder's)
         emit RevenueSplit(
             _deedID,
             msg.sender,
             debt,
             _split,
-            _originator
+            _initiator
         );
         return s;
     }
@@ -532,7 +588,7 @@ contract Harberger {
     }
 
     /**
-    * Proxy functions for ENS .eth names 🚬
+    * Proxy functions for ENS .eth names 🍔
     **/
 
 
@@ -616,23 +672,23 @@ contract Harberger {
     * @dev distribute revenue
     * @param _token The token to distribute
     * @param _amount The amount to distribute
-    * @param _split The % to send to originator
-    * @param _originator address to send the revenue split
+    * @param _split The % to send to initiator
+    * @param _initiator address to send the revenue split
     * @param _holder send remainder to here. (May be 0x0 to burn it)
     */
     function _splitRevenue(
         IERC20 _token,
         uint256 _amount,
         uint16 _split,
-        address _originator,
+        address _initiator,
         address _holder
     ) internal {
 
         if (_split == 1000) {
-            safeERC20Transfer(_token, _originator, _amount);          // distribute all
+            safeERC20Transfer(_token, _initiator, _amount);           // distribute all
         } else if (_split > 0) {
             uint256 distribute = _amount / SCALE * _split;
-            safeERC20Transfer(_token, _originator, distribute);       // distribute portion
+            safeERC20Transfer(_token, _initiator, distribute);        // distribute portion
             safeERC20Transfer(_token, _holder, _amount - distribute); // send remainder _holder (or to 0x0)
         } else if (_split == 0) {
             safeERC20Transfer(_token, _holder, _amount);              // send all to _holder (may be 0x0)
@@ -659,7 +715,7 @@ contract Harberger {
     }
 
     /***
-    * ENS stuff 🚬
+    * ENS stuff 🍔
     */
 
     bytes32 public constant ADDR_DOT_ETH_NODE = 0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae;
@@ -669,7 +725,7 @@ contract Harberger {
     }
 
     /***
-    * ERC721 stuff 🚬
+    * ERC721 stuff 🍔
     */
 
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
@@ -904,7 +960,7 @@ contract Harberger {
 }
 
 /**
- * Interfaces 🚬
+ * Interfaces 🍔
  */
 
 /*
