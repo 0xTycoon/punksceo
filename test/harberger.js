@@ -2,8 +2,10 @@ const {expect} = require("chai");
 const {ContractFactory, utils, BigNumber} = require('ethers');
 
 describe("Hamburgers", function () {
-    let burger, Harberger, PunkMock, punks, CigTokenMock, cig, ERC721Mock, nft1, nft2;
+    let burger, Harberger, PunkMock, punks, CigTokenMock, cig, ERC721Mock, nft1;
+    let ENSRegMock, reg;
     let PunkTokenURIMock, punksURI;
+    let ENSResMock, res;
     let owner, simp, elizabeth;
 
     let feth = utils.formatEther;
@@ -40,15 +42,20 @@ describe("Hamburgers", function () {
         ERC721Mock = await ethers.getContractFactory("ERC721Mock");
         nft1 = await ERC721Mock.deploy(); // simulates a regular 721 nft
         await nft1.deployed();
-        nft2 = await ERC721Mock.deploy();
-        await nft2.deployed(); // simulates an ENS
+        ENSRegMock = await ethers.getContractFactory("ENSReg");
+        reg = await ENSRegMock.deploy();
+        await reg.deployed(); // simulates an ENS .eth registry
+        ENSResMock = await ethers.getContractFactory("ENSResolver");
+        res = await ENSResMock.deploy();
+        await reg.deployed(); // simulates an ENS .eth resolver
 
         Harberger = await ethers.getContractFactory("Harberger");
         burger = await Harberger.deploy(
             10, // 10 blocks per epoch
             5, // change dutch auction every 5 blocks
             cig.address,
-            nft2.address,
+            reg.address, // registry
+            res.address, // resolver
             punks.address,
             punksURI.address
             );
@@ -67,10 +74,12 @@ describe("Hamburgers", function () {
             await expect(burger.newDeed(
                 punks.address, // a cryptopunk
                 4513,
-                peth("10000"),
+                peth("10000"), // price
+                peth("1000"), // tax deposit
                 cig.address,
-                10, // 1% tax,
+                1, // 0.1% tax per epoch (or 100 cig per epoch in this case)
                 1000, // 100% to originator
+                ""
             )).to.be.revertedWith("you are not the toAddress");
 
             expect (await punks.offerPunkForSaleToAddress(4513, 0, burger.address))
@@ -79,9 +88,11 @@ describe("Hamburgers", function () {
                 punks.address, // a cryptopunk
                 4513,
                 peth("10000"),
+                peth("1000"),
                 cig.address,
-                10,
-                1000
+                1, // 0.1% tax per epoch
+                1000,
+                 ""
             )).to.emit(burger, "NewDeed").withArgs(1);
 
 
@@ -104,26 +115,33 @@ describe("Hamburgers", function () {
                 punks.address, // a cryptopunk
                 4515,
                 peth("10000"),
+                peth("1000"),
                 cig.address,
-                10,
-                1000
+                1,
+                1000,
+                ""
             )).to.emit(burger, "NewDeed").withArgs(2);
             expect(await burger.connect(simp).newDeed(
                 punks.address, // a cryptopunk
                 4519,
                 peth("10000"),
+                peth("1000"),
                 cig.address,
-                10,
-                1000
+                1,
+                1000,
+                ""
             )).to.emit(burger, "NewDeed").withArgs(3);
             expect(await burger.connect(simp).newDeed(
                 punks.address, // a cryptopunk
                 4520,
                 peth("10000"),
+                peth("1000"),
                 cig.address,
-                10,
-                1000
+                1, // tax rate 0.01
+                1000, // 1000 means all goes to initiator
+                ""
             )).to.emit(burger, "NewDeed").withArgs(4);
+           // let provider = ethers.getDefaultProvider();
 
             // sanity check
             expect(await burger.balanceOf(simp.address)).to.equal(3);
@@ -133,9 +151,17 @@ describe("Hamburgers", function () {
         });
 
         it("buy deeds", async function () {
+            console.log("simp bal: " +await burger.balanceOf(simp.address) +
+                "\nowner:" + await burger.balanceOf(owner.address) +
+                "\nelizabeth:" + await burger.balanceOf(elizabeth.address) +
+                "\ncontract:" + await burger.balanceOf(burger.address) +
+                // "\ncontract 0 :" + await burger.tokenOfOwnerByIndex(burger.address, 0) +
+                "\ntotal supply:" + await burger.totalSupply() +
+                "\n****"
+            );
             await expect( burger.buyDeed(
                 1,
-                peth("15000"),
+                peth("15000"), // max spend (
                 peth("10000"),
                 peth("5000"),
                 graffiti32
@@ -144,7 +170,15 @@ describe("Hamburgers", function () {
             console.log(await burger.tokenOfOwnerByIndex(simp.address, 0));
             console.log(await burger.tokenOfOwnerByIndex(simp.address, 1));
             console.log(await burger.tokenOfOwnerByIndex(simp.address, 2));
-
+            console.log("simp bal: " +await burger.balanceOf(simp.address) +
+                "\nowner:" + await burger.balanceOf(owner.address) +
+                "\nelizabeth:" + await burger.balanceOf(elizabeth.address) +
+                "\ncontract:" + await burger.balanceOf(burger.address) +
+               // "\ncontract 0 :" + await burger.tokenOfOwnerByIndex(burger.address, 0) +
+                "\ntotal supply:" + await burger.totalSupply() +
+                "\ncontract addr:" + burger.address + " liz:" + elizabeth.address +
+                "\n%%%%%%%"
+            );
             // remove the middle item
             console.log("elizabeth buys #3, i=middle");
             expect(await burger.connect(elizabeth).buyDeed(
@@ -154,6 +188,15 @@ describe("Hamburgers", function () {
                 peth("5000"),
                 graffiti32
             )).to.emit(burger, "Takeover");
+
+            console.log("simp bal: " +await burger.balanceOf(simp.address) +
+                "\nowner:" + await burger.balanceOf(owner.address) +
+                "\nelizabeth:" + await burger.balanceOf(elizabeth.address) +
+                "\ncontract:" + await burger.balanceOf(burger.address) +
+               // "\ncontract 0 :" + await burger.tokenOfOwnerByIndex(burger.address, 0) +
+                "\ntotal supply:" + await burger.totalSupply() +
+                "\n^^^^^"
+            );
 
             expect(await burger.balanceOf(simp.address)).to.equal(2);
             console.log(await burger.tokenOfOwnerByIndex(simp.address, 0));
@@ -190,7 +233,7 @@ describe("Hamburgers", function () {
         it("deposit tax", async function () {
 
             let [stats, deed, symbol, nftName, nftSymbol, nftTokenURI] = await burger.getInfo(elizabeth.address, 2);
-            console.log(nftTokenURI);
+            //console.log(nftTokenURI);
 
 
         });

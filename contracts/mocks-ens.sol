@@ -24,27 +24,6 @@ import "hardhat/console.sol";
 
 // namehash calc https://swolfeyes.github.io/ethereum-namehash-calculator/
 // tycoon eth: 0x3678407b1945d4c1f020cf2b02f05e8650ee554c21814f1e20055c3f42bda46f
-contract ENSReg {
-    IENSResolver public r;
-    constructor (address _r) {
-        r = IENSResolver(_r);
-    }
-    function resolver(bytes32 node) public virtual view returns (IENSResolver) {
-        return r;
-    }
-}
-
-contract ENSResolver {
-    function addr(bytes32 node) public virtual view returns (address) {
-        return (address(0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045));
-    }
-    /**
-     * @dev Reclaim ownership of a name in ENS, if you own it in the registrar.
-     */
-    function reclaim(uint256 id, address owner) external {
-        console.log("reclaim ens", id, owner);
-    }
-}
 
 contract ERC721Mock {
     // Just a simulation, do not use in any live code
@@ -65,8 +44,17 @@ contract ERC721Mock {
      */
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
 
+    function name() public pure returns (string memory) {
+        return "A test NFT";
+    }
+
+    function symbol() public pure returns (string memory) {
+        return "TEST";
+    }
+
+
     function tokenURI(uint256 _tokenId) public view returns (string memory) {
-        return ""; // todo: return uri
+        return "ipns://testing.eth/"; // todo: return uri
     }
 
     function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes memory _data) external {
@@ -86,50 +74,34 @@ contract ERC721Mock {
         approval[_tokenId] = _to;
         emit Approval(msg.sender, _to, _tokenId);
     }
+
+    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {
+        return
+        interfaceId == type(IERC721).interfaceId ||
+        interfaceId == type(IERC721Metadata).interfaceId ||
+        interfaceId == type(IERC165).interfaceId ||
+        interfaceId == type(IERC721Enumerable).interfaceId ||
+        interfaceId == type(IERC721TokenReceiver).interfaceId;
+    }
 }
 
-// this will be used to check to see if:
-// given .eth name resolved address == reverse address(msg.sender)
-contract ENSReverseResolverMock {
-
-    // real one at https://etherscan.io/address/0xa2c122be93b0074270ebee7f6b7292c7deb45047#code
-    bytes32 public constant ADDR_REVERSE_NODE = 0x91d1777781884d03a6757a803996e38de2a42967fb37eeaca72729271025a9e2;
-
-
-    function node(address addr) public pure returns (bytes32) {
-        return keccak256(abi.encodePacked(ADDR_REVERSE_NODE, sha3HexAddress(addr)));
+contract ENSReg is ERC721Mock {
+    constructor () {
     }
-
     /**
-     * @dev An optimised function to compute the sha3 of the lower-case
-     *      hexadecimal representation of an Ethereum address.
-     * @param addr The address to hash
-     * @return ret The SHA3 hash of the lower-case hexadecimal encoding of the
-     *         input address.
+     * @dev Reclaim ownership of a name in ENS, if you own it in the registrar.
      */
-    function sha3HexAddress(address addr) private pure returns (bytes32 ret) {
-        addr;
-        ret; // Stop warning us about unused variables
-        assembly {
-            let lookup := 0x3031323334353637383961626364656600000000000000000000000000000000
-
-            for { let i := 40 } gt(i, 0) { } {
-                i := sub(i, 1)
-                mstore8(i, byte(and(addr, 0xf), lookup))
-                addr := div(addr, 0x10)
-                i := sub(i, 1)
-                mstore8(i, byte(and(addr, 0xf), lookup))
-                addr := div(addr, 0x10)
-            }
-
-            ret := keccak256(0, 40)
-        }
+    function reclaim(uint256 id, address owner) external {
+        console.log("reclaim ens", id, owner);
     }
+}
 
-    function setName(bytes32 node, string memory name) external {
-        // all it does is just
-        //name[node] = _name;
+contract ENSResolver is ERC721Mock {
+    function addr(bytes32 node) public virtual view returns (address) {
+        return (address(0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045));
     }
-
 
 }
+
+
+
