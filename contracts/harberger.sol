@@ -233,6 +233,9 @@ contract Harberger {
             uint16 _shareRate,
             string calldata _ensName
     ) external notReentrant returns (uint256 deedID) {
+        require(_shareRate > 0, "tax rate cannot be 0");
+        require(_taxRate > 0, "tax rate cannot be 0");
+        require(_price > MIN_PRICE, "price cannot be < 0.000001");
         unchecked{deedID = ++deedHeight;}                                                 // starts from 1
         Deed storage d = deeds[deedID];
         d.initiator = msg.sender;
@@ -585,87 +588,6 @@ contract Harberger {
     }
 
     /**
-    * Proxy functions for ENS .eth names 🍔
-    **/
-
-
-    /**
-    * @dev getENSInfo
-    */
-    function getENSInfo(
-        bytes32 _node,
-        uint _coinType,
-        bytes32 _DNSName,
-        uint16 _DNSResource,
-        string[6] calldata _keys
-    ) view public returns (
-        address addr,
-        bytes memory coinAddr,
-        bytes memory contentHash,
-        bytes memory DNSRecord,
-        string memory name,
-        bytes32 x, bytes32 y,
-        string[6] memory text
-    ) {
-        addr = dotEthRes.addr(_node);
-        if (_coinType > 0) {
-            coinAddr = dotEthRes.addr(_node, _coinType);
-        }
-        contentHash = dotEthRes.contenthash(_node);
-        if (_DNSName != 0x0) {
-            DNSRecord = dotEthRes.dnsRecord(_node, _DNSName, _DNSResource);
-        }
-        name = dotEthRes.name(_node);
-        (x, y) = dotEthRes.pubkey(_node);
-        for(uint i = 0; i < 6; i++) {
-           text[i] = dotEthRes.text(_node, _keys[i]);
-        }
-        return (addr, coinAddr, contentHash, DNSRecord, name, x, y, text);
-    }
-
-    /**
-    * @dev setENSInfo only holder of a deed that is State.OnSale can use
-    */
-    function setENSInfo(
-        uint256 _deedID,
-        address _addr,
-        uint _coinType,
-        bytes memory _coinAddr,
-        bytes memory _contentHash,
-        bytes memory _DNSRecord,
-        string memory _name,
-        bytes32 _x, bytes32 _y,
-        string[6] calldata _keys,
-        string[6] calldata _values
-    ) external {
-        Deed memory deed = deeds[_deedID];
-        require (deed.holder == msg.sender, "only holder of deed");
-        require (deed.state == State.OnSale, "deed must be on sale");
-        require (deed.nftContract == address(dotEthReg), "not .eth reg");
-        bytes32 node = bytes32(deed.nftTokenID);
-        dotEthRes.setAddr(node, _addr);
-        if (_coinType > 0) {
-            dotEthRes.setAddr(node, _coinType, _coinAddr);
-        }
-        if (_contentHash.length > 0) {
-            dotEthRes.setContenthash(node, _contentHash);
-        }
-        if (_DNSRecord.length > 0) {
-            dotEthRes.setDNSRecords(node, _DNSRecord);
-        }
-        if (bytes(_name).length > 0) {
-            dotEthRes.setName(node, _name);
-        }
-        if (_x > 0x0) {
-            dotEthRes.setPubkey(node, _x, _y);
-        }
-        for(uint i = 0; i < 6; i++) {
-            dotEthRes.setText(node, _keys[i], _values[i]);
-        }
-    }
-
-
-    /**
     * @dev distribute revenue
     * @param _token The token to distribute
     * @param _amount The amount to distribute
@@ -712,7 +634,8 @@ contract Harberger {
     }
 
     /***
-    * ENS stuff 🍔
+    * ENS Hamburgers 🍔
+    * Proxy functions for ENS .eth names 🍔
     */
 
     bytes32 public constant ADDR_DOT_ETH_NODE = 0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae;
@@ -721,8 +644,84 @@ contract Harberger {
         return keccak256(abi.encodePacked(ADDR_DOT_ETH_NODE, keccak256(abi.encodePacked(_n))));
     }
 
+    /**
+    * @dev getENSInfo
+    */
+    function getENSInfo(
+        bytes32 _node,
+        uint _coinType,
+        bytes32 _DNSName,
+        uint16 _DNSResource,
+        string[6] calldata _keys
+    ) view public returns (
+        address addr,
+        bytes memory coinAddr,
+        bytes memory contentHash,
+        bytes memory DNSRecord,
+        string memory name,
+        bytes32 x, bytes32 y,
+        string[6] memory text
+    ) {
+        addr = dotEthRes.addr(_node);
+        if (_coinType > 0) {
+            coinAddr = dotEthRes.addr(_node, _coinType);
+        }
+        contentHash = dotEthRes.contenthash(_node);
+        if (_DNSName != 0x0) {
+            DNSRecord = dotEthRes.dnsRecord(_node, _DNSName, _DNSResource);
+        }
+        name = dotEthRes.name(_node);
+        (x, y) = dotEthRes.pubkey(_node);
+        for(uint i = 0; i < 6; i++) {
+            text[i] = dotEthRes.text(_node, _keys[i]);
+        }
+        return (addr, coinAddr, contentHash, DNSRecord, name, x, y, text);
+    }
+
+    /**
+    * @dev setENSInfo only holder of a deed that is State.OnSale can use
+    */
+    function setENSInfo(
+        uint256 _deedID,
+        address _addr,
+        uint _coinType,
+        bytes memory _coinAddr,
+        bytes memory _contentHash,
+        bytes memory _DNSRecord,
+        string memory _name,
+        bytes32 _x, bytes32 _y,
+        string[6] calldata _keys,
+        string[6] calldata _values
+    ) external {
+        Deed memory deed = deeds[_deedID];
+        require (deed.holder == msg.sender, "only holder of deed");
+        require (deed.state == State.OnSale, "deed must be on sale");
+        require (deed.nftContract == address(dotEthReg), "not .eth reg");
+        bytes32 node = bytes32(deed.nftTokenID);
+        dotEthRes.setAddr(node, _addr);
+        if (_coinType > 0) {
+            dotEthRes.setAddr(node, _coinType, _coinAddr);
+        }
+        if (_contentHash.length > 0) {
+            dotEthRes.setContenthash(node, _contentHash);
+        }
+        if (_DNSRecord.length > 0) {
+            dotEthRes.setDNSRecords(node, _DNSRecord);
+        }
+        if (bytes(_name).length > 0) {
+            dotEthRes.setName(node, _name);
+        }
+        if (_x > 0x0) {
+            dotEthRes.setPubkey(node, _x, _y);
+        }
+        for(uint i = 0; i < 6; i++) {
+            dotEthRes.setText(node, _keys[i], _values[i]);
+        }
+    }
+
+
     /***
-    * ERC721 stuff 🍔
+    * ERC721 Hamburgers 🍔
     */
 
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
@@ -1011,7 +1010,6 @@ interface IERC721Enumerable {
  * @dev Required interface of an ERC721 compliant contract.
  */
 interface IERC721 is IERC165, IERC721Metadata, IERC721Enumerable, IERC721TokenReceiver {
-
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
