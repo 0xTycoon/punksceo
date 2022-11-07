@@ -48,21 +48,41 @@ contract Stogie {
     address private immutable sushiFactory;    // 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac
     address public stogiePool;                 // will be created with init()
     uint8 internal locked = 1;                 // reentrancy guard. 2 = entered, 1 not
-
+    bytes32 public DOMAIN_SEPARATOR;
+    // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
+    bytes32 public constant PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
+    mapping(address => uint) public nonces;
+    address private immutable idCards;         // id cards erc721
     constructor(
         address _cig,
         address _CigEthSLP,
         address _sushiRouter,
         address _sushiFactory,
-        address _weth
+        address _weth,
+        address _idCards
     ) {
         cig = ICigToken(_cig);
         cigEthSLP = ILiquidityPool(_CigEthSLP);
         sushiRouter = IV2Router(_sushiRouter);
         sushiFactory = _sushiFactory;
         weth = _weth;
+        idCards = _idCards;
+        uint chainId;
+        assembly {
+            chainId := chainid()
+        }
+        DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)'),
+                keccak256(bytes(name)),
+                keccak256(bytes('1')),
+                chainId,
+                address(this)
+            )
+        );
     }
 
+    // todo remove doNothing()
     uint256 public c  = 0;
     function doNothing() external returns (uint) {
         c++;
@@ -74,6 +94,23 @@ contract Stogie {
         locked = 2; // enter
         _;
         locked = 1; // exit
+    }
+
+    /**
+    * @dev permit is eip-2612 compliant
+    */
+    function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external {
+        require(deadline >= block.timestamp, 'Stogie: EXPIRED');
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                '\x19\x01',
+                DOMAIN_SEPARATOR,
+                keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonces[owner]++, deadline))
+            )
+        );
+        address recoveredAddress = ecrecover(digest, v, r, s);
+        require(recoveredAddress != address(0) && recoveredAddress == owner, 'Stogie: INVALID_SIGNATURE');
+        _approve(owner, spender, value);
     }
 
 
@@ -132,6 +169,8 @@ contract Stogie {
         /* _deposit updates user's account of STOG, so they can withdraw it later*/
         _deposit(user, liquidity);                       // update the user's account
         cig.deposit(liquidity);                          // forward the SLP to the factory
+        IIDCards(idCards).issueID(msg.sender);           // mint nft
+
         emit Deposit(msg.sender, liquidity);
         if (!_transferSurplus) {
             return (swpAmt, cigAdded, ethAdded, liquidity);
@@ -289,7 +328,6 @@ contract Stogie {
             block.timestamp
         );
         require (liquidity > 0, "failed to add to pool");
-
         _mint(msg.sender, liquidity); // mint STOG for the sender
     }
 
@@ -452,12 +490,14 @@ contract Stogie {
     */
     uint256 accCigPerShare; // Accumulated cigarettes per share, times 1e12.
     uint256 lastRewardBlock;
+    uint256 employeeHeight; // the next available employee id
     // UserInfo keeps track of user LP deposits and withdrawals
     struct UserInfo {
         uint256 deposit;    // How many LP tokens the user has deposited.
         uint256 rewardDebt; // keeps track of how much reward was paid out
     }
-    mapping(address => UserInfo) public farmers;                    // keeps track of staking deposits and rewards
+    mapping (uint256 => address) cardOwners;
+    mapping (address => UserInfo) public farmers;                    // keeps track of staking deposits and rewards
     event Deposit(address indexed user, uint256 amount);            // when depositing LP tokens to stake
     event Harvest(address indexed user, address to, uint256 amount);// when withdrawing LP tokens form staking
     event Withdraw(address indexed user, uint256 amount);           // when withdrawing LP tokens, no rewards claimed
@@ -514,6 +554,7 @@ contract Stogie {
         require(_transfer(address(msg.sender), address(this), _amount));     // transfer STOG to this contract
         cig.deposit(_amount);                                                // forward the SLP to the factory
         emit Deposit(msg.sender, _amount);
+        IIDCards(idCards).issueID(msg.sender);
     }
 
     /**
@@ -523,6 +564,29 @@ contract Stogie {
         _user.deposit += _amount;
         _user.rewardDebt += _amount * accCigPerShare / 1e12;
     }
+
+
+    /**
+    * @dev transferStake transfers a stake to a new address
+    *  _to must not have any stake. Harvests the stake before transfer
+    */
+    function transferStake(address _to, bool transferID) external {
+        UserInfo storage userFrom = farmers[msg.sender];
+        require (userFrom.deposit > 0, "from deposit must not be empty");
+        UserInfo storage userTo = farmers[_to];
+        require (userTo.deposit == 0, "userTo.deposit not empty");
+        // harvest, move stake, remove old index, assign new index
+        _harvest(userFrom, msg.sender);
+        userTo.deposit = userFrom.deposit;
+        userTo.rewardDebt = userFrom.rewardDebt;
+        userFrom.deposit = 0;
+        userFrom.rewardDebt = 0;
+        if (transferID) {
+            uint id = IIDCards(idCards).cardOwners(msg.sender);
+            IIDCards(idCards).safeTransferFrom(msg.sender, _to, id);
+        }
+    }
+
 
     /**
     * @dev withdraw takes out the LP tokens
@@ -748,4 +812,11 @@ interface ICigToken is IERC20 {
     //function stakedlpSupply() external view returns(uint256);
 
     //function withdraw(uint256 _amount) external // bugged, use emergencyWithdraw() instead.
+}
+
+interface IIDCards {
+    function balanceOf(address _holder) external view returns (uint256);
+    function safeTransferFrom(address,address,uint256) external;
+    function cardOwners(address) external view returns (uint256);
+    function issueID(address _to) external;
 }

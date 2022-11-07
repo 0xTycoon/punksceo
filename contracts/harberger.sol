@@ -754,6 +754,7 @@ contract Harberger {
     ///   (sort order not specified)
     function tokenOfOwnerByIndex(address _owner, uint256 _index) external view returns (uint256) {
         require (_index < balances[_owner], "index out of range");
+        require (_owner != address(0), "invalid _owner");
         return ownedDeeds[_owner][_index];
     }
 
