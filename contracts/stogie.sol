@@ -48,10 +48,10 @@ contract Stogie {
     address private immutable sushiFactory;    // 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac
     address public stogiePool;                 // will be created with init()
     uint8 internal locked = 1;                 // reentrancy guard. 2 = entered, 1 not
-    bytes32 public DOMAIN_SEPARATOR;
+    bytes32 public DOMAIN_SEPARATOR;           // EIP-2612 permit functionality
     // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
     bytes32 public constant PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
-    mapping(address => uint) public nonces;
+    mapping(address => uint) public nonces;    // EIP-2612 permit functionality
     address private immutable idCards;         // id cards erc721
     constructor(
         address _cig,
@@ -79,7 +79,7 @@ contract Stogie {
                 chainId,
                 address(this)
             )
-        );
+        ); // EIP-2612
     }
 
     // todo remove doNothing()
