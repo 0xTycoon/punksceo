@@ -138,7 +138,8 @@ contract Harberger {
     IENSRegistrar private immutable dotEthReg;       // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85
     IENSResolver private immutable dotEthRes;        // 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41
     ICryptoPunks private immutable punks;            // 0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB
-    ICryptoPunksTokenURI private immutable punksURI; // 0x4e776fCbb241a0e0Ea2904d642baa4c7E171a1E9
+    ICryptoPunksTokenURI private immutable punksURI; // 0xd8e916c3016be144eb2907778cf972c4b01645fc
+    address public constant BURN_ADDR = address(0);
 
     /**
      * Constants - hard-coded 🍔
@@ -146,7 +147,7 @@ contract Harberger {
 
     uint private constant SCALE = 1e3;
     bytes4 private constant RECEIVED = 0x150b7a02; // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
-    uint256 constant MIN_PRICE = 1e12;             // 0.000001
+    uint256 private constant MIN_PRICE = 1e12;     // 0.000001
 
     /**
      * Modifiers 🍔
@@ -200,7 +201,7 @@ contract Harberger {
         address _ensReg,        // 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85 (BaseRegistrarImplementation - ERC721)
         address _ensRes,        // 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41
         address _punks,         // 0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB
-        address _punksURI       // 0x4e776fCbb241a0e0Ea2904d642baa4c7E171a1E9
+        address _punksURI       // 0xd8e916c3016be144eb2907778cf972c4b01645fc
     ){
         epochBlocks = _epochBlocks;
         auctionBlocks = _auctionBlocks;
@@ -268,18 +269,22 @@ contract Harberger {
     /**
     * @dev buyDeed buys the deed and transfers it to the new holder.
     * @param _deedID the deed id
-    * @param _max_spend in wei. Since d.price can change after signing the tx, this can protect the buyer in
-    *    case the the d.price gets set to a high value
+    * @param _max_spend in wei. Since d.price can change after signing the tx,
+    *   this can protect the buyer in  case the the d.price gets set to a high
+    *   value
     * @param _new_price the new takeover price
     * @param _tax_amount amount token to deposit for paying tax
     * @param _graffiti a graffiti message can be set to anything
+    * @param _to address of the ultimate holder of the deed once the title has
+    *   been purchased. (`msg.sender` can buy deeds for `_to`)
     */
     function buyDeed(
         uint256 _deedID,
         uint256 _max_spend,
         uint256 _new_price,
         uint256 _tax_amount,
-        bytes32 _graffiti
+        bytes32 _graffiti,
+        address _to
     ) external notReentrant {
         Deed memory d = deeds[_deedID];
         require (d.initiator != address(0), "no such deed");
@@ -306,6 +311,7 @@ contract Harberger {
         require (_new_price >= MIN_PRICE, "price 2 smol");                 // price cannot be under 0.000001
         require (_tax_amount >= _new_price / 1000, "insufficient tax" );   // at least %0.1 fee paid for 1 epoch
         require (msg.sender != d.holder, "you already own it");            // cannot buy from yourself
+        require (_to != d.holder, "_to already owns it");                  // cannot buy for someone who owns it
         safeERC20TransferFrom(
             d.priceToken, msg.sender, address(this), d.price + _tax_amount
         );                                                                 // pay for the deed + deposit tax
@@ -326,14 +332,14 @@ contract Harberger {
         console.log("! holder bal:", balanceOf(d.holder));
         console.log("! contract bal:", balanceOf(address(this)));
         console.log("! state:", uint(d.state));
-        console.log("transfer,", d.holder, " to: ", msg.sender);
-        _transfer(d.holder, msg.sender, _deedID);                           // transfer deed to buyer
+        console.log("transfer,", d.holder, " to: ", _to);
+        _transfer(d.holder, _to, _deedID);                                  // transfer deed to buyer
         deeds[_deedID].price = _new_price;                                  // set the new price
         deeds[_deedID].blockStamp = uint64(block.number);                   // record the block of state change
         deeds[_deedID].state = State.OnSale;                                // make available for sale
         deeds[_deedID].graffiti = _graffiti;                                // save the graffiti
-        emit TaxDeposit(_deedID, msg.sender, _tax_amount);
-        emit Takeover(_deedID, msg.sender, _new_price, _graffiti);
+        emit TaxDeposit(_deedID, _to, _tax_amount);
+        emit Takeover(_deedID, _to, _new_price, _graffiti);
     }
 
     /**
@@ -506,7 +512,7 @@ contract Harberger {
             debt,
             _split,
             _initiator,
-            address(0) // holder's portion burned
+            BURN_ADDR                                           // holder's portion burned
         );                                                      // distribute only to _initiator (burn _holder's)
         emit RevenueSplit(
             _deedID,
@@ -608,9 +614,9 @@ contract Harberger {
         } else if (_split > 0) {
             uint256 distribute = _amount / SCALE * _split;
             safeERC20Transfer(_token, _initiator, distribute);        // distribute portion
-            safeERC20Transfer(_token, _holder, _amount - distribute); // send remainder _holder (or to 0x0)
+            safeERC20Transfer(_token, _holder, _amount - distribute); // send remainder _holder (or to BURN_ADDR)
         } else if (_split == 0) {
-            safeERC20Transfer(_token, _holder, _amount);              // send all to _holder (may be 0x0)
+            safeERC20Transfer(_token, _holder, _amount);              // send all to _holder (may be BURN_ADDR)
         }
 
     }
