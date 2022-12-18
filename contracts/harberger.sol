@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 // Author: tycoon.eth
 // Project: Hamburger Hut
@@ -622,11 +623,11 @@ contract Harberger {
     }
 
     function safeERC20Transfer(IERC20 _token, address _to, uint256 _amount) internal {
-        bytes memory payload = abi.encodeWithSelector(_token.transfer.selector, address(0), _amount);
+        bytes memory payload = abi.encodeWithSelector(_token.transfer.selector, _to, _amount);
         (bool success, bytes memory returndata) = address(_token).call(payload);
         require(success, "safeERC20Transfer failed");
         if (returndata.length > 0) { // check return value if it was returned
-            require(abi.decode(returndata, (bool)), "safeERC20Transfer failed did not succeed");
+            require(abi.decode(returndata, (bool)), "safeERC20Transfer failed");
         }
     }
 
@@ -635,7 +636,7 @@ contract Harberger {
         (bool success, bytes memory returndata) = address(_token).call(payload);
         require(success, "safeERC20TransferFrom failed");
         if (returndata.length > 0) { // check return value if it was returned
-            require(abi.decode(returndata, (bool)), "safeERC20TransferFrom did not succeed");
+            require(abi.decode(returndata, (bool)), "safeERC20TransferFrom failed");
         }
     }
 
@@ -880,7 +881,7 @@ contract Harberger {
     * @param _operator The address that acts on behalf of the owner
     * @return Will always return false
     */
-    function isApprovedForAll(address _owner, address _operator) public view returns (bool) {
+    function isApprovedForAll(address _owner, address _operator) public pure returns (bool) {
         return false;
     }
 

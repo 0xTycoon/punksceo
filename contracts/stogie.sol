@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 // Author: tycoon.eth
 // Project: Hamburger Hut / Cigarettes
@@ -113,128 +114,326 @@ contract Stogie {
         _approve(owner, spender, value);
     }
 
-
     /**
     * @dev depositWithETH is used to enter CIG/ETH SLP, wrap to STOG, then stake the STOG
-    * @param _deadline future timestamp, when to give up
-    * @param _tolerance number between 0 & 1000. How big price slip % can be tolerated for _portionSelling?
-    * @param _portionSelling How much ETH needed to sell to balance the CIG/ETH portions
-    * @param _transferSurplus - should the dust be refunded?
-    * @return swpAmt The input token amount and all subsequent output token amounts from swapping ETH to CIG
-    * @return cigAdded The amount of CIG added to pool
-    * @return ethAdded The amount of ETH added to pool
-    * @return liquidity The amount of STOG received and staked
+    *   sending ETH to this function will sell ETH to get an equal portion of CIG, then
+    *   place both CIG and WETH to the CIG/ETH SLP.
+    * @param _amountCigMin - Minimum CIG expected from swapping ETH portion
+    * @param _deadline - Future timestamp, when to give up
+    * @param _transferSurplus - should the dust be refunded? May cost more gas
     */
     function depositWithETH(
-        uint16 _tolerance,
-        uint256 _portionSelling,
+        uint256 _amountCigMin,
         uint64 _deadline,
         bool _transferSurplus
-    ) external payable notReentrant returns (
+    ) external payable returns( /* don't need notReentrant */
         uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
-    )  {
+    ) {
         require(msg.value > 0, "no ETH sent");
-        (uint112 _reserve0,,) = cigEthSLP.getReserves(); // _reserve0 is ETH
-        uint256 a = _getSwapAmount(msg.value, _reserve0);// a is amount to swap to CIG to get equal portions
-        /* check if the price moved since tx was submitted */
-        uint256 slippage = msg.value / 1e3 * _tolerance;
-        require(_portionSelling - slippage <= a && _portionSelling +slippage >= a , "price over-slip, try again");
-        /* now sell "a" mount of ETH to get CIG */
+        IWETH(weth).deposit{value:msg.value}(); // wrap ETH to WETH
+        return _depositSingleSide(
+            weth,
+            msg.value,
+            _amountCigMin,
+            _deadline,
+            _transferSurplus
+        );
+    }
+
+    /**
+    * @dev depositWithWETH is used to enter CIG/ETH SLP, wrap to STOG, then stake the STOG
+    *   This function will sell WETH to get an equal portion of CIG, then
+    *   place both CIG and WETH to the CIG/ETH SLP.
+    * @param _amount - How much WETH to use, assuming approved before
+    * @param _amountCigMin - Minimum CIG expected from swapping ETH portion
+    * @param _deadline - Future timestamp, when to give up
+    * @param _transferSurplus - Should the dust be refunded? May cost more gas
+    */
+    function depositWithWETH(
+        uint256 _amount,
+        uint256 _amountCigMin,
+        uint64 _deadline,
+        bool _transferSurplus
+    ) external payable returns( /* don't need notReentrant */
+        uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
+    ) {
+        require(_amount > 0, "no WETH sent");
+        safeERC20TransferFrom(
+            IERC20(weth),
+            msg.sender,
+            address(this),
+            _amount
+        ); // take their WETH
+        return _depositSingleSide(
+            weth,
+            _amount,
+            _amountCigMin,
+            _deadline,
+            _transferSurplus
+        );
+    }
+
+    /**
+    * @dev depositWithToken is used to enter CIG/ETH SLP, wrap to STOG, then stake the STOG
+    *   This function will sell a token to get WETH, then an equal portion of CIG, then
+    *   place both CIG and WETH to the CIG/ETH SLP.
+    * @param _amount - How much token to use, assuming approved before
+    * @param _amountCigMin - Minimum CIG expected from swapping ETH portion
+    * @param _token address of the token we are entering in with
+    * @param _deadline - Future timestamp, when to give up
+    * @param _transferSurplus - Should the dust be refunded? May cost more gas
+    */
+    function depositWithToken(
+        uint256 _amount,
+        uint256 _amountCigMin,
+        address _token,
+        uint64 _deadline,
+        bool _transferSurplus
+    ) external payable notReentrant returns(
+        uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
+    ) {
+        require(_amount > 0, "no token sent");
+        safeERC20TransferFrom(
+            IERC20(_token),
+            msg.sender,
+            address(this),
+            _amount
+        ); // take their token
+        return _depositSingleSide(
+            _token,
+            _amount,
+            _amountCigMin,
+            _deadline,
+            _transferSurplus
+        );
+    }
+
+
+    /**
+    * @param _amountOutMin if the fromToken is CIG, _amountOutMin is min ETH we
+    *   must get after swapping from CIG.
+    *   if fromToken is ETH, _amountOutMin is min CIG we must get, after
+    *   swapping ETH.
+    *   if fromToken is other, _amountOutMin is min CIG we must get, after
+    *   swapping the token to ETH then to CIG.
+    */
+    function _depositSingleSide(
+        address fromToken,
+        uint256 _amount,
+        uint256 _amountOutMin,
+        uint64 _deadline,
+        bool _transferSurplus
+    ) internal returns(
+        uint[] memory swpAmt, uint addedA, uint addedB, uint liquidity
+    ) {
+
         address[] memory path;
         path = new address[](2);
-        path[0] = weth;
-        path[1] = address(cig);
-        swpAmt = sushiRouter.swapExactETHForTokens{value:msg.value - a}(
-            1,                                           // we've already checked slippage
+        uint112 r; // reserve
+        if (fromToken == address(cig)) {
+            (,r,) = cigEthSLP.getReserves();             // _reserve1 is CIG
+            path[0] = fromToken;
+            path[1] = weth;
+        } else {
+            if (fromToken != weth) {
+                address pair = IUniswapV2Factory(sushiFactory).getPair(
+                    fromToken, address(weth));           // find the token's WETH pair
+                require (pair != address(0), "no liquidity for token");
+                // swap the fromToken to WETH
+                path[0] = fromToken;
+                path[1] = weth;
+                swpAmt = sushiRouter.swapExactTokensForTokens(
+                    _amount,
+                    1,                                   // min that must be received
+                    path,
+                    address(this),
+                    _deadline
+                );
+                _amount = swpAmt[1];                     // now we have WETH
+            }
+            (r,,) = cigEthSLP.getReserves();             // _reserve0 is ETH
+            path[0] = weth;
+            path[1] = address(cig);                      // swapping a portion to CIG
+        }
+        uint256 a = _getSwapAmount(_amount, r);          // amount to swap to get equal amounts
+        /*
+        Swap "a" amount of path[0] for path[1] to get equal portions.
+        */
+        swpAmt = sushiRouter.swapExactTokensForTokens(
+            a,
+            _amountOutMin,                              // min amount that must be received
             path,
             address(this),
-           _deadline
+            _deadline
         );
-        uint256 amountETH;
-        unchecked{amountETH = msg.value - swpAmt[0];}    // amount of eth we have remaining
-        IWETH(weth).deposit{value:amountETH}();          // wrap remaining ETH to WETH
-        (cigAdded, ethAdded, liquidity) = sushiRouter.addLiquidity(
-            address(cig),
-            weth,
-                swpAmt[1],                               // CIG
-            amountETH,                                   // WETH amount
-            1,                                           // we've already checked slippage
-            1,                                           // ditto
+        uint256 token0Amt = _amount - swpAmt[0];         // how much of IERC20(path[0]) we have left
+        (addedA, addedB, liquidity) = sushiRouter.addLiquidity(
+            path[0],
+            path[1],
+            token0Amt,                                  // Amt of the single-side token
+            swpAmt[1],                                  // Amt received from the swap
+            1,                                          // we've already checked slippage
+            1,                                          // ditto
             address(this),
             block.timestamp
         );
-        _wrap(address(this), address(this), liquidity);  // wrap our liquidity to Stogie
+        _wrap(address(this), address(this), liquidity); // wrap our liquidity to Stogie
+        UserInfo storage user = farmers[msg.sender];
+        update(); // updates the CIG factory
+        /* _deposit updates user's account of STOG, so they can withdraw it later */
+        _deposit(user, liquidity);                      // update the user's account
+        cig.deposit(liquidity);                         // forward the SLP to the factory
+        emit Deposit(msg.sender, liquidity);
+        IIDCards(idCards).issueID(msg.sender);          // mint nft
+        if (!_transferSurplus) {
+            return (swpAmt, addedA, addedB, liquidity);
+        }
+        if (token0Amt > addedA) {
+        unchecked{cig.transfer(
+            msg.sender, token0Amt - addedA);}          // send surplus CIG back
+        }
+        if (swpAmt[1] > addedB) {
+        unchecked{IERC20(weth).transfer(
+            msg.sender, swpAmt[1] - addedB);}        // send surplus WETH back
+        }
+    }
+
+    // Given some asset amount and reserves, returns an amount of the other asset representing equivalent value
+    // Useful for calculating optimal token amounts before adding liq
+    // todo
+    function _quote(uint amountA, ILiquidityPool pool) internal view returns (uint amountB) {
+        //require(amountA > 0, 'UniswapV2Library: INSUFFICIENT_AMOUNT');
+        //require(reserveA > 0 && reserveB > 0, 'UniswapV2Library: INSUFFICIENT_LIQUIDITY');
+        (uint reserveA, uint reserveB,) = pool.getReserves();
+        amountB = amountA * reserveB / reserveA;
+    }
+
+    /**
+    *
+    */
+    function depositWithCIG(
+        uint256 _amount,
+        uint256 _amountWethMin,
+        uint64 _deadline,
+        bool _transferSurplus
+    ) internal returns(
+        uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
+    ) {
+       cig.transferFrom(msg.sender, address(this), _amount);
+        (,uint112 _reserve1,) = cigEthSLP.getReserves();// _reserve1 is CIG
+        uint256 a = _getSwapAmount(_amount, _reserve1); // a is amount of to swap to WETH to get equal portions
+        /* now sell "a" mount of CIG to get WETH.   */
+        address[] memory path;
+        path = new address[](2);
+        path[0] = address(cig);
+        path[1] = weth;
+        swpAmt = sushiRouter.swapExactTokensForTokens(
+            _amount - a,
+            _amountWethMin,                             // min WETH that must be received
+            path,
+            address(this),
+            _deadline
+        );
+        uint256 amountCIG = _amount - swpAmt[0];
+        (ethAdded, cigAdded, liquidity) = sushiRouter.addLiquidity(
+            weth,
+            address(cig),
+            swpAmt[1],                                  // WETH to add
+            amountCIG,                                  // CIG to add
+            1,                                          // we've already checked slippage
+            1,                                          // ditto
+            address(this),
+            block.timestamp
+        );
+        _wrap(address(this), address(this), liquidity); // wrap our liquidity to Stogie
+        UserInfo storage user = farmers[msg.sender];
+        update(); // updates the CIG factory
+        /* _deposit updates user's account of STOG, so they can withdraw it later */
+        _deposit(user, liquidity);                      // update the user's account
+        cig.deposit(liquidity);                         // forward the SLP to the factory
+        emit Deposit(msg.sender, liquidity);
+        IIDCards(idCards).issueID(msg.sender);          // mint nft
+        if (!_transferSurplus) {
+            return (swpAmt, cigAdded, ethAdded, liquidity);
+        }
+        if (swpAmt[1] > cigAdded) {
+        unchecked{cig.transfer(
+            msg.sender, swpAmt[1]- cigAdded);}          // send surplus CIG back
+        }
+        if (amountCIG > ethAdded) {
+        unchecked{IERC20(weth).transfer(
+            msg.sender, amountCIG - ethAdded);}        // send surplus WETH back
+        }
+    }
+
+    /**
+    * @dev mint STOG using CIG and WETH
+    * @param _amountCIG - amount of CIG we want to add
+    * @param _amountWETH - amount of WETH we want to add
+    * @param _amountCIGMin - minimum CIG that will be tolerated
+    * @param _amountWETHMin - minimum WETH that will be tolerated
+    * @param _deadline - timestamp when to expire
+    * @param _transferSurplus - send back any change?
+    */
+    function depositCigWeth(
+        uint256 _amountCIG,
+        uint256 _amountWETH,
+        uint256 _amountCIGMin,
+        uint256 _amountWETHMin,
+        uint64 _deadline,
+        bool _transferSurplus
+    ) external returns(
+        uint cigAdded, uint ethAdded, uint liquidity)
+    {
+        IERC20(cig).transferFrom(msg.sender, address(this), _amountCIG);
+        IERC20(weth).transferFrom(msg.sender, address(this), _amountWETH);
+        (cigAdded, ethAdded, liquidity) = sushiRouter.addLiquidity(
+            address(cig),
+            weth,
+            _amountCIG,                                  // CIG
+            _amountWETH,                                 // WETH amount
+            _amountCIGMin,                               //
+            _amountWETHMin,                              //
+            address(this),
+            _deadline
+        );
         UserInfo storage user = farmers[msg.sender];
         update(); // updates the CIG factory
         /* _deposit updates user's account of STOG, so they can withdraw it later*/
         _deposit(user, liquidity);                       // update the user's account
         cig.deposit(liquidity);                          // forward the SLP to the factory
-        IIDCards(idCards).issueID(msg.sender);           // mint nft
-
         emit Deposit(msg.sender, liquidity);
+        IIDCards(idCards).issueID(msg.sender);           // mint nft
         if (!_transferSurplus) {
-            return (swpAmt, cigAdded, ethAdded, liquidity);
+            return(cigAdded, ethAdded, liquidity);
         }
-        if (swpAmt[1] > cigAdded) {
-            unchecked{cig.transfer(
-            msg.sender, swpAmt[1]- cigAdded);}           // send surplus CIG back
+        if (_amountCIG > cigAdded) {
+        unchecked{cig.transfer(
+            msg.sender, _amountCIG- cigAdded);}          // send surplus CIG back
         }
-        if (amountETH > ethAdded) {
-            unchecked{IERC20(weth).transfer(
-                msg.sender, amountETH-ethAdded
-            );}                                          // send surplus WETH back
+        if (_amountWETH > ethAdded) {
+        unchecked{IERC20(weth).transfer(
+            msg.sender, _amountWETH-ethAdded
+        );}                                              // send surplus WETH back
         }
-        return (swpAmt, cigAdded, ethAdded, liquidity);
-
+        return(cigAdded, ethAdded, liquidity);
     }
 
 
 
     /**
-*   @dev mint STOG using CIG and WETH
+    * @param _amount how many STOG to withdraw
     */
-    function mint(uint256 _amountCIG, uint256 _amountWETH) external returns (
-        uint amountA, uint amountB, uint liquidity)
-    {
-        IERC20(cig).transferFrom(msg.sender, address(this), _amountCIG);
-        IERC20(weth).transferFrom(msg.sender, address(this), _amountWETH);
-/*
-        (amountA, amountB, liquidity) = _poolAndMint(_amountCIG, _amountWETH);
-        // return unused tokens back.
-        if (_amountCIG > amountA) {
-            IERC20.transfer(msg.sender, _amountCIG - amountA);
-        }
-        if (_amountWETH > amountB) {
-            IERC20.transfer(msg.sender, _amountWETH - amountB);
-        }
-        return (amountA, amountB, liquidity);
-        */
-    }
-
-    /**
-     * @dev sell portion of ETH for CIG, get LP tokes and wrap them
-     */
-    function mintWithETH() external payable {
-        require(msg.value > 0, "no ETH sent");
-        // wrap
-        IWETH(weth).deposit{value:msg.value}();
-
+    function withdrawToETH(uint256 _amount) external {
 
     }
 
-    /**
-    * buys STOG with CIG, unwraps it, buys CIG for remaining ETH, sends back CIG
-    */
-    function arbCIG(uint _amountCIG) external {
+    function withdrawToToken(uint256 _amount, address _token) external {
 
     }
 
-    /**
-    * mint LP with cig & eth, wrap to STOG, sell STOG to get CIG, sell CIG to get ETH, send ETH & CIG back
-    */
-    function arbSTOG(uint _amountCIG, uint _amountETH) external {
 
-    }
+
 
     /**
     * @dev wrap LP tokens to STOG
@@ -319,7 +518,7 @@ contract Stogie {
         require (address(p) != address(0), "init not called");
         (amount0, amount1, liquidity) = sushiRouter.addLiquidity(
             _token0,
-            _token0,
+            _token1,
             _amount0,
             _amount1,
             1,
@@ -701,6 +900,24 @@ contract Stogie {
         ret[30] = block.timestamp;                     // current timestamp
         ret[31] = cig.balanceOf(address(this));        // CIG in contract
         return ret;
+    }
+
+    function safeERC20Transfer(IERC20 _token, address _to, uint256 _amount) internal {
+        bytes memory payload = abi.encodeWithSelector(_token.transfer.selector, _to, _amount);
+        (bool success, bytes memory returndata) = address(_token).call(payload);
+        require(success, "safeERC20Transfer failed");
+        if (returndata.length > 0) { // check return value if it was returned
+            require(abi.decode(returndata, (bool)), "safeERC20Transfer failed did not succeed");
+        }
+    }
+
+    function safeERC20TransferFrom(IERC20 _token, address _from, address _to, uint256 _amount) internal {
+        bytes memory payload = abi.encodeWithSelector(_token.transferFrom.selector, _from, _to, _amount);
+        (bool success, bytes memory returndata) = address(_token).call(payload);
+        require(success, "safeERC20TransferFrom failed");
+        if (returndata.length > 0) { // check return value if it was returned
+            require(abi.decode(returndata, (bool)), "safeERC20TransferFrom did not succeed");
+        }
     }
 }
 

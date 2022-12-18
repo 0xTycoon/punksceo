@@ -25,6 +25,7 @@ describe("Stogie", function () {
     let pool, Stogie, stogie, cig, cigeth; // contracts
     let feth = utils.formatEther;
     let peth = utils.parseEther;
+    let cards, EmployeeIDCards;
     const EOA = "0xc43473fa66237e9af3b2d886ee1205b81b14b2c8"; // EOA that has ETH and CIG to impersonate
     const CIG_ADDRESS = "0xcb56b52316041a62b6b5d0583dce4a8ae7a3c629"; // cig on mainnet
     const CIGETH_SLP_ADDRESS = "0x22b15c7Ee1186A7C7CFfB2D942e20Fc228F6E4Ed";
@@ -38,6 +39,10 @@ describe("Stogie", function () {
         [owner, simp, elizabeth] = await ethers.getSigners();
         cigeth = await hre.ethers.getContractAt(SLP_ABI,  CIGETH_SLP_ADDRESS);
 
+        EmployeeIDCards = await ethers.getContractFactory("EmployeeIDCards");
+        cards = await EmployeeIDCards.deploy();
+        await cards.deployed();
+
         // deploy stogie
         Stogie = await ethers.getContractFactory("Stogie");
         stogie = await Stogie.deploy(
@@ -45,8 +50,8 @@ describe("Stogie", function () {
             "0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed", // Sushi SLP
             "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F", // sushi router
             "0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac", // sushi factory
-            "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"  // weth
-
+            "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // weth
+            cards.address
         );
         await stogie.deployed();
 
@@ -130,6 +135,29 @@ describe("Stogie", function () {
         return (_sqrt((_a * ((_r * 3988000n) + (_a * 3988009n)))) - (_a * 1997n)) / 1994n;
     }
 
+    // Given some asset amount and reserves, returns an amount of the other asset representing equivalent value
+    function quote(amountA, reserveA, reserveB) {
+        //reserves
+        return amountA.mul(reserveB).div(reserveA);
+    }
+
+    // given an input amount of an asset and pair reserves, returns the maximum output amount of the other asset
+    function getAmountOut(amountIn,reserveIn,reserveOut) {
+        let amountInWithFee = amountIn.mul(BigNumber.from("997"));
+        let numerator = amountInWithFee.mul(reserveOut);
+        let denominator = reserveIn.mul(1000).add(amountInWithFee);
+        return numerator.div(denominator);
+        /*
+        require(amountIn > 0, 'UniswapV2Library: INSUFFICIENT_INPUT_AMOUNT');
+        require(reserveIn > 0 && reserveOut > 0, 'UniswapV2Library: INSUFFICIENT_LIQUIDITY');
+        uint amountInWithFee = amountIn.mul(997);
+        uint numerator = amountInWithFee.mul(reserveOut);
+        uint denominator = reserveIn.mul(1000).add(amountInWithFee);
+        amountOut = numerator / denominator;
+        */
+
+    }
+
     async function getStats(_user)  {
         let r = {};
         let s = await stogie.getStats(_user);
@@ -184,19 +212,29 @@ describe("Stogie", function () {
         console.log(stats);
         expect(stats.stakeDeposit).to.equal(0);
 
-        let portion = getSwapAmount(BigInt(deposit.toString()), BigInt(stats.slpEthReserve));
-        console.log("ethMin:"+(portion));
-        console.log("ethMin:"+feth(portion));
-        console.log("reserve js:"+stats.slpEthReserve);
+        let portion = BigNumber.from(getSwapAmount(BigInt(deposit.toString()), BigInt(stats.slpEthReserve)));
 
+
+        q = getAmountOut(portion, stats.slpEthReserve, stats.slpCigReserve);
+
+        //let amountETHMin = q.sub(portion.div(BigNumber.from("1000").mul(BigNumber.from("100")))) ;
+        //const SCALE = BigNumber.from("1000"); // 100 * 10
+        //let percent = BigNumber.from("900"); // scale by 10 (100 = 10%)
+        // 900 = 90% , 10 = 1%
+        let amountCIGMin = q.sub(q.mul(BigNumber.from("10")).div(BigNumber.from("1000"))) ;
+       // amountCIGMin = q.sub(portion.mul(BigNumber.from("10000000")).div(BigNumber.from("1000"))) ;
+
+        console.log("portion:"+feth(portion));
+        console.log("q:"+feth(q));
+        console.log("reserve js:"+stats.slpEthReserve);
+        console.log("amountCIGMin", feth(amountCIGMin));
 
 
         let ts = Math.floor(Date.now() / 1000);
         console.log("CIG bal of stogie:::::::"+await cig.balanceOf(stogie.address));
         expect(await stogie.connect(tycoon)
             .depositWithETH(
-                BigNumber.from("10"), // 1% slippage is fine (1000 = 100, 100 = 10%, 10=1,
-                portion,
+                peth("1"),
                 BigNumber.from(ts+60),
                 false,
                 {value: deposit})
