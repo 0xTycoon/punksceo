@@ -177,12 +177,18 @@ contract Stogie {
     }
 
     /**
-    * @dev depositWithToken is used to enter CIG/ETH SLP, wrap to STOG, then stake the STOG
+    * @dev depositWithToken is used to enter CIG/ETH SLP, wrap to STOG, then
+    *   stake the STOG.
     *   This function will sell a token to get WETH, then sell a portion of WETH
-    *   to get an equal portion of CIG, then place both CIG and WETH to the CIG/ETH SLP.
+    *   to get an equal portion of CIG, then stake, by placeing both CIG and
+    *   WETH to the CIG/ETH SLP.
     * @param _amount - How much token to use, assuming approved before
     * @param _amountCigMin - Minimum CIG expected from swapping ETH portion
+    *   (final output swap)
+    * @param _amountWethMin - Minimum WETH expected from swapping _token
+    *   (1st hop swap)
     * @param _token address of the token we are entering in with
+    * @param _router address of router to use (Sushi or Uniswap)
     * @param _deadline - Future timestamp, when to give up
     * @param _transferSurplus - Should the dust be refunded? May cost more gas
     */
@@ -191,8 +197,7 @@ contract Stogie {
         uint256 _amountCigMin,
         uint256 _amountWethMin,
         address _token,
-        address _pool,
-        address _router, // todo
+        address _router,
         uint64 _deadline,
         bool _transferSurplus
     ) external payable notReentrant returns(
@@ -317,9 +322,9 @@ contract Stogie {
         );
         _wrap(address(this), address(this), liquidity); // wrap our liquidity to Stogie
         UserInfo storage user = farmers[msg.sender];
-        update(); // updates the CIG factory
-        /* _deposit updates user's account of STOG, so they can withdraw it later */
-        _deposit(user, liquidity);                      // update the user's account
+        update();                                       // update the CIG factory
+        /* update user's account of STOG, so they can withdraw it later */
+        _stake(user, liquidity);                      // update the user's account
         cig.deposit(liquidity);                         // forward the SLP to the factory
         emit Deposit(msg.sender, liquidity);
         IIDCards(idCards).issueID(msg.sender);          // mint nft
@@ -378,9 +383,9 @@ contract Stogie {
             _deadline
         );
         UserInfo storage user = farmers[msg.sender];
-        update(); // updates the CIG factory
-        /* _deposit updates user's account of STOG, so they can withdraw it later*/
-        _deposit(user, liquidity);                       // update the user's account
+        update();                                        // update the CIG factory
+        /* update user's account of STOG, so they can withdraw it later*/
+        _stake(user, liquidity);                         // update the user's account
         cig.deposit(liquidity);                          // forward the SLP to the factory
         emit Deposit(msg.sender, liquidity);
         IIDCards(idCards).issueID(msg.sender);           // mint nft
@@ -402,18 +407,72 @@ contract Stogie {
 
 
     /**
-    * @param _amount how many STOG to withdraw
-    */
-    function withdrawToETH(uint256 _amount) external {
+    * @dev withdrawToETH unstake, remove liquidity & swap CIG portion to WETH.
+    *    Note: UI should check to see how much WETH is expected to be output
+    *    by estimating the removal of liquidity and then simulating the swap.
+    * @param _liquidity, The amount of liquidity tokens to remove.
 
+    * @param amountCIGMin, The minimum amount of CIG that must be received for
+    *   the transaction not to revert.
+    * @param amountWETHMin, The minimum amount of WETH that must be received for
+     *   the transaction not to revert.
+    * @param deadline block number of expiry
+    */
+    function withdrawToWETH(
+        uint _liquidity,
+        uint _amountCIGMin,
+        uint _amountETHMin,
+        uint _deadline
+    ) external returns(uint[] memory swpAmt) {
+        uint256 harvested = _withdraw(
+            _liquidity,
+            msg.sender,
+            address(this)
+        );            // harvest and withdraw on behalf of the user.
+        _unwrap(address(this), address(this), _liquidity);
+        (uint amtCIG, uint amtWETH) = sushiRouter.removeLiquidity(
+            address(cig),
+            weth,
+            _amountCIGMin,
+            _amountETHMin,
+            _deadline
+        );
+        address[] memory path;
+        path = new address[](2);
+        path[0] = address(cig);
+        path[1] = weth;
+        swpAmt = r.swapExactTokensForTokens(
+            amtCIG,
+            1,        // assuming reserves won't change, except for above action
+            path,
+            address(this),
+            _deadline
+        );
+        IERC20(weth).transfer(
+            msg.sender,
+            swpAmt[1]+amtWETH
+        );            // send WETH back
+        return swpAmt;
     }
 
     function withdrawToCIG(uint256 _amount) external {
-
+        // todo, same as withdrawToWETH, except swap ETH to CIG at the end
     }
 
-    function withdrawToToken(uint256 _amount, address _token) external {
-
+    function withdrawToToken(
+        uint256 _amount,
+        address _token,
+        uint _amountCIGMin,
+        uint _amountETHMin,
+        uint256 _amountTokenMin,
+        uint deadline
+    ) external {
+        require(
+            (_token != weth) && (_token != address(cig)),
+            "must not be WETH or CIG"
+        );
+        // todo, same as withdrawToWETH, but last swap, swap CIG to ETH, then ETH to _token
+        // so, withdrawToWETH, but last swap all WETH to _token
     }
 
     function withdrawCIGETH(uint256 _amount, address _token) external {
@@ -735,19 +794,19 @@ contract Stogie {
     */
     function deposit(uint256 _amount) public {
         require(_amount != 0, "You cannot deposit only 0 tokens");           // Has enough?
+        require(_transfer(address(msg.sender), address(this), _amount));     // transfer STOG to this contract
         UserInfo storage user = farmers[msg.sender];
         update();                                                            // updates the CIG factory
-        _deposit(user, _amount);                                             // update the user's account
-        require(_transfer(address(msg.sender), address(this), _amount));     // transfer STOG to this contract
+        _stake(user, _amount);                                               // update the user's account
         cig.deposit(_amount);                                                // forward the SLP to the factory
-        emit Deposit(msg.sender, _amount);
-        IIDCards(idCards).issueID(msg.sender);
+        emit Deposit(msg.sender, liquidity);
+        IIDCards(idCards).issueID(msg.sender);                               // mint nft
     }
 
     /**
-    * @dev _deposit updates how many STOG has been deposited for the user
+    * @dev _stake updates how many STOG has been deposited for the user
     */
-    function _deposit(UserInfo storage _user, uint256 _amount) internal {
+    function _stake(UserInfo storage _user, uint256 _amount) internal {
         _user.deposit += _amount;
         _user.rewardDebt += _amount * accCigPerShare / 1e12;
     }
@@ -781,25 +840,36 @@ contract Stogie {
     * @return harvested amount of CIG harvested
     */
     function withdraw(uint256 _amount) public returns (uint256 harvested) {
-        UserInfo storage user = farmers[msg.sender];
+        return _withdraw(_amount, msg.sender, msg.sender);
+    }
+
+    /**
+    * @dev _withdraw harvest from the CIG factory, withdraw on behalf of
+    *    _farmer,  and send back the STOG
+    */
+    function _withdraw(
+        uint256 _amount,
+        address _farmer,
+        address _to
+    ) internal returns (uint256 harvested) {
+        UserInfo storage user = farmers[_farmer];
+        require(user.deposit >= _amount, "no STOG deposited");
         /* update() will harvest CIG for everyone before emergencyWithdraw, this important. */
-        update();                                                       // fetch CIG rewards for everyone
+        update();                                                  // fetch CIG rewards for everyone
 
         /* use difference between b0 and b1 to work out how many tokens were received */
         uint256 b0 = cigEthSLP.balanceOf(address(this));
-        cig.emergencyWithdraw();                                        // take out the SLP from the factory
+        cig.emergencyWithdraw();                                   // take out the SLP from the factory
         uint256 b1 = cigEthSLP.balanceOf(address(this));
-        cigEthSLP.transfer(msg.sender, _amount);                        // give SLP back
-
-        uint256 butt = b1 - b0 - _amount;
+        uint256 butt = b1 - b0 - _amount;                          // butt is the remainder of _farmer's deposit
         if (butt > 0) {
-            cig.deposit(butt);                                          // put the SLP back into the factory, sans _amount
+            cig.deposit(butt);                                     // put the SLP back into the factory, sans _amount
         }
         /* harvest beforehand, so _withdraw can safely decrement their reward count */
-        harvested = _harvest(user, msg.sender);                         // distribute the user's reward
-        _withdraw(user, _amount);                                       // update accounting for withdrawal
-        require(_transfer(address(this), address(msg.sender), _amount));// send STOG back
-        emit Withdraw(msg.sender, _amount);
+        harvested = _harvest(user, _to);                           // distribute the user's reward
+        _unstake(user, _amount);                                   // update accounting for withdrawal
+        require(_transfer(address(this), address(_to), _amount));  // send STOG back
+        emit Withdraw(_user, _amount);
         return harvested;
     }
 
@@ -807,7 +877,7 @@ contract Stogie {
     * @dev Internal withdraw, updates internal accounting after withdrawing LP
     * @param _amount to subtract
     */
-    function _withdraw(UserInfo storage _user, uint256 _amount) internal {
+    function _unstake(UserInfo storage _user, uint256 _amount) internal {
         require(_user.deposit >= _amount, "Balance is too low");
         _user.deposit -= _amount;
         uint256 _rewardAmount = _amount * accCigPerShare / 1e12;
@@ -980,6 +1050,17 @@ interface IV2Router {
         address to,
         uint deadline
     ) external returns (uint amountA, uint amountB, uint liquidity);
+
+    function removeLiquidity(
+        address tokenA,
+        address tokenB,
+        uint liquidity,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountA, uint amountB);
+
     function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) external pure returns(uint256 amountOut);
 }
 
