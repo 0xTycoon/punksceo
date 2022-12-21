@@ -469,12 +469,12 @@ contract Stogie {
 
     /**
     * @param _amount,
-    @param _token,
-    @param _router,
-    @param _amountCIGMin,
-    @param _amountETHMin,
-    @param _amountTokenMin,
-    @param _deadline
+    * @param _token,
+    * @param _router,
+    * @param _amountCIGMin,
+    * @param _amountETHMin,
+    * @param _amountTokenMin,
+    * @param _deadline
     */
     function withdrawToToken(
         uint256 _amount,
@@ -525,8 +525,38 @@ contract Stogie {
         return out;
     }
 
-    function withdrawCIGETH(uint256 _amount, address _token) external {
-        // todo
+    /**
+     * @param _liquidity,
+     * @param _amountCIGMin,
+     * @param _amountETHMin,
+     * @param _deadline
+     */
+    function withdrawCIGETH(
+        uint256 _liquidity,
+        uint _amountCIGMin,
+        uint _amountETHMin,
+        uint _deadline
+    ) external returns(uint amtAOutput, uint amtBOutput) {
+        uint harvested = _withdraw(
+            _liquidity,
+            _farmer,
+            address(this)
+        );                          // harvest and withdraw on behalf of the user.
+        _unwrap(
+            address(this),
+            address(this),
+            _liquidity
+        );                          // Unwrap STOG to CIG/ETH SLP token, burning STOG
+        (amtAOutput, amtBOutput) = sushiRouter.removeLiquidity(
+            address(cig),
+            _tokenB,
+            _liquidity,
+            _amountCIGMin,
+            _amountETHMin,
+            msg.sender,
+            _deadline
+        );                          // This burns the CIG/SLP token, gives us _tokenA & _tokenB
+        return (amtAOutput, amtBOutput);
     }
 
     /**
