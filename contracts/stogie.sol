@@ -276,7 +276,7 @@ contract Stogie {
     *   swapping the token to WETH.
     */
     function _depositSingleSide(
-        address fromToken,
+        address _fromToken,
         uint256 _amount,
         uint256 _amountOutMin,
         uint64 _deadline,
@@ -287,11 +287,11 @@ contract Stogie {
         address[] memory path;
         path = new address[](2);
         uint112 r; // reserve
-        if (fromToken == address(cig)) {
+        if (_fromToken == address(cig)) {
             (,r,) = cigEthSLP.getReserves();             // _reserve1 is CIG
-            path[0] = fromToken;
+            path[0] = _fromToken;
             path[1] = weth;
-        } else if (fromToken == weth) {
+        } else if (_fromToken == weth) {
             (r,,) = cigEthSLP.getReserves();             // _reserve0 is ETH
             path[0] = weth;
             path[1] = address(cig);                      // swapping a portion to CIG
@@ -408,10 +408,10 @@ contract Stogie {
 
     /**
     * @dev withdrawToETH unstake, remove liquidity & swap CIG portion to WETH.
+    *    Also, CIG will be harvested and sold for WETH.
     *    Note: UI should check to see how much WETH is expected to be output
     *    by estimating the removal of liquidity and then simulating the swap.
     * @param _liquidity, The amount of liquidity tokens to remove.
-
     * @param amountCIGMin, The minimum amount of CIG that must be received for
     *   the transaction not to revert.
     * @param amountWETHMin, The minimum amount of WETH that must be received for
@@ -421,65 +421,182 @@ contract Stogie {
     function withdrawToWETH(
         uint _liquidity,
         uint _amountCIGMin,
-        uint _amountETHMin,
+        uint _amountWETHMin,
         uint _deadline
-    ) external returns(uint[] memory swpAmt) {
-        uint256 harvested = _withdraw(
-            _liquidity,
+    ) external returns(uint out) {
+        out = _withdrawSingleSide(
             msg.sender,
-            address(this)
-        );            // harvest and withdraw on behalf of the user.
-        _unwrap(address(this), address(this), _liquidity);
-        (uint amtCIG, uint amtWETH) = sushiRouter.removeLiquidity(
             address(cig),
             weth,
+            _liquidity,
             _amountCIGMin,
-            _amountETHMin,
-            _deadline
-        );
-        address[] memory path;
-        path = new address[](2);
-        path[0] = address(cig);
-        path[1] = weth;
-        swpAmt = r.swapExactTokensForTokens(
-            amtCIG,
-            1,        // assuming reserves won't change, except for above action
-            path,
-            address(this),
+            _amountWETHMin,
             _deadline
         );
         IERC20(weth).transfer(
             msg.sender,
-            swpAmt[1]+amtWETH
-        );            // send WETH back
-        return swpAmt;
+            out
+        );         // send WETH back
+        return out;
     }
 
-    function withdrawToCIG(uint256 _amount) external {
-        // todo, same as withdrawToWETH, except swap ETH to CIG at the end
+    /**
+    * @dev withdrawToCIG unstake, remove liquidity & swap ETH portion to CIG.
+    *    Note: UI should check to see how much CIG is expected to be output
+    *    by estimating the removal of liquidity and then simulating the swap.
+    */
+    function withdrawToCIG(
+        uint256 _liquidity,
+        uint _amountCIGMin,
+        uint _amountETHMin,
+        uint _deadline
+    ) external returns (uint out) {
+        out = _withdrawSingleSide(
+            msg.sender,
+            weth,
+            address(cig),
+            _liquidity,
+            _amountWETHMin,
+            _amountCIGMin,
+            _deadline
+        );
+        cig.transfer(
+            msg.sender,
+            out
+        );         // send CIG back
+        return out;
     }
 
+    /**
+    * @param _amount,
+    @param _token,
+    @param _router,
+    @param _amountCIGMin,
+    @param _amountETHMin,
+    @param _amountTokenMin,
+    @param _deadline
+    */
     function withdrawToToken(
         uint256 _amount,
         address _token,
+        address _router,
         uint _amountCIGMin,
         uint _amountETHMin,
         uint256 _amountTokenMin,
-        uint deadline
-    ) external {
+        uint _deadline
+    ) external notReentrant returns (uint out) {
         require(
             (_token != weth) && (_token != address(cig)),
             "must not be WETH or CIG"
         );
-        // todo, same as withdrawToWETH, but last swap, swap CIG to ETH, then ETH to _token
-        // so, withdrawToWETH, but last swap all WETH to _token
+        /* Withdraw to WETH first, then WETH to _token */
+        out = _withdrawSingleSide(
+            msg.sender,
+            address(cig),
+            weth,
+            _liquidity,
+            _amountCIGMin,
+            _amountWETHMin,
+            _deadline
+        );
+        if (_router == address(uniswapRouter)) {
+            r = IV2Router(uniswapRouter); // use Uniswap for intermediate swap
+        } else {
+            r = sushiRouter;
+        }
+        // swap the WETH to _token
+        address[] memory path;
+        path = new address[](2);
+        path[0] = weth;
+        path[1] = _token;
+        uint[] memory swpAmt = r.swapExactTokensForTokens(
+            out,
+            _amountTokenMin,              // min _token that must be received
+            path,
+            address(this),
+            _deadline
+        );
+        out = swpAmt[1];
+        safeERC20Transfer(
+            _token,
+            msg.sender,
+            out
+        );                                // send token back
+        return out;
     }
 
     function withdrawCIGETH(uint256 _amount, address _token) external {
-
+        // todo
     }
 
-
+    /**
+    @param _farmer, the user we harvest and collect for
+    @param _tokenA, input token address
+    @param _tokenB, output token address
+    @param _liquidity, amount of SLP to withdraw
+    @param _amountAMin, min amount of _tokenA we expect to get after removal
+    @param _amountBMin, min amount of _tokenB we expect to get after removal
+    @param _deadline, expiry block number
+    */
+    function _withdrawSingleSide(
+        address _farmer,
+        address _tokenA,
+        address _tokenB,
+        uint _liquidity,
+        uint _amountAMin,
+        uint _amountBMin,
+        uint _deadline
+    ) internal returns(
+        uint output
+    ) {
+        uint harvested = _withdraw(
+            _liquidity,
+            _farmer,
+            address(this)
+        );                          // harvest and withdraw on behalf of the user.
+        _unwrap(
+            address(this),
+            address(this),
+            _liquidity
+        );                          // Unwrap STOG to CIG/ETH SLP token, burning STOG
+        (uint amtAOutput, uint amtBOutput) = sushiRouter.removeLiquidity(
+            _tokenA,
+            _tokenB,
+            _liquidity,
+            _amountAMin,
+            _amountBMin,
+            address(this),
+            _deadline
+        );                          // This burns the CIG/SLP token, gives us _tokenA & _tokenB
+        /*
+        Swap the _tokenA portion to _tokenB
+        */
+        address[] memory path;
+        path = new address[](2);
+        path[0] = _tokenA;
+        path[1] = _tokenB;
+        uint256 swapInput = amtAOutput;
+        /*
+        If outputting to WETH, sell harvested CIG to WETH, otherwise
+        add it to the total output
+        */
+        if (_tokenB == address(weth)) {
+            swapInput += harvested; // swap harvested CIG to WETH
+        } else {
+            amtBOutput += harvested;// add the harvested CIG to amtB total
+        }
+        uint[] memory swpAmt;
+        swpAmt = sushiRouter.swapExactTokensForTokens(
+            swapInput,
+            1,                      // assuming reserves won't change since last swap
+            path,
+            address(this),
+            _deadline
+        );
+        // swpAmt[0] is the input
+        // swpAmt[1] is output
+        return (swpAmt[1] + amtBOutput);
+    }
 
 
     /**
