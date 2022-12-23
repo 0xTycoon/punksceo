@@ -526,6 +526,8 @@ contract Stogie {
     }
 
     /**
+     * @dev withdrawCIGWETH harvests CIG, withdraws and un-stakes STOG, then
+     *    burns STOG down to WETH & CIG, which is returned back to the caller.
      * @param _liquidity,
      * @param _amountCIGMin,
      * @param _amountWETHMin,
@@ -536,7 +538,7 @@ contract Stogie {
         uint _amountCIGMin,
         uint _amountWETHMin,
         uint _deadline
-    ) external returns(uint amtCIGOutput, uint amtWETHput) {
+    ) external returns(uint amtCIGOut, uint amtWETHout) {
         uint harvested = _withdraw(
             _liquidity,
             msg.sender,
@@ -551,7 +553,7 @@ contract Stogie {
             address(this),
             _liquidity
         );                          // Unwrap STOG to CIG/ETH SLP token, burning STOG
-        (amtCIGOutput, amtWETHput) = sushiRouter.removeLiquidity(
+        (amtCIGOut, amtWETHout) = sushiRouter.removeLiquidity(
             address(cig),
             weth,
             _liquidity,
@@ -560,7 +562,7 @@ contract Stogie {
             msg.sender,
             _deadline
         );                          // This burns the CIG/SLP token, gives us CIG & WETH
-        return (amtCIGOutput, amtWETHput);
+        return (amtCIGOut, amtWETHout);
     }
 
     /**
