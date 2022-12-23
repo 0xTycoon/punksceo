@@ -528,35 +528,39 @@ contract Stogie {
     /**
      * @param _liquidity,
      * @param _amountCIGMin,
-     * @param _amountETHMin,
+     * @param _amountWETHMin,
      * @param _deadline
      */
-    function withdrawCIGETH(
+    function withdrawCIGWETH(
         uint256 _liquidity,
         uint _amountCIGMin,
-        uint _amountETHMin,
+        uint _amountWETHMin,
         uint _deadline
-    ) external returns(uint amtAOutput, uint amtBOutput) {
+    ) external returns(uint amtCIGOutput, uint amtWETHput) {
         uint harvested = _withdraw(
             _liquidity,
-            _farmer,
+            msg.sender,
             address(this)
-        );                          // harvest and withdraw on behalf of the user.
+        );                          // harvest and withdraw on behalf of msg.sender
+        cig.transfer(
+            msg.sender,
+            harvested
+        );                         // send harvested CIG
         _unwrap(
             address(this),
             address(this),
             _liquidity
         );                          // Unwrap STOG to CIG/ETH SLP token, burning STOG
-        (amtAOutput, amtBOutput) = sushiRouter.removeLiquidity(
+        (amtCIGOutput, amtWETHput) = sushiRouter.removeLiquidity(
             address(cig),
-            _tokenB,
+            weth,
             _liquidity,
             _amountCIGMin,
-            _amountETHMin,
+            _amountWETHMin,
             msg.sender,
             _deadline
-        );                          // This burns the CIG/SLP token, gives us _tokenA & _tokenB
-        return (amtAOutput, amtBOutput);
+        );                          // This burns the CIG/SLP token, gives us CIG & WETH
+        return (amtCIGOutput, amtWETHput);
     }
 
     /**
@@ -1003,8 +1007,13 @@ contract Stogie {
         require(user.deposit >= _amount, "no STOG deposited");
         /* update() will harvest CIG for everyone before emergencyWithdraw, this important. */
         update();                                                  // fetch CIG rewards for everyone
-
-        /* use difference between b0 and b1 to work out how many tokens were received */
+        /*
+        Due to a bug in the Cig contract, we can only use emergencyWithdraw().
+        This will take out the entire TVL first, subtract the _amount and
+        deposit back the remainder. emergencyWithdraw() doesn't return
+        the amount of tokens withdrawn, thus we use difference between b0 and
+        b1 to work it out.
+        */
         uint256 b0 = cigEthSLP.balanceOf(address(this));
         cig.emergencyWithdraw();                                   // take out the SLP from the factory
         uint256 b1 = cigEthSLP.balanceOf(address(this));
@@ -1015,7 +1024,9 @@ contract Stogie {
         /* harvest beforehand, so _withdraw can safely decrement their reward count */
         harvested = _harvest(user, _to);                           // distribute the user's reward
         _unstake(user, _amount);                                   // update accounting for withdrawal
-        require(_transfer(address(this), address(_to), _amount));  // send STOG back
+        if (_to != address(this)) {
+            _transfer(address(this), address(_to), _amount);       // send STOG back
+        }
         emit Withdraw(_user, _amount);
         return harvested;
     }
