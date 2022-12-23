@@ -659,17 +659,29 @@ contract Stogie {
 
     /**
     * @dev Harvest CIG, then use our CIG holdings to buy STOG, then stake the STOG.
+    * @param _amountSTOGMin min amount of STOG we should get after swapping the
+    *   harvested CIG.
     */
-    function packSTOG() external {
-
-        // harvest CIG first
-
+    function packSTOG(uint _amountCIGMin) external {
+        UserInfo storage user = farmers[_farmer];
+        update();            // fetch CIG rewards for everyone
+        harvested = _harvest(user, _to); // harvest CIG first
         // buy STOG
-
-        // unwrap to get LP
-
-        // stake the LP
-
+        address[] memory path;
+        path = new address[](2);
+        path[0] = address(cig);
+        path[1] = address(this);
+        swpAmt = sushiRouter.swapExactTokensForTokens(
+            harvested,
+            _amountSTOGMin,                              // min amount that must be received
+            path,
+            address(this),
+            _deadline
+        );
+        // stake the STOG for the user
+        _stake(user, swpAmt[1]);                        // update the user's account
+        cig.deposit(swpAmt[1]);                         // forward the SLP to the factory
+        emit Deposit(msg.sender, swpAmt[1]);
     }
 
 
@@ -847,6 +859,8 @@ contract Stogie {
 
     /**
     * @dev _unwrap redeems STOG for SLP, burning STOG
+    * @param _for address to unwrap for
+    * @param _amount how much
     */
     function _unwrap(address _for, uint256 _amount) internal {
         ILiquidityPool(stogiePool).transferFrom(_for, address(this), _amount);// take STOG
