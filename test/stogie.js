@@ -9,6 +9,7 @@
  *             }
  *         }
  */
+const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const {expect} = require("chai");
 const {ContractFactory, utils, BigNumber} = require('ethers');
 
@@ -253,8 +254,8 @@ describe("Stogie", function () {
 
         console.log(stats2);
 
-        console.log("b"+await stogie.doNothing());
-        console.log("c"+await stogie.doNothing());
+        //console.log("b"+await stogie.doNothing());
+        //console.log("c"+await stogie.doNothing());
 
         let pending = await stogie.connect(tycoon).pendingCig(EOA);
         console.log("Pending CIGGGGGGGGGGGGGGG:", pending);

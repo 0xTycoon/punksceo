@@ -86,12 +86,6 @@ contract Stogie {
         ); // EIP-2612
     }
 
-    // todo remove doNothing()
-    uint256 public c  = 0;
-    function doNothing() external returns (uint) {
-        c++;
-        return block.number;
-    }
 
     modifier notReentrant() { // notReentrant is a reentrancy guard
         require(locked == 1, "already entered");
@@ -220,7 +214,7 @@ contract Stogie {
         } else {
             r = sushiRouter;
         }
-        if (IERC20(_token).allowance(address(this), address(sushiRouter)) < _amount) {
+        if (IERC20(_token).allowance(address(this), address(r)) < _amount) {
             IERC20(_token).approve(
                 address(r), type(uint256).max
             );                                              // unlimited approval
@@ -237,11 +231,10 @@ contract Stogie {
             address(this),
             _deadline
         );
-        _amount = swpAmt[1];                               // now we have WETH
-        _token = weth;
+        // now we have WETH
         return _depositSingleSide(
-            _token,
-            _amount,
+            weth,
+            swpAmt[1],
             _amountCigMin,
             _deadline,
             _transferSurplus
@@ -288,46 +281,46 @@ contract Stogie {
         path = new address[](2);
         uint112 r; // reserve
         if (_fromToken == address(cig)) {
-            (,r,) = cigEthSLP.getReserves();             // _reserve1 is CIG
+            (,r,) = cigEthSLP.getReserves();           // _reserve1 is CIG
             path[0] = _fromToken;
             path[1] = weth;
         } else if (_fromToken == weth) {
-            (r,,) = cigEthSLP.getReserves();             // _reserve0 is ETH
+            (r,,) = cigEthSLP.getReserves();           // _reserve0 is ETH
             path[0] = weth;
-            path[1] = address(cig);                      // swapping a portion to CIG
+            path[1] = address(cig);                    // swapping a portion to CIG
         } else {
             revert("invalid token");
         }
-        uint256 a = _getSwapAmount(_amount, r);          // amount to swap to get equal amounts
+        uint256 a = _getSwapAmount(_amount, r);        // amount to swap to get equal amounts
         /*
         Swap "a" amount of path[0] for path[1] to get equal portions.
         */
         swpAmt = sushiRouter.swapExactTokensForTokens(
             a,
-            _amountOutMin,                              // min amount that must be received
+            _amountOutMin,                             // min amount that must be received
             path,
             address(this),
             _deadline
         );
-        uint256 token0Amt = _amount - swpAmt[0];         // how much of IERC20(path[0]) we have left
+        uint256 token0Amt = _amount - swpAmt[0];       // how much of IERC20(path[0]) we have left
         (addedA, addedB, liquidity) = sushiRouter.addLiquidity(
             path[0],
             path[1],
-            token0Amt,                                  // Amt of the single-side token
-            swpAmt[1],                                  // Amt received from the swap
-            1,                                          // we've already checked slippage
-            1,                                          // ditto
+            token0Amt,                                 // Amt of the single-side token
+            swpAmt[1],                                 // Amt received from the swap
+            1,                                         // we've already checked slippage
+            1,                                         // ditto
             address(this),
             block.timestamp
         );
-        _wrap(address(this), address(this), liquidity); // wrap our liquidity to Stogie
+        _wrap(address(this), address(this), liquidity);// wrap our liquidity to Stogie
         UserInfo storage user = farmers[msg.sender];
-        update();                                       // update the CIG factory
+        update();                                      // update the CIG factory
         /* update user's account of STOG, so they can withdraw it later */
-        _stake(user, liquidity);                      // update the user's account
-        cig.deposit(liquidity);                         // forward the SLP to the factory
+        _stake(user, liquidity);                       // update the user's account
+        cig.deposit(liquidity);                        // forward the SLP to the factory
         emit Deposit(msg.sender, liquidity);
-        IIDCards(idCards).issueID(msg.sender);          // mint nft
+        IIDCards(idCards).issueID(msg.sender);         // mint nft
         if (!_transferSurplus) {
             return (swpAmt, addedA, addedB, liquidity);
         }
@@ -337,10 +330,10 @@ contract Stogie {
         }
         if (swpAmt[1] > addedB) {
         unchecked{IERC20(weth).transfer(
-            msg.sender, swpAmt[1] - addedB);}        // send surplus WETH back
+            msg.sender, swpAmt[1] - addedB);}          // send surplus WETH back
         }
     }
-
+/*
     // Given some asset amount and reserves, returns an amount of the other asset representing equivalent value
     // Useful for calculating optimal token amounts before adding liq
     // todo
@@ -350,7 +343,7 @@ contract Stogie {
         (uint reserveA, uint reserveB,) = pool.getReserves();
         amountB = amountA * reserveB / reserveA;
     }
-
+*/
     /**
     * @dev mint STOG using CIG and WETH
     * @param _amountCIG - amount of CIG we want to add
@@ -412,11 +405,11 @@ contract Stogie {
     *    Note: UI should check to see how much WETH is expected to be output
     *    by estimating the removal of liquidity and then simulating the swap.
     * @param _liquidity, The amount of liquidity tokens to remove.
-    * @param amountCIGMin, The minimum amount of CIG that must be received for
+    * @param _amountCIGMin, The minimum amount of CIG that must be received for
     *   the transaction not to revert.
-    * @param amountWETHMin, The minimum amount of WETH that must be received for
+    * @param _amountWETHMin, The minimum amount of WETH that must be received for
      *   the transaction not to revert.
-    * @param deadline block number of expiry
+    * @param _deadline block number of expiry
     */
     function withdrawToWETH(
         uint _liquidity,
@@ -448,7 +441,7 @@ contract Stogie {
     function withdrawToCIG(
         uint256 _liquidity,
         uint _amountCIGMin,
-        uint _amountETHMin,
+        uint _amountWETHMin,
         uint _deadline
     ) external returns (uint out) {
         out = _withdrawSingleSide(
@@ -468,20 +461,23 @@ contract Stogie {
     }
 
     /**
-    * @param _amount,
-    * @param _token,
-    * @param _router,
-    * @param _amountCIGMin,
-    * @param _amountETHMin,
-    * @param _amountTokenMin,
-    * @param _deadline
+    * @param _amount, how much STOG to withdraw
+    * @param _token, address of token to withdraw to
+    * @param _router, address of V2 router to use for the swap (Uni/Sushi)
+    * @param _amountCIGMin, The minimum amount of CIG that must be received
+    *   for the transaction not to revert, when removing liquidity
+    * @param _amountWETHMin, The minimum amount of WETH that must be received
+    *   for the transaction not to revert, when removing liquidity
+    * @param _amountTokenMin, the min amount of _token to receive, when the
+    *   WETH to _token
+    * @param _deadline, expiry block number
     */
     function withdrawToToken(
         uint256 _amount,
         address _token,
         address _router,
         uint _amountCIGMin,
-        uint _amountETHMin,
+        uint _amountWETHMin,
         uint256 _amountTokenMin,
         uint _deadline
     ) external notReentrant returns (uint out) {
@@ -494,11 +490,12 @@ contract Stogie {
             msg.sender,
             address(cig),
             weth,
-            _liquidity,
+            _amount,
             _amountCIGMin,
             _amountWETHMin,
             _deadline
         );
+        IV2Router r;
         if (_router == address(uniswapRouter)) {
             r = IV2Router(uniswapRouter); // use Uniswap for intermediate swap
         } else {
@@ -518,7 +515,7 @@ contract Stogie {
         );
         out = swpAmt[1];
         safeERC20Transfer(
-            _token,
+            IERC20(_token),
             msg.sender,
             out
         );                                // send token back
@@ -528,18 +525,20 @@ contract Stogie {
     /**
      * @dev withdrawCIGWETH harvests CIG, withdraws and un-stakes STOG, then
      *    burns STOG down to WETH & CIG, which is returned back to the caller.
-     * @param _liquidity,
-     * @param _amountCIGMin,
-     * @param _amountWETHMin,
-     * @param _deadline
+     * @param _liquidity, amount of STOG to withdraw
+     * @param _amountCIGMin, The minimum amount of CIG that must be received
+     *   for the transaction not to revert, when removing liquidity
+     * @param _amountWETHMin, The minimum amount of ETH that must be received
+     *   for the transaction not to revert, when removing liquidity
+     * @param _deadline, expiry block number
      */
     function withdrawCIGWETH(
         uint256 _liquidity,
         uint _amountCIGMin,
         uint _amountWETHMin,
         uint _deadline
-    ) external returns(uint amtCIGOut, uint amtWETHout) {
-        uint harvested = _withdraw(
+    ) external returns(uint amtCIGOut, uint amtWETHout, uint harvested) {
+        harvested = _withdraw(
             _liquidity,
             msg.sender,
             address(this)
@@ -549,7 +548,6 @@ contract Stogie {
             harvested
         );                         // send harvested CIG
         _unwrap(
-            address(this),
             address(this),
             _liquidity
         );                          // Unwrap STOG to CIG/ETH SLP token, burning STOG
@@ -562,7 +560,7 @@ contract Stogie {
             msg.sender,
             _deadline
         );                          // This burns the CIG/SLP token, gives us CIG & WETH
-        return (amtCIGOut, amtWETHout);
+        return (amtCIGOut, amtWETHout, harvested);
     }
 
     /**
@@ -591,7 +589,6 @@ contract Stogie {
             address(this)
         );                          // harvest and withdraw on behalf of the user.
         _unwrap(
-            address(this),
             address(this),
             _liquidity
         );                          // Unwrap STOG to CIG/ETH SLP token, burning STOG
@@ -650,11 +647,51 @@ contract Stogie {
     }
 
     /**
-    * @dev Sell any token we hold for CIG, except for SLP and STOG
+        * @dev Sell any token we hold for CIG, except for SLP and STOG, then
+    *   deposit and lock the STOG
     */
-    function sellTokenForCIG(address _token, address _pool) external {
-        //require (_token != STOGPool, "cannot sell our STOGPool tokens");
-        //require (_token != address(this), "cannot sell our me");
+    function addLiquidityToken (
+        uint256 _amount,
+        address _token,
+        address _router,
+        uint256 _amountWethMin,
+        uint256 _amountCigMin,
+        uint64 _deadline
+    ) external {
+        require (
+            _token != address(cigEthSLP) &&
+            _token != address(this) &&
+            _token != address(cig)
+        , "cannot sell these");
+        IV2Router r;
+        if (_router == address(uniswapRouter)) {
+            r = IV2Router(uniswapRouter);                   // use Uniswap
+        } else {
+            r = sushiRouter;
+        }
+        if (IERC20(_token).allowance(address(this), address(r)) < _amount) {
+            IERC20(_token).approve(
+                address(r), type(uint256).max
+            );                                              // unlimited approval
+        }
+        if (_token != weth) {
+            // swap the _token to WETH
+            address[] memory path;
+            path = new address[](2);
+            path[0] = _token;
+            path[1] = weth;
+            uint[] memory swpAmt;
+            swpAmt = r.swapExactTokensForTokens(
+                _amount,
+                _amountWethMin,                                // min ETH that must be received
+                path,
+                address(this),
+                _deadline
+            );
+        }
+
+        // todo
+
     }
 
     /**
@@ -662,25 +699,29 @@ contract Stogie {
     * @param _amountSTOGMin min amount of STOG we should get after swapping the
     *   harvested CIG.
     */
-    function packSTOG(uint _amountCIGMin) external {
-        UserInfo storage user = farmers[_farmer];
-        update();            // fetch CIG rewards for everyone
-        harvested = _harvest(user, _to); // harvest CIG first
-        // buy STOG
+    function packSTOG(
+        uint _amountSTOGMin,
+        uint64 _deadline
+    ) external {
+        UserInfo storage user = farmers[msg.sender];
+        update();                                 // fetch CIG rewards for everyone
+        uint harvested = _harvest(user, address(this));// harvest CIG first
+        /* swap harvested CIG to STOG */
         address[] memory path;
         path = new address[](2);
         path[0] = address(cig);
         path[1] = address(this);
+        uint[] memory swpAmt;
         swpAmt = sushiRouter.swapExactTokensForTokens(
             harvested,
-            _amountSTOGMin,                              // min amount that must be received
+            _amountSTOGMin,                       // min amount that must be received
             path,
             address(this),
             _deadline
         );
         // stake the STOG for the user
-        _stake(user, swpAmt[1]);                        // update the user's account
-        cig.deposit(swpAmt[1]);                         // forward the SLP to the factory
+        _stake(user, swpAmt[1]);                  // update the user's account
+        cig.deposit(swpAmt[1]);                   // forward the SLP to the factory
         emit Deposit(msg.sender, swpAmt[1]);
     }
 
@@ -719,28 +760,6 @@ contract Stogie {
         return (stogiePool, token0, token1, liquidity);
     }
 
-    function _poolAndMint(
-        address _token0,
-        address _token1,
-        uint256 _amount0,
-        uint256 _amount1
-    ) internal
-    returns (uint amount0, uint amount1, uint liquidity) {
-        ILiquidityPool p = ILiquidityPool(stogiePool);
-        require (address(p) != address(0), "init not called");
-        (amount0, amount1, liquidity) = sushiRouter.addLiquidity(
-            _token0,
-            _token1,
-            _amount0,
-            _amount1,
-            1,
-            1,
-            address(this),
-            block.timestamp
-        );
-        require (liquidity > 0, "failed to add to pool");
-        _mint(msg.sender, liquidity); // mint STOG for the sender
-    }
 
     /**
      * @dev _sqrt is the babylonian method from Uniswap Math.sol
@@ -859,13 +878,15 @@ contract Stogie {
 
     /**
     * @dev _unwrap redeems STOG for SLP, burning STOG
-    * @param _for address to unwrap for
+    * @param _from address to unwrap for
     * @param _amount how much
     */
-    function _unwrap(address _for, uint256 _amount) internal {
-        ILiquidityPool(stogiePool).transferFrom(_for, address(this), _amount);// take STOG
-        cigEthSLP.transfer(_for, _amount);                                    // give SLP back
-        _burn(_for, _amount);                                                 // burn STOG
+    function _unwrap(address _from, uint256 _amount) internal {
+        ILiquidityPool(stogiePool).transferFrom(_from, address(this), _amount);// take STOG
+        if (_from != address(this)) {
+            cigEthSLP.transfer(_from, _amount);                                // give SLP back
+        }
+        _burn(_from, _amount);                                                 // burn STOG
 
     }
 
@@ -966,7 +987,7 @@ contract Stogie {
         update();                                                            // updates the CIG factory
         _stake(user, _amount);                                               // update the user's account
         cig.deposit(_amount);                                                // forward the SLP to the factory
-        emit Deposit(msg.sender, liquidity);
+        emit Deposit(msg.sender, _amount);
         IIDCards(idCards).issueID(msg.sender);                               // mint nft
     }
 
@@ -978,7 +999,6 @@ contract Stogie {
         _user.rewardDebt += _amount * accCigPerShare / 1e12;
     }
 
-
     /**
     * @dev transferStake transfers a stake to a new address
     *  _to must not have any stake. Harvests the stake before transfer
@@ -987,7 +1007,7 @@ contract Stogie {
         UserInfo storage userFrom = farmers[msg.sender];
         require (userFrom.deposit > 0, "from deposit must not be empty");
         UserInfo storage userTo = farmers[_to];
-        require (userTo.deposit == 0, "userTo.deposit not empty");
+        require (userTo.deposit == 0, "userTo.deposit must be empty");
         // harvest, move stake, remove old index, assign new index
         _harvest(userFrom, msg.sender);
         userTo.deposit = userFrom.deposit;
@@ -1043,7 +1063,7 @@ contract Stogie {
         if (_to != address(this)) {
             _transfer(address(this), address(_to), _amount);       // send STOG back
         }
-        emit Withdraw(_user, _amount);
+        emit Withdraw(_farmer, _amount);
         return harvested;
     }
 
@@ -1153,34 +1173,7 @@ contract Stogie {
     }
 }
 
-interface IUniswapV2Router {
-    function addLiquidity(
-        address tokenA,
-        address tokenB,
-        uint amountADesired,
-        uint amountBDesired,
-        uint amountAMin,
-        uint amountBMin,
-        address to,
-        uint deadline
-    )
-    external
-    returns (
-        uint amountA,
-        uint amountB,
-        uint liquidity
-    );
 
-    function removeLiquidity(
-        address tokenA,
-        address tokenB,
-        uint liquidity,
-        uint amountAMin,
-        uint amountBMin,
-        address to,
-        uint deadline
-    ) external returns (uint amountA, uint amountB);
-}
 
 interface IUniswapV2Factory {
     function getPair(address token0, address token1) external view returns (address);
