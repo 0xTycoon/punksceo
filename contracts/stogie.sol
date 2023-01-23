@@ -9,33 +9,20 @@ pragma solidity ^0.8.17;
 import "hardhat/console.sol";
 
 /**
-* This contract controls and holds value generated from harberger.sol
 
-1. Any CIG sent to this contract is used to buy the STOG token
-2. Any non-CIG token sent to this contract is sold for ETH, then sold for CIG
-3. Introducing "The STOG". The STOG token is a wrapper for the CIG/ETH Liquidity Provider (LP) token.
-    It represents a share of the CIG/ETH liquidity in SushiSwap.
- 4. The CIG/STOG pair is on SushiSwap, from which this contract will purchase STOG by using CIG
- 5. Purchased STOG will be unwrapped and deposited into the Cigarettes contract and used to produce CIG.
-    CIG earnings will be used to buy more STOG.
-    The stake will be locked inside Cigarettes forever, becoming Protocol Owned Liquidity.
- 6. Anybody can create new STOG by adding tokens by depositing ETH and CIG.
- 7. Anybody can take advantage of any arb opportunity with their STOG by trading with the CIG/STOG pool.
+This contract introduces the "Stogies", and improves the UX for the
+Cigarette Factory.
 
- Arbitrage example: The price for 1 CIG/ETH Liquidity Provider (LP) token should always be equal to the price of
- 1 STOG. However, if the price of CIG moves up and ETH stays the same or also goes up, then the price of 1 LP token will
- also go up. So, someone can buy the underpriced STOG with CIG, then unwrap it to get the underlying LP tokens.
+What are Stogies?
 
- Finally, they can destroy the LP tokens (by removing the liquidity), getting back ETH and CIG. Or, they can deposit
- the LP tokens to roll more CIG.
+In short, Stogies are tokens that are deposited to the Cigarette Factory to
+ produce Cigarettes.
 
- In short, if the price of CIG is going up, and ETH stays the same or also goes up, then check the price of STOG as it
- may be at a discount.
+Technically, stogies are wrapped Sushi Liquidity Provider (SLP) tokens, which
+are used to stake in the official Cigarette Token Pool on SushiSwap.
+These tokens are deposited into "The Cigarette Factory" and then $CIG token
+rewards are distributed based on how much has been deposited.
 
- In reverse, if the price of the LP token goes down, there may be an opportunity to mint some LP tokens that trade
- at a discount, wrap them into STOG, then sell them to the CIG/STOG pool for a *profit.
-
- (* Results may vary depending on how deep the liquidity is and how far the difference between the price is)
 
 */
 
@@ -84,6 +71,16 @@ contract Stogie {
                 address(this)
             )
         ); // EIP-2612
+        address r = address(sushiRouter);
+        cig.approve(r, type(uint256).max);                          // approve Sushi to use all of our CIG
+        IERC20(weth).approve(r, type(uint256).max);                 // approve Sushi to use all of our WETH
+        IERC20(cigEthSLP).approve(r, type(uint256).max);            // approve Sushi to use all of our CIG/ETH SLP
+
+        allowance[address(this)][r] = type(uint256).max;
+        emit Approval(address(this), r, type(uint256).max);
+
+       // _approve(address(this), r, type(uint256).max);            // approve Sushi to use all of our STOG
+        cigEthSLP.approve(address(cig), type(uint256).max);         // approve CIG to use all of our CIG/ETH SLP
     }
 
 
@@ -646,53 +643,7 @@ contract Stogie {
         _unwrap(msg.sender, _amountSTOG);
     }
 
-    /**
-        * @dev Sell any token we hold for CIG, except for SLP and STOG, then
-    *   deposit and lock the STOG
-    */
-    function addLiquidityToken (
-        uint256 _amount,
-        address _token,
-        address _router,
-        uint256 _amountWethMin,
-        uint256 _amountCigMin,
-        uint64 _deadline
-    ) external {
-        require (
-            _token != address(cigEthSLP) &&
-            _token != address(this) &&
-            _token != address(cig)
-        , "cannot sell these");
-        IV2Router r;
-        if (_router == address(uniswapRouter)) {
-            r = IV2Router(uniswapRouter);                   // use Uniswap
-        } else {
-            r = sushiRouter;
-        }
-        if (IERC20(_token).allowance(address(this), address(r)) < _amount) {
-            IERC20(_token).approve(
-                address(r), type(uint256).max
-            );                                              // unlimited approval
-        }
-        if (_token != weth) {
-            // swap the _token to WETH
-            address[] memory path;
-            path = new address[](2);
-            path[0] = _token;
-            path[1] = weth;
-            uint[] memory swpAmt;
-            swpAmt = r.swapExactTokensForTokens(
-                _amount,
-                _amountWethMin,                                // min ETH that must be received
-                path,
-                address(this),
-                _deadline
-            );
-        }
 
-        // todo
-
-    }
 
     /**
     * @dev Harvest CIG, then use our CIG holdings to buy STOG, then stake the STOG.
@@ -725,40 +676,6 @@ contract Stogie {
         emit Deposit(msg.sender, swpAmt[1]);
     }
 
-
-    /**
-    * @dev init will create the CIG/STOG pool for the first time
-    *   It will also set all the approvals. It's assumed that LP tokens
-    *   and CIG support unlimited approvals when set to type(uint256).max
-    */
-    function setup(uint _amountCIG, uint256 _amountCigEthSLP) external returns
-    (address pool, uint token0, uint token1, uint liquidity) {
-        require (stogiePool == address(0), "already initialized");
-        address r = address(sushiRouter);
-        cig.approve(r, type(uint256).max);                          // approve Sushi to use all of our CIG
-        IERC20(weth).approve(r, type(uint256).max);                 // approve Sushi to use all of our WETH
-        IERC20(cigEthSLP).approve(r, type(uint256).max);            // approve Sushi to use all of our CIG/ETH SLP
-        _approve(address(this), r, type(uint256).max);              // approve Sushi to use all of our STOG
-        cigEthSLP.approve(address(cig), type(uint256).max);         // approve CIG to use all of our CIG/ETH SLP
-        cig.transferFrom(msg.sender, address(this), _amountCIG);    // take their CIG
-        uint256 bal = cigEthSLP.balanceOf(msg.sender);
-        require (bal >= _amountCigEthSLP, "not enough CIG/ETH SLP");
-        _wrap(msg.sender, address(this), _amountCigEthSLP);         // take their CIG/ETH SLP, wrap, minting new STOG to here
-        (token0, token1, liquidity) = sushiRouter
-        .addLiquidity(
-            address(cig),                                           // token0 (CIG)
-            address(this),                                          // token1 (STOG)
-                _amountCIG,                                         // amount of token 0 (CIG)
-                _amountCigEthSLP,                                   // amount of token 1 (STOG)
-            1,
-            1,
-            address(this),                                          // this contract will keep the underlying SLP
-            block.timestamp
-        );                                                          // create CIG/STOG pair
-        stogiePool = IUniswapV2Factory(sushiFactory).getPair(
-            address(cig), address(this));                           // save the pair address
-        return (stogiePool, token0, token1, liquidity);
-    }
 
 
     /**
