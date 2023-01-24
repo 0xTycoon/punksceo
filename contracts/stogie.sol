@@ -644,7 +644,6 @@ contract Stogie {
     }
 
 
-
     /**
     * @dev Harvest CIG, then use our CIG holdings to buy STOG, then stake the STOG.
     * @param _amountSTOGMin min amount of STOG we should get after swapping the
@@ -655,8 +654,11 @@ contract Stogie {
         uint64 _deadline
     ) external {
         UserInfo storage user = farmers[msg.sender];
-        update();                                 // fetch CIG rewards for everyone
-        uint harvested = _harvest(user, address(this));// harvest CIG first
+        update();                           // fetch CIG rewards for everyone
+        uint harvested = _harvest(
+            user,
+            address(this)
+        );                                  // harvest CIG first
         /* swap harvested CIG to STOG */
         address[] memory path;
         path = new address[](2);
@@ -665,14 +667,14 @@ contract Stogie {
         uint[] memory swpAmt;
         swpAmt = sushiRouter.swapExactTokensForTokens(
             harvested,
-            _amountSTOGMin,                       // min amount that must be received
+            _amountSTOGMin,                 // min amount that must be received
             path,
             address(this),
             _deadline
         );
         // stake the STOG for the user
-        _stake(user, swpAmt[1]);                  // update the user's account
-        cig.deposit(swpAmt[1]);                   // forward the SLP to the factory
+        _stake(user, swpAmt[1]);            // update the user's account
+        cig.deposit(swpAmt[1]);             // forward the SLP to the factory
         emit Deposit(msg.sender, swpAmt[1]);
     }
 
@@ -721,10 +723,7 @@ contract Stogie {
     * @param _value The amount to be transferred.
     */
     function transfer(address _to, uint256 _value) public returns (bool) {
-        //require(_value <= balanceOf[msg.sender], "value exceeds balance"); // SafeMath already checks this
-        balanceOf[msg.sender] = balanceOf[msg.sender] - _value;
-        balanceOf[_to] = balanceOf[_to] + _value;
-        emit Transfer(msg.sender, _to, _value);
+        _transfer(msg.sender, _to, _value);
         return true;
     }
     /**
@@ -744,9 +743,7 @@ contract Stogie {
             require(_value <= a, "not approved");
             unchecked{allowance[_from][msg.sender] = a - _value;}
         }
-        balanceOf[_from] = balanceOf[_from] - _value;
-        balanceOf[_to] = balanceOf[_to] + _value;
-        emit Transfer(_from, _to, _value);
+        _transfer(_from, _to, _value);
         return true;
     }
     /**
@@ -799,12 +796,11 @@ contract Stogie {
     * @param _amount how much
     */
     function _unwrap(address _from, uint256 _amount) internal {
-        ILiquidityPool(stogiePool).transferFrom(_from, address(this), _amount);// take STOG
         if (_from != address(this)) {
-            cigEthSLP.transfer(_from, _amount);                                // give SLP back
+            _transfer(_from, address(this), _amount);            // take STOG
+            cigEthSLP.transfer(_from, _amount);                  // give SLP back
         }
-        _burn(_from, _amount);                                                 // burn STOG
-
+        _burn(_from, _amount);                                   // burn STOG
     }
 
     /**
@@ -818,7 +814,8 @@ contract Stogie {
         address _from,
         address _to,
         uint256 _value
-    ) internal returns (bool){
+    ) internal returns (bool) {
+        //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
         balanceOf[_from] = balanceOf[_from] - _value;
         balanceOf[_to] = balanceOf[_to] + _value;
         emit Transfer(_from, _to, _value);
