@@ -876,6 +876,16 @@ contract Stogie {
     }
 
     /**
+    * Fill the contract with additional CIG for rewards
+    */
+    function fill(uint256 _amount) external {
+        require (_amount > 1 ether, "insert coin");
+        cig.transferFrom(msg.sender, address(this), _amount);
+        uint256 supply = balanceOf[address(this)];            // how much is staked in total
+        accCigPerShare = accCigPerShare + (_amount * 1e12 / supply);
+    }
+
+    /**
     * @dev pendingCig returns the amount of cig to be claimed
     * @param _user the address to report
     * @return the amount of CIG they can claim
@@ -996,7 +1006,7 @@ contract Stogie {
     * @dev harvest redeems pending rewards & updates state
     * @return received is the amount that was harvested
     */
-    function harvest() public returns (uint256 received){
+    function harvest() public returns (uint256 received) {
         UserInfo storage user = farmers[msg.sender];
         update();
         return _harvest(user, msg.sender);
@@ -1014,6 +1024,45 @@ contract Stogie {
         emit Harvest(msg.sender, _to, delta);
 
         return delta;
+    }
+
+    /**
+    * @dev getStats gets all the current stats & states of the contract
+    * @param _user the user address to lookup
+    */
+    function getStats2(address _user) external view returns (
+        uint256[] memory,
+        uint256[] memory,
+        address,
+        bytes32,
+        uint112[] memory
+    ) {
+        uint[] memory ret = new uint[](59);
+        uint[] memory cigdata;
+        address theCEO;
+        bytes32 graffiti;
+        uint112[] memory reserves = new uint112[](2);
+        (cigdata, theCEO, graffiti, reserves) = cig.getStats(_user); //  new uint[](27);
+        UserInfo memory info = farmers[_user];
+
+        ret[0] = info.deposit;                         // how much STOG staked by user
+        ret[1] = info.rewardDebt;                      // amount of rewards paid out for user
+        ret[2] = balanceOf[address(this)];             // contract's STOGE balance
+        ret[3] = balanceOf[_user];                     // user's STOG balance
+        ret[4] = lastRewardBlock;                      // when rewards were last calculated
+        ret[5] = accCigPerShare;                       // accumulated CIG per STOG share
+        ret[6] = pendingCig(_user);                    // pending CIG reward to be harvested
+        ret[7] = IERC20(weth).balanceOf(_user);        // user's WETH balance
+        ret[8] = _user.balance;                        // user's ETH balance
+        ret[9] = cig.allowance(_user, address(this));  // user's approval for Stogies to spend their CIG
+        ret[10] = cigEthSLP.allowance(
+            _user, address(this));                     // user's approval to spend STOG
+        ret[11] = IERC20(weth)
+        .allowance(_user, address(this));              // user's approval to spend WETH
+        ret[12] = totalSupply;                         // total supply of STOG
+
+
+        return (ret, cigdata, theCEO, graffiti, reserves);
     }
 
     /**
@@ -1175,6 +1224,7 @@ interface ICigToken is IERC20 {
     function deposit(uint256 _amount) external;
     function pendingCig(address) external view returns (uint256);
     function cigPerBlock() external view returns (uint256);
+    function getStats(address _user) external view returns(uint256[] memory, address, bytes32, uint112[] memory);
     //function farmers(address _user) external view returns (UserInfo);
     //function stakedlpSupply() external view returns(uint256);
 

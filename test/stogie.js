@@ -37,7 +37,7 @@ describe("Stogie", function () {
         [owner, simp, elizabeth] = await ethers.getSigners();
         cig = await hre.ethers.getContractAt(CIG_ABI,  CIG_ADDRESS);
 
-        [owner, simp, elizabeth] = await ethers.getSigners();
+        //[owner, simp, elizabeth] = await ethers.getSigners();
         cigeth = await hre.ethers.getContractAt(SLP_ABI,  CIGETH_SLP_ADDRESS);
 
         EmployeeIDCards = await ethers.getContractFactory("EmployeeIDCards");
@@ -96,18 +96,7 @@ describe("Stogie", function () {
 
         console.log("cig/eth slp:" + feth(await cigeth.connect(tycoon).balanceOf(EOA)));
         console.log("cig:" + feth(await cig.connect(tycoon).balanceOf(EOA)));
-        let [stogiePool, token0, token1, liquidity] = await stogie.connect(tycoon).callStatic.setup(peth("6899"), peth("1")); // simulate
 
-
-        console.log("stogiePool creation simulated:", stogiePool, "\n",
-            "token0:", feth(token0), "\n",
-            "token1:", feth(token1), "\n",
-            "liquidity:", feth(liquidity)
-        );
-
-
-
-        await stogie.connect(tycoon).setup(peth("6899"), peth("1")); // do it
 
     });
 
