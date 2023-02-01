@@ -1030,7 +1030,7 @@ contract Stogie {
     * @dev getStats gets all the current stats & states of the contract
     * @param _user the user address to lookup
     */
-    function getStats2(address _user) external view returns (
+    function getStats(address _user) external view returns (
         uint256[] memory,
         uint256[] memory,
         address,
@@ -1041,25 +1041,38 @@ contract Stogie {
         uint[] memory cigdata;
         address theCEO;
         bytes32 graffiti;
-        uint112[] memory reserves = new uint112[](2);
+        ILiquidityPool ethusd = ILiquidityPool(address(0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f));
+    uint112[] memory reserves = new uint112[](2);
         (cigdata, theCEO, graffiti, reserves) = cig.getStats(_user); //  new uint[](27);
         UserInfo memory info = farmers[_user];
 
         ret[0] = info.deposit;                         // how much STOG staked by user
         ret[1] = info.rewardDebt;                      // amount of rewards paid out for user
         ret[2] = balanceOf[address(this)];             // contract's STOGE balance
-        ret[3] = balanceOf[_user];                     // user's STOG balance
-        ret[4] = lastRewardBlock;                      // when rewards were last calculated
-        ret[5] = accCigPerShare;                       // accumulated CIG per STOG share
-        ret[6] = pendingCig(_user);                    // pending CIG reward to be harvested
-        ret[7] = IERC20(weth).balanceOf(_user);        // user's WETH balance
-        ret[8] = _user.balance;                        // user's ETH balance
-        ret[9] = cig.allowance(_user, address(this));  // user's approval for Stogies to spend their CIG
-        ret[10] = cigEthSLP.allowance(
-            _user, address(this));                     // user's approval to spend STOG
-        ret[11] = IERC20(weth)
+        ret[3] = cigEthSLP.balanceOf(address(this));   // contract CIG/ETH SLP balance
+        ret[4] = balanceOf[_user];                     // user's STOG balance
+        ret[5] = lastRewardBlock;                      // when rewards were last calculated
+        ret[6] = accCigPerShare;                       // accumulated CIG per STOG share
+        ret[7] = pendingCig(_user);                    // pending CIG reward to be harvested
+        ret[8] = IERC20(weth).balanceOf(_user);        // user's WETH balance
+        ret[9] = _user.balance;                        // user's ETH balance
+        ret[10] = cig.allowance(_user, address(this)); // user's approval for Stogies to spend their CIG
+        ret[11] = cigEthSLP.allowance(
+            _user, address(this));                     // user's approval for Stogies to spend CIG/ETH SLP
+        ret[12] = IERC20(weth)
         .allowance(_user, address(this));              // user's approval to spend WETH
-        ret[12] = totalSupply;                         // total supply of STOG
+        ret[13] = totalSupply;                         // total supply of STOG
+
+        (uint112 r7, uint112 r8,) = cigEthSLP.getReserves();   // CIG/ETH SLP reserves, ret[7] is ETH, ret[8] is CIG
+        ret[14] = sushiRouter.getAmountOut(
+            1 ether, uint(r8), uint(r7));      // How much CIG for 1 ETH (ETH price in CIG)
+        (ret[15], ret[16],) = ethusd.getReserves();    // WETH/DAI reserves (15 = DAI, 16 = WETH)
+        ret[17] = sushiRouter.getAmountOut(
+            1 ether, ret[15], ret[16]);                // ETH price in USD
+        ret[18] = r7; // ETH reserve of CIG/ETH
+        ret[19] = r8; // CIH reserve of CIG/ETH
+        ret[20] = block.timestamp;                     // current timestamp
+        ret[21] = cig.balanceOf(address(this));        // CIG in contract
 
 
         return (ret, cigdata, theCEO, graffiti, reserves);
@@ -1069,11 +1082,11 @@ contract Stogie {
     * @dev getStats gets all the current stats & states of the contract
     * @param _user the user address to lookup
     */
-    function getStats(address _user) external view returns (
+    function getStats_old(address _user) external view returns (
         uint256[] memory                               // ret
     ) {
         uint[] memory ret = new uint[](59);
-     //   return ret;
+
         UserInfo memory info = farmers[_user];
         ILiquidityPool ethusd = ILiquidityPool(
             address(
@@ -1133,6 +1146,12 @@ contract Stogie {
         if (returndata.length > 0) { // check return value if it was returned
             require(abi.decode(returndata, (bool)), "safeERC20TransferFrom did not succeed");
         }
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IERC20).interfaceId ||
+            interfaceId == type(IERC2612).interfaceId;
     }
 }
 
@@ -1236,4 +1255,10 @@ interface IIDCards {
     function safeTransferFrom(address,address,uint256) external;
     function cardOwners(address) external view returns (uint256);
     function issueID(address _to) external;
+}
+
+interface IERC2612 {
+    function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external;
+    function nonces(address owner) external view returns (uint);
+    function DOMAIN_SEPARATOR() external view returns (bytes32);
 }

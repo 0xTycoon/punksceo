@@ -102,6 +102,7 @@ describe("Stogie", function () {
 
 
     let _sqrt = function(y) {
+        let z,x;
         if (y > 3n) {
             z = y;
             x = y / 2n + 1n;
@@ -151,36 +152,42 @@ describe("Stogie", function () {
 
     async function getStats(_user)  {
         let r = {};
-        let s = await stogie.getStats(_user);
-        r.stakeDeposit = s[0];
-        r.rewardDebt = s[1];
-        r.stogieContractBal = s[2];
-        r.stogieBal = s[3];
-        r.cigBal = s[4];
-        r.slpBal = s[5];
-        r.slpContractBal = s[6];
-        r.slpEthReserve = s[7];
-        r.slpCigReserve = s[8];
-        r.lastRewardBlock = s[9];
-        r.accCigPerShare = s[10];
-        r.pendingCig = s[11];
-        r.wethBal = s[12];
-        r.ethBal = s[13];
-        r.cigContractApproval = s[14];
-        r.slpContractApproval = s[15];
-        r.ethContractApproval = s[16];
-        r.blockNumber = s[17];
-        r.ethPriceInCig = s[18];
-        r.ethdaiETHRes = s[19];
-        r.ethdaiDAIRes = s[20];
-        r.ethPriceInUsd = s[21];
-        r.slpSupply = s[22];
-        r.stogieSupply = s[23];
-        r.cigSupply = s[24];
-        r.slpDepositedInCig = s[25];
-        r.cigPerBlock = s[26];
+        //let s = await stogie.getStats(_user);
+        let [s2, cigdata, theCEO, graffiti, reserves] = await stogie.getStats(_user);
 
 
+        r.stakeDeposit = s2[0]; // how much STOG staked by user
+        r.rewardDebt = s2[1]; // amount of rewards paid out for user
+        r.stogieContractBal = s2[2]; // contract's STOGE balance
+        r.stogieBal = s2[4];// user's STOG balance
+        r.cigBal = cigdata[15];// user's CIG balance
+        r.slpBal = cigdata[16];// user's CIG/ETH SLP balance
+        r.slpContractBal = s2[3]; // contract CIG/ETH SLP balance
+        r.slpEthReserve = reserves[0]; // CIG/ETH SLP reserves, ETH
+        r.slpCigReserve = reserves[1]; // CIG reserve is slp
+        r.lastRewardBlock = s2[5]; // when rewards were last calculated
+        r.accCigPerShare = s2[6]; // accumulated CIG per STOG share
+        r.pendingCig = s2[7]; // pending CIG reward to be harvested
+        r.wethBal = s2[8]; // user's WETH balance
+        r.ethBal = s2[9]; // user's ETH balance
+        r.cigContractApproval = s2[10]; // user's approval for Stogies to spend their CIG
+        r.slpContractApproval = s2[11]; // user's approval for Stogies to spend CIG/ETH SLP
+        r.ethContractApproval = s2[12]; // user's approval for stogies to spend WETH
+        r.blockNumber = cigdata[9]; // current block number
+        r.ethPriceInCig = s2[14]; // How much CIG for 1 ETH (ETH price in CIG)
+        r.ethdaiETHRes = s2[15]; // DAI reserves of WETH/DAI
+        r.ethdaiDAIRes = s2[16]; // WETH reserves of WETH/DAI
+        r.ethPriceInUsd = s2[17]; // ETH price in USD
+        r.slpSupply = cigdata[22]; // total supply of CIG/ETH SLP
+        r.stogieSupply = s2[13];
+        r.cigSupply = cigdata[7];
+        r.slpDepositedInCig = cigdata[8];
+        r.cigPerBlock = cigdata[6];
+        r.theCEO = theCEO;
+        r.graffiti = graffiti;
+        r.cigdata = cigdata;
+
+/*
         if (ethers.utils.hexlify(s[29]) === CIG_ADDRESS ) { // web3.utils.toHex
             r.stogieSlpCigReserve = s[27];
             r.stogieSlpStogieReserve = s[28];
@@ -189,8 +196,10 @@ describe("Stogie", function () {
             r.stogieSlpStogieReserve = s[27];
         }
         r.stogieSlpToken0 = ethers.utils.hexlify(s[29]); // address of token0 in Stogie/Cig slp
-        r.blockTimestamp = s[30];
-        r.cigBalContract = s[31];
+  */
+
+        r.blockTimestamp = s2[20];
+        r.cigBalContract = s2[21];
 
         return r;
 
