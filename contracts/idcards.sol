@@ -6,48 +6,54 @@
 // 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 pragma solidity ^0.8.17;
 
-// todo:
-// require at least 0.01 share % of pool to mint id, provide a mint method here
-// card can be expired if user no longer has share, then can be claimed by another address,
-// after a grace period of 30 days.
-/**
-* A card can be expired
+/*
 
-Multiple role ideas:
-1. Chief of communications - ability to change content hash of cigtoken.eth (with veto power by CEO)
-2. Minister of Economics - ability to set rewards on any sushi / uniswap v2 pair for the 2nd pool.
-(there will be a 2nd incentivised pool)
-3. Chief HR Officer - ability to increase or decreasing minimal stake required to mint / keep ID Card
+
+
 */
 
 contract EmployeeIDCards {
 
+    enum State {
+        Active,
+        PendingExpiry,
+        Expired
+    }
+
+    struct Card {
+        bytes32 graffiti;        // graffiti settable by owner
+        address identiconAddress;// address of identicon
+        address owner;           // address of current owner
+        address approval;        // address approved for
+        uint64 lastEventAt;      // block id of when last state changed
+        uint64 issuedAt;         // block id when issued
+        uint64 index;            // sequential index, i.e. the id
+        State state;             // NFT's state
+    }
 
     IStogie public stogie;
-    mapping (uint256 => address) public cardOwners; // card id to address
     mapping (address => uint256) public cardsIndex; // address to card id
-    mapping (uint256 => Card) public cards; // id to card
+    mapping(address => uint256) private balances;   // counts of ownership
+    mapping(address => mapping(uint256 => uint256)) private ownedCards; // track enumeration
+    mapping (uint256 => Card) public cards; // all of the cards
     uint256 employeeHeight; // the next available employee id
-    mapping(uint256 => address) private approval;
     mapping(address => mapping(address => bool)) private approvalAll; // operator approvals
     bytes4 private constant RECEIVED = 0x150b7a02; // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
-    mapping(uint256 => uint256) expired;
-    
-    struct Card {
-        address approvedAddress;
-        uint64 expiredAt;
-        uint64 issuedAt;
-        bytes32 graffiti;
-    }
-    
-    constructor() {
 
+    mapping(address => bool) public minters;
+    address private deployer;
+
+    event StateChanged(uint256 indexed id, address caller, State s0, State s1);
+
+    constructor() {
+        deployer = msg.sender;
     }
 
     /**
     * @dev setStogie can only be called once
     */
-    function setStogieAsOperator(address _s) public {
+    function setStogie(address _s) public {
+        require (msg.sender = deployer);
         require (address(stogie) == address(0));
         stogie = IStogie(_s);
     }
@@ -56,19 +62,70 @@ contract EmployeeIDCards {
     * @dev issueID mints a new ID card. The account must be an active stogie staker
     */
     function issueID(address _to) external {
-        require(balanceOf(_to) == 0, "_to has a card already");
+        require(msg.sender = address(stogie), "you're not stogie");
+        _issueID(_to);
+    }
+
+    function issueID() external {
+        // todo check msg.sender stogie balance
+        _issueID(msg.sender);
+    }
+
+    function _issueID(address _to) internal {
+        require(minters[_to] == address(0), "_to has minted a card already");
         uint256 id = employeeHeight;
-        cardOwners[id] = _to;
+        cards[id].owner = _to;
+        balances[_to]++;
         cardsIndex[_to] = id;
         Card storage c = cards[id];
+        c.state = State.Active;
         c.issuedAt = uint64(block.timestamp);
         emit Transfer(address(0), _to, id);
         unchecked {id++;}
         employeeHeight = id;
-        // todo require minimum stake
+        minters[_to] = true;
+    }
+
+    function setGraffiti(uint256 _tokenId, bytes32 _g) external {
+        require (msg.sender == cards[_tokenId].owner, "must be owner");
+        cards[_tokenId].graffiti = _g;
+    }
+
+    /**
+    * Initiate expiry for a
+    */
+    function expire(uint256 _tokenId) external {
 
     }
 
+    /**
+    * respawn an expired id
+    */
+    function respawn(uint256 _tokenId) external {
+
+    }
+
+    /**
+    * @dev called after an erc721 token transfer, after the counts have been updated
+    */
+    function addEnumeration(address _to, uint256 _tokenId) internal {
+        uint256 last = balances[_to]-1;           // the index of the last position
+        ownedCards[_to][last] = _tokenId;         // add a new entry
+        cards[_tokenId].index = uint64(last);
+    }
+
+    function removeEnumeration(address _from, uint256 _tokenId) internal {
+        uint256 height = balances[_from];         // last index
+        uint256 i = cards[_tokenId].index;        // index
+        if (i != height) {
+            // If not last, move the last token to the slot of the token to be deleted
+            uint256 lastTokenId = ownedCards[_from][height];
+            ownedCards[_from][i] = lastTokenId;   // move the last token to the slot of the to-delete token
+            cards[lastTokenId].index = uint64(i); // update the moved token's index
+        }
+        cards[_tokenId].index = 0;                // delete from index
+        delete ownedCards[_from][height];         // delete last slot
+    }
 
 
     /***
@@ -93,7 +150,7 @@ contract EmployeeIDCards {
     /// @return The token identifier for the `_index`th NFT,
     ///  (sort order not specified)
     function tokenByIndex(uint256 _index) external view returns (uint256) {
-        require (_index < employeeHeight, "index out of range");
+        require (_index >= employeeHeight, "index out of range");
         return _index; // index starts from 0
     }
 
@@ -105,11 +162,9 @@ contract EmployeeIDCards {
     /// @return The token identifier for the `_index`th NFT assigned to `_owner`,
     ///   (sort order not specified)
     function tokenOfOwnerByIndex(address _owner, uint256 _index) external view returns (uint256) {
-        require (_index == 0, "index out of range");     // each address can only own 1
+        require (_index <= balances[_owner], "index out of range");
         require (_owner != address(0), "invalid _owner");
-        uint id = cardsIndex[_owner];
-        require (cardOwners[id] == _owner);   // validate
-        return id;
+        return ownedCards[_owner][_index];
     }
 
     /**
@@ -118,11 +173,7 @@ contract EmployeeIDCards {
     function balanceOf(address _holder) public view returns (uint256) {
         // each address can only own 1
         require (_holder != address(0), "invalid _owner");
-        uint id = cardsIndex[_holder];
-        if (cardOwners[id] == _holder) {
-            return 1;
-        }
-        return 0;
+        return balances[_holder];
     }
 
     function name() public pure returns (string memory) {
@@ -149,10 +200,11 @@ contract EmployeeIDCards {
      * - `tokenId` must exist.
      */
     function ownerOf(uint256 _tokenId) public view returns (address) {
-        require (_tokenId < employeeHeight, "index out of range");
-        address o = cardOwners[_tokenId];
-        require(o != address(0));
-        return o;
+        require (_tokenId >= employeeHeight, "index out of range");
+        Card storage c = cards[_tokenId];
+        address owner = c.owner;
+        require (owner != address(0), "not minted.");
+        return owner;
     }
 
     /**
@@ -168,7 +220,6 @@ contract EmployeeIDCards {
         _transfer(_from,  _to, _tokenId);
         require(_checkOnERC721Received(_from, _to, _tokenId, _data), "ERC721: transfer to non ERC721Receiver implementer");
     }
-
 
     /**
     * @dev Throws unless `msg.sender` is the current owner, an authorized
@@ -193,19 +244,23 @@ contract EmployeeIDCards {
         require(_from != _to, "not allowed");
         require (_tokenId < employeeHeight, "index out of range");
         require (_to != address(0), "_to is zero");
-        require (balanceOf(_to) == 0, "_to must be empty");
-        address o =  cardOwners[_tokenId];
+
+        address o =  cards[_tokenId].owner;
         require (o == _from, "_from must be owner");        // also ensures that the card exists
-        address a = approval[_tokenId];
+        address a = cards[_tokenId].approval;
         require (
             msg.sender == address(stogie) ||
             o == msg.sender ||
             a == msg.sender ||
             (approvalAll[o][msg.sender]), "not permitted"); // check permissions
-        //cardOwners
+        balances[_to]++;
+        balances[_from]--;
+        cards[_tokenId] = _to;
+        removeEnumeration(_from, _tokenId);
+        addEnumeration(_to, _tokenId);
         emit Transfer(_from, _to, _tokenId);
         if (a != address(0)) {
-            approval[_tokenId] = address(0);                // clear previous approval
+            cards[_tokenId].approval = address(0);          // clear previous approval
             emit Approval(msg.sender, address(0), _tokenId);
         }
     }
@@ -218,9 +273,9 @@ contract EmployeeIDCards {
     */
     function approve(address _to, uint256 _tokenId) external {
         require (_tokenId < employeeHeight, "index out of range");
-        address o = cardOwners[_tokenId];
+        address o = cards[_tokenId].owner;
         require (o == msg.sender || isApprovedForAll(o, msg.sender), "action not token permitted");
-        approval[_tokenId] = _to;
+        cards[_tokenId].approval = _to;
         emit Approval(msg.sender, _to, _tokenId);
     }
     /**
@@ -241,7 +296,7 @@ contract EmployeeIDCards {
     * @return Will always return address(this)
     */
     function getApproved(uint256 _tokenId) public view returns (address) {
-        return approval[_tokenId];
+        return cards[_tokenId].approval;
     }
 
     /**
@@ -337,11 +392,8 @@ interface IStogie {
     struct UserInfo {
         uint256 deposit;    // How many LP tokens the user has deposited.
         uint256 rewardDebt; // keeps track of how much reward was paid out
-        uint256 employeeID;
     }
     function transferStake(address _from, address _to) external;
-    function employeeHeight() external view returns (uint256) ;
-    function cardOwners(uint256) external view returns (address);
     function farmers(address _user) external view returns (UserInfo memory);
 }
 

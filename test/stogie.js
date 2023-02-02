@@ -19,7 +19,7 @@ const {ContractFactory, utils, BigNumber} = require('ethers');
 //const helpers = require("@nomicfoundation/hardhat-network-helpers");
 const unlimited = BigNumber.from("2").pow(BigNumber.from("256")).sub(BigNumber.from("1"));
 
-
+const SCALE = BigNumber.from("1000");
 
 describe("Stogie", function () {
     let owner, simp, elizabeth, tycoon, impersonatedSigner; // accounts
@@ -27,10 +27,10 @@ describe("Stogie", function () {
     let feth = utils.formatEther;
     let peth = utils.parseEther;
     let cards, EmployeeIDCards;
-    const EOA = "0xc43473fa66237e9af3b2d886ee1205b81b14b2c8"; // EOA that has ETH and CIG to impersonate
+    const EOA = "0xc43473fA66237e9AF3B2d886Ee1205b81B14b2C8"; // EOA that has ETH and CIG to impersonate
     const CIG_ADDRESS = "0xcb56b52316041a62b6b5d0583dce4a8ae7a3c629"; // cig on mainnet
     const CIGETH_SLP_ADDRESS = "0x22b15c7Ee1186A7C7CFfB2D942e20Fc228F6E4Ed";
-
+    const ENS_ADDRESS = "0xc18360217d8f7ab5e7c516566761ea12ce7f9d72" // ENS token on mainnet
     before(async function () {
         // assuming we are at block 14148801
 
@@ -212,17 +212,18 @@ describe("Stogie", function () {
         console.log(stats);
         expect(stats.stakeDeposit).to.equal(0);
 
+        // work
         let portion = BigNumber.from(getSwapAmount(BigInt(deposit.toString()), BigInt(stats.slpEthReserve)));
 
 
         q = getAmountOut(portion, stats.slpEthReserve, stats.slpCigReserve);
 
         //let amountETHMin = q.sub(portion.div(BigNumber.from("1000").mul(BigNumber.from("100")))) ;
-        //const SCALE = BigNumber.from("1000"); // 100 * 10
-        //let percent = BigNumber.from("900"); // scale by 10 (100 = 10%)
-        // 900 = 90% , 10 = 1%
-        let amountCIGMin = q.sub(q.mul(BigNumber.from("10")).div(BigNumber.from("1000"))) ;
-       // amountCIGMin = q.sub(portion.mul(BigNumber.from("10000000")).div(BigNumber.from("1000"))) ;
+
+       let percent = BigNumber.from("10"); // scale by 10 (100 = 10%)
+        // 900 = 90% , 10 = 1%, etc.
+        let amountCIGMin = q.sub(q.mul(percent).div(SCALE)) ;
+
 
         console.log("portion:"+feth(portion));
         console.log("q:"+feth(q));
@@ -231,19 +232,14 @@ describe("Stogie", function () {
 
 
         let ts = Math.floor(Date.now() / 1000);
-        console.log("CIG bal of stogie:::::::"+await cig.balanceOf(stogie.address));
-        expect(await stogie.connect(tycoon)
+        await expect( stogie.connect(tycoon)
             .depositWithETH(
-                peth("1"),
+                amountCIGMin, // peth("1"),
                 BigNumber.from(ts+60),
-                false,
+                true,
                 {value: deposit})
-        ).to.emit(stogie, "Deposit");
+        ).to.emit(stogie, "Deposit").withArgs(EOA, peth("1918.677659620293865555"));
 
-
-
-        console.log("CIG bal of stogie:::::::"+await cig.balanceOf(stogie.address));
-        console.log("ETH bal of stogie:::::::"+await ethers.provider.getBalance(stogie.address));
         // sanity check
         let stats2 = await getStats(EOA);
         let lpDeposited = BigNumber.from(stats2.stakeDeposit);
@@ -252,11 +248,9 @@ describe("Stogie", function () {
 
         console.log(stats2);
 
-        //console.log("b"+await stogie.doNothing());
-        //console.log("c"+await stogie.doNothing());
-
+        await stogie.connect(tycoon).update();
         let pending = await stogie.connect(tycoon).pendingCig(EOA);
-        console.log("Pending CIGGGGGGGGGGGGGGG:", pending);
+        console.log("Pending CIGGGGGGGGGGGGGGG:", feth(pending));
 
         // harvest time
         expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest");
@@ -278,8 +272,31 @@ describe("Stogie", function () {
         // test withdraw
         expect(await stogie.connect(tycoon).withdraw(BigNumber.from(stats3.stakeDeposit))).to.emit(stogie, "Withdraw");
         expect(await stogie.connect(tycoon).balanceOf(EOA)).to.equal(lpDeposited);
-        return;
 
+    });
+
+    it("deposit ETH and stake", async function () {
+
+    });
+
+    it("deposit with ENS token and stake", async function () {
+
+        let ens = await hre.ethers.getContractAt(CIG_ABI,  ENS_ADDRESS); // we can use CIG_ABI since it's ERC20 compatible
+        let ensBal = await ens.connect(tycoon).balanceOf(EOA);
+        console.log("ENS bal:"+feth(ensBal));
+        await expect( ens.connect(tycoon).approve(stogie.address, unlimited)).to.emit(ens, "Approval");
+
+        let ts = Math.floor(Date.now() / 1000);
+        await expect( stogie.connect(tycoon)
+            .depositWithToken(
+                ensBal,
+                peth("1"),
+                peth("1"),
+                ENS_ADDRESS,
+                "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F",
+                BigNumber.from(ts+60),
+                true)
+        ).to.emit(stogie, "Deposit").withArgs(EOA, peth("1918.677659620293865555"));
     });
 
     it("output the reserves of the pool", async function () {

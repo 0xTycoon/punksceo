@@ -75,11 +75,8 @@ contract Stogie {
         cig.approve(r, type(uint256).max);                          // approve Sushi to use all of our CIG
         IERC20(weth).approve(r, type(uint256).max);                 // approve Sushi to use all of our WETH
         IERC20(cigEthSLP).approve(r, type(uint256).max);            // approve Sushi to use all of our CIG/ETH SLP
-
         allowance[address(this)][r] = type(uint256).max;
         emit Approval(address(this), r, type(uint256).max);
-
-       // _approve(address(this), r, type(uint256).max);            // approve Sushi to use all of our STOG
         cigEthSLP.approve(address(cig), type(uint256).max);         // approve CIG to use all of our CIG/ETH SLP
     }
 
@@ -256,7 +253,6 @@ contract Stogie {
         );
     }
 
-
     /**
     * @param _amountOutMin if the fromToken is CIG, _amountOutMin is min ETH we
     *   must get after swapping from CIG.
@@ -321,26 +317,21 @@ contract Stogie {
         if (!_transferSurplus) {
             return (swpAmt, addedA, addedB, liquidity);
         }
+        uint temp;
         if (token0Amt > addedA) {
-        unchecked{cig.transfer(
-            msg.sender, token0Amt - addedA);}          // send surplus CIG back
+            unchecked{temp = token0Amt - addedA;}
+            safeERC20Transfer(
+                IERC20(_fromToken),
+                msg.sender,
+                temp);                                 // send surplus token back
         }
         if (swpAmt[1] > addedB) {
-        unchecked{IERC20(weth).transfer(
-            msg.sender, swpAmt[1] - addedB);}          // send surplus WETH back
+            unchecked{temp = swpAmt[1] - addedB;}
+            IERC20(weth).transfer(
+            msg.sender, temp);                         // send surplus WETH back
         }
     }
-/*
-    // Given some asset amount and reserves, returns an amount of the other asset representing equivalent value
-    // Useful for calculating optimal token amounts before adding liq
-    // todo
-    function _quote(uint amountA, ILiquidityPool pool) internal view returns (uint amountB) {
-        //require(amountA > 0, 'UniswapV2Library: INSUFFICIENT_AMOUNT');
-        //require(reserveA > 0 && reserveB > 0, 'UniswapV2Library: INSUFFICIENT_LIQUIDITY');
-        (uint reserveA, uint reserveB,) = pool.getReserves();
-        amountB = amountA * reserveB / reserveA;
-    }
-*/
+
     /**
     * @dev mint STOG using CIG and WETH
     * @param _amountCIG - amount of CIG we want to add
@@ -393,8 +384,6 @@ contract Stogie {
         }
         return(cigAdded, ethAdded, liquidity);
     }
-
-
 
     /**
     * @dev withdrawToETH unstake, remove liquidity & swap CIG portion to WETH.
@@ -643,7 +632,6 @@ contract Stogie {
         _unwrap(msg.sender, _amountSTOG);
     }
 
-
     /**
     * @dev Harvest CIG, then use our CIG holdings to buy STOG, then stake the STOG.
     * @param _amountSTOGMin min amount of STOG we should get after swapping the
@@ -677,8 +665,6 @@ contract Stogie {
         cig.deposit(swpAmt[1]);             // forward the SLP to the factory
         emit Deposit(msg.sender, swpAmt[1]);
     }
-
-
 
     /**
      * @dev _sqrt is the babylonian method from Uniswap Math.sol
@@ -845,7 +831,7 @@ contract Stogie {
         uint256 rewardDebt; // keeps track of how much reward was paid out
     }
     mapping (uint256 => address) cardOwners;
-    mapping (address => UserInfo) public farmers;                    // keeps track of staking deposits and rewards
+    mapping (address => UserInfo) public farmers;                   // keeps track of staking deposits and rewards
     event Deposit(address indexed user, uint256 amount);            // when depositing LP tokens to stake
     event Harvest(address indexed user, address to, uint256 amount);// when withdrawing LP tokens form staking
     event Withdraw(address indexed user, uint256 amount);           // when withdrawing LP tokens, no rewards claimed
@@ -943,7 +929,6 @@ contract Stogie {
             IIDCards(idCards).safeTransferFrom(msg.sender, _to, id);
         }
     }
-
 
     /**
     * @dev withdraw takes out the LP tokens
@@ -1078,57 +1063,6 @@ contract Stogie {
         return (ret, cigdata, theCEO, graffiti, reserves);
     }
 
-    /**
-    * @dev getStats gets all the current stats & states of the contract
-    * @param _user the user address to lookup
-    */
-    function getStats_old(address _user) external view returns (
-        uint256[] memory                               // ret
-    ) {
-        uint[] memory ret = new uint[](59);
-
-        UserInfo memory info = farmers[_user];
-        ILiquidityPool ethusd = ILiquidityPool(
-            address(
-                0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f
-            ));                                        // sushi DAI-WETH pool
-        ret[0] = info.deposit;                         // how much STOG staked by user
-        ret[1] = info.rewardDebt;                      // amount of rewards paid out for user
-        ret[2] = balanceOf[address(this)];             // contract's STOGE balance
-        ret[3] = balanceOf[_user];                     // user's STOG balance
-        ret[4] = cig.balanceOf(_user);                 // user's CIG balance
-        ret[5] = cigEthSLP.balanceOf(_user);           // user's CIG/ETH SLP balance
-        ret[6] = cigEthSLP.balanceOf(address(this));   // contract CIG/ETH SLP balance
-        (ret[7], ret[8],) = cigEthSLP.getReserves();   // CIG/ETH SLP reserves, ret[7] is ETH, ret[8] is CIG
-        ret[9] = lastRewardBlock;                      // when rewards were last calculated
-        ret[10] = accCigPerShare;                      // accumulated CIG per STOG share
-        ret[11] = pendingCig(_user);                   // pending CIG reward to be harvested
-        ret[12] = IERC20(weth).balanceOf(_user);       // user's WETH balance
-        ret[13] = _user.balance;                       // user's ETH balance
-        ret[14] = cig.allowance(_user, address(this)); // user's approval to spend CIG
-        ret[15] = cigEthSLP.allowance(
-            _user, address(this));                     // user's approval to spend STOG
-        ret[16] = IERC20(weth)
-            .allowance(_user, address(this));          // user's approval to spend WETH
-        ret[17] = block.number;                        // current block number
-        ret[18] = sushiRouter.getAmountOut(
-            1 ether, uint(ret[8]), uint(ret[7]));      // How much CIG for 1 ETH (ETH price in CIG)
-        (ret[19], ret[20],) = ethusd.getReserves();    // ETH/DAI reserves
-        ret[21] = sushiRouter.getAmountOut(
-            1 ether, ret[19], ret[20]);                // ETH price in USD
-        ret[22] = cigEthSLP.totalSupply();             // total supply of CIG/ETH SLP
-        ret[23] = totalSupply;                         // total supply of STOG
-        ret[24] = cig.totalSupply();                   // total supply of CIG
-        ret[25] = cigEthSLP.balanceOf(address(cig));   // total amount of CIG/ETH in Cigarettes contract
-        ret[26] = cig.cigPerBlock();                   // number of new CIG entering the supply
-        (ret[27],ret[28],) =
-            ILiquidityPool(stogiePool).getReserves();  // reserves of CIG/STOG pool
-        ret[29] = uint256(uint160(
-                ILiquidityPool(stogiePool).token0())); // address of token0 / ret[27]
-        ret[30] = block.timestamp;                     // current timestamp
-        ret[31] = cig.balanceOf(address(this));        // CIG in contract
-        return ret;
-    }
 
     function safeERC20Transfer(IERC20 _token, address _to, uint256 _amount) internal {
         bytes memory payload = abi.encodeWithSelector(_token.transfer.selector, _to, _amount);

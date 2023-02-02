@@ -503,7 +503,7 @@ contract Harberger {
             // Holder defaulted
             s = State.Auction;                                  // initiate a Dutch auction.
             debt = _taxBalance;                                 // debt exceeds _taxBalance, it's all we can pay
-            deeds[_deedID].state = s;                           // save state
+            deeds[_deedID].state = s;                           // save to Auction state
             deeds[_deedID].taxBalance = 0;                      // update the tax balance
             _transfer(_holder, address(this), _deedID);         // Strip the deed from the holder
             emit Defaulted(_deedID, msg.sender, _taxBalance);
@@ -903,7 +903,7 @@ contract Harberger {
     }
 
     /**
-    * @dev transfer a token from _from to _to
+    * @dev transfer a token from _from to _to, always assuming that _to != _from
     * @param _from from
     * @param _to to
     * @param _tokenId the token index
@@ -912,10 +912,8 @@ contract Harberger {
         balances[_to]++;
         balances[_from]--;
         deeds[_tokenId].holder = _to;
-        if (_from != _to) {
-            removeEnumeration(_from, _tokenId);
-            addEnumeration(_to, _tokenId);
-        }
+        removeEnumeration(_from, _tokenId);
+        addEnumeration(_to, _tokenId);
         emit Transfer(_from, _to, _tokenId);
     }
 
