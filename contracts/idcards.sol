@@ -53,7 +53,7 @@ contract EmployeeIDCards {
     * @dev setStogie can only be called once
     */
     function setStogie(address _s) public {
-        require (msg.sender = deployer);
+        require (msg.sender == deployer);
         require (address(stogie) == address(0));
         stogie = IStogie(_s);
     }
@@ -62,7 +62,7 @@ contract EmployeeIDCards {
     * @dev issueID mints a new ID card. The account must be an active stogie staker
     */
     function issueID(address _to) external {
-        require(msg.sender = address(stogie), "you're not stogie");
+        require(msg.sender == address(stogie), "you're not stogie");
         _issueID(_to);
     }
 
@@ -72,7 +72,7 @@ contract EmployeeIDCards {
     }
 
     function _issueID(address _to) internal {
-        require(minters[_to] == address(0), "_to has minted a card already");
+        require(minters[_to] == false, "_to has minted a card already");
         uint256 id = employeeHeight;
         cards[id].owner = _to;
         balances[_to]++;
@@ -255,7 +255,7 @@ contract EmployeeIDCards {
             (approvalAll[o][msg.sender]), "not permitted"); // check permissions
         balances[_to]++;
         balances[_from]--;
-        cards[_tokenId] = _to;
+        cards[_tokenId].owner = _to;                        // set new owner
         removeEnumeration(_from, _tokenId);
         addEnumeration(_to, _tokenId);
         emit Transfer(_from, _to, _tokenId);
@@ -325,8 +325,6 @@ contract EmployeeIDCards {
         interfaceId == type(IERC721Enumerable).interfaceId ||
         interfaceId == type(IERC721TokenReceiver).interfaceId;
     }
-    
-
     
     // we do not allow NFTs to be send to this contract, except internally
     function onERC721Received(address /*_operator*/, address /*_from*/, uint256 /*_tokenId*/, bytes memory /*_data*/) external view returns (bytes4) {
