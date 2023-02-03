@@ -2,7 +2,7 @@
 // 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 // Author: tycoon.eth
 // Project: Cig Token
-// About: ERC721 for each staking deposit
+// About: ERC721 for Employee ID cards
 // 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 pragma solidity ^0.8.17;
 
@@ -32,6 +32,7 @@ contract EmployeeIDCards {
     }
 
     IStogie public stogie;
+    ICigToken private immutable cig;           // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
     mapping (address => uint256) public cardsIndex; // address to card id
     mapping(address => uint256) private balances;   // counts of ownership
     mapping(address => mapping(uint256 => uint256)) private ownedCards; // track enumeration
@@ -39,14 +40,20 @@ contract EmployeeIDCards {
     uint256 employeeHeight; // the next available employee id
     mapping(address => mapping(address => bool)) private approvalAll; // operator approvals
     bytes4 private constant RECEIVED = 0x150b7a02; // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
-
     mapping(address => bool) public minters;
     address private deployer;
-
+    uint public minSTOG = 10 ether; // minimum STOG required to mint
+    uint64 public minSTOGUpdatedAt; // block number of last change
+    uint16 private immutable EPOCH;
+    uint16 private immutable DURATION;
     event StateChanged(uint256 indexed id, address caller, State s0, State s1);
+    event MinSTOGChanged(uint256 minSTOG, uint256 amt);
 
-    constructor() {
+    constructor(address _cig, uint16 _epoch, uint16 _duration) {
         deployer = msg.sender;
+        cig = ICigToken(_cig);
+        EPOCH = _epoch;
+        DURATION = _duration;
     }
 
     /**
@@ -67,7 +74,8 @@ contract EmployeeIDCards {
     }
 
     function issueID() external {
-        // todo check msg.sender stogie balance
+        IStogie.UserInfo memory i = stogie.farmers(msg.sender);
+        require(i.deposit > minSTOG, "insert more STOG");
         _issueID(msg.sender);
     }
 
@@ -92,18 +100,88 @@ contract EmployeeIDCards {
     }
 
     /**
-    * Initiate expiry for a
+    * @dev Initiate s.PendingExpiry if account does not possess minimal stake.
+    *   or, place NFT to s.Expired after spending 30 days in s.PendingExpiry.
     */
-    function expire(uint256 _tokenId) external {
-
+    function expire(uint256 _tokenId) external returns (State) {
+        Card storage c = cards[_tokenId];
+        State s = c.state;
+        IStogie.UserInfo memory i = stogie.farmers(msg.sender);
+        if ((s == State.Active) &&
+            (i.deposit < minSTOG)) {
+            c.state = State.PendingExpiry;
+            c.lastEventAt = uint64(block.number);
+            emit StateChanged(
+                _tokenId,
+                msg.sender,
+                s,
+                State.PendingExpiry
+            );
+            return State.PendingExpiry;
+        } else if (s == State.PendingExpiry) {
+            if (c.lastEventAt < block.number - 7200 * 30) {
+                c.state = State.Expired;
+                c.lastEventAt = uint64(block.number);
+                emit StateChanged(
+                    _tokenId,
+                    msg.sender,
+                    s,
+                    State.Expired
+                );
+                _transfer(c.owner, address(this), _tokenId); // take token
+                return State.Expired;
+            }
+        }
+        return s;
     }
 
     /**
-    * respawn an expired id
+    * @dev respawn an expired token
     */
     function respawn(uint256 _tokenId) external {
-
+        Card storage c = cards[_tokenId];
+        State s = c.state;
+        require (s == State.Expired, "must be expired");
+        IStogie.UserInfo memory i = stogie.farmers(msg.sender);
+        require(i.deposit > minSTOG, "insert more STOG");
+        emit StateChanged(_tokenId, msg.sender, s, State.Active);
+        c.state = State.Active;
+        _transfer(address(this), msg.sender, _tokenId);
+        c.lastEventAt = uint64(block.number);
     }
+
+    /**
+    * @dev take a snapshot of the holder's address. This will change the
+    *   punk-identicon
+    */
+    function snapshot(uint256 _tokenId) external {
+        require (msg.sender == cards[_tokenId].owner, "must be owner");
+        cards[_tokenId].identiconAddress = msg.sender;
+    }
+
+    /**
+    * minSTOGChange allows the CEO of CryptoPunks to change the minSTOG
+    *    either increasing or decreasing by 10%. Cannot be below 1 STOG, or
+    *    above 0.1% of staked STOG supply.
+    * @param _up increase by 20% if true, decrease otherwise.
+    */
+    function minSTOGChange(bool _up) external {unchecked {
+        require(msg.sender == cig.The_CEO(), "need to be CEO");
+        require(block.number > cig.taxBurnBlock() - 20, "need to be CEO longer");
+        require(block.number > minSTOGUpdatedAt + 7200, "wait more blocks");
+        minSTOGUpdatedAt = uint64(block.number);
+        uint256 amt = minSTOG / 10;                               // %10
+        uint256 newMin;
+        if (_up) {
+            newMin = minSTOG + amt;
+        } else {
+            newMin = minSTOG - amt;
+        }
+        require (newMin > 1 ether, "min too small");
+        require (newMin < cig.stakedlpSupply() / 1000, "too big"); // must be less than 0.1% of staked supply
+        minSTOG = newMin;                                          // write
+        emit MinSTOGChanged(minSTOG, amt);
+    }}
 
     /**
     * @dev called after an erc721 token transfer, after the counts have been updated
@@ -126,7 +204,6 @@ contract EmployeeIDCards {
         cards[_tokenId].index = 0;                // delete from index
         delete ownedCards[_from][height];         // delete last slot
     }
-
 
     /***
     * Custom ERC721 functionality.
@@ -189,7 +266,7 @@ contract EmployeeIDCards {
      */
     function tokenURI(uint256 _tokenId) public view returns (string memory) {
         require ( _tokenId < employeeHeight, "index out of range");
-        return string(abi.encodePacked('moo'));
+        return string(abi.encodePacked('moo')); // todo
     }
 
     /**
@@ -244,12 +321,12 @@ contract EmployeeIDCards {
         require(_from != _to, "not allowed");
         require (_tokenId < employeeHeight, "index out of range");
         require (_to != address(0), "_to is zero");
-
         address o =  cards[_tokenId].owner;
         require (o == _from, "_from must be owner");        // also ensures that the card exists
         address a = cards[_tokenId].approval;
         require (
             msg.sender == address(stogie) ||
+            o == address(this) ||
             o == msg.sender ||
             a == msg.sender ||
             (approvalAll[o][msg.sender]), "not permitted"); // check permissions
@@ -385,13 +462,11 @@ contract EmployeeIDCards {
 
 }
 
-// todo tidy up
 interface IStogie {
     struct UserInfo {
         uint256 deposit;    // How many LP tokens the user has deposited.
         uint256 rewardDebt; // keeps track of how much reward was paid out
     }
-    function transferStake(address _from, address _to) external;
     function farmers(address _user) external view returns (UserInfo memory);
 }
 
@@ -468,4 +543,11 @@ interface IERC721Receiver {
         uint256 tokenId,
         bytes calldata data
     ) external returns (bytes4);
+}
+
+
+interface ICigToken  {
+    function stakedlpSupply() external view returns(uint256);
+    function taxBurnBlock() external view returns (uint256);
+    function The_CEO() external view returns (address);
 }

@@ -911,9 +911,10 @@ contract Stogie {
 
     /**
     * @dev transferStake transfers a stake to a new address
-    *  _to must not have any stake. Harvests the stake before transfer
+    *   _to must not have any stake. Harvests the stake before transfer
+    *   _tokenID optionally, transfer the ID card NFT
     */
-    function transferStake(address _to, bool transferID) external {
+    function transferStake(address _to, uint256 _tokenID) external {
         UserInfo storage userFrom = farmers[msg.sender];
         require (userFrom.deposit > 0, "from deposit must not be empty");
         UserInfo storage userTo = farmers[_to];
@@ -924,9 +925,8 @@ contract Stogie {
         userTo.rewardDebt = userFrom.rewardDebt;
         userFrom.deposit = 0;
         userFrom.rewardDebt = 0;
-        if (transferID) {
-            uint id = IIDCards(idCards).cardOwners(msg.sender);
-            IIDCards(idCards).safeTransferFrom(msg.sender, _to, id);
+        if (IIDCards(idCards).ownerOf(_tokenID) == msg.sender) {
+            IIDCards(idCards).transferFrom(msg.sender, _to, _tokenID);
         }
     }
 
@@ -1186,9 +1186,9 @@ interface ICigToken is IERC20 {
 
 interface IIDCards {
     function balanceOf(address _holder) external view returns (uint256);
-    function safeTransferFrom(address,address,uint256) external;
-    function cardOwners(address) external view returns (uint256);
+    function transferFrom(address,address,uint256) external;
     function issueID(address _to) external;
+    function ownerOf(uint256 _id) external view returns (address);
 }
 
 interface IERC2612 {
