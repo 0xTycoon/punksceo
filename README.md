@@ -6,3 +6,5 @@
 The following branch generates some CIG token stats in the report directory.
 
 Do not merge to main branch.
+
+See the scripts directory.
