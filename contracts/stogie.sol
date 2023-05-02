@@ -112,11 +112,13 @@ contract Stogie {
     * @param _amountCigMin - Minimum CIG expected from swapping ETH portion
     * @param _deadline - Future timestamp, when to give up
     * @param _transferSurplus - should the dust be refunded? May cost more gas
+    * @param _mintId mint a badge NFT for the msg.sender?
     */
     function depositWithETH(
         uint256 _amountCigMin,
         uint64 _deadline,
-        bool _transferSurplus
+        bool _transferSurplus,
+        bool _mintId
     ) external payable returns( /* don't need notReentrant */
         uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
     ) {
@@ -127,7 +129,8 @@ contract Stogie {
             msg.value,
             _amountCigMin,
             _deadline,
-            _transferSurplus
+            _transferSurplus,
+            _mintId
         );
     }
 
@@ -139,12 +142,14 @@ contract Stogie {
     * @param _amountCigMin - Minimum CIG expected from swapping ETH portion
     * @param _deadline - Future timestamp, when to give up
     * @param _transferSurplus - Should the dust be refunded? May cost more gas
+    * @param _mintId mint a badge NFT for the msg.sender?
     */
     function depositWithWETH(
         uint256 _amount,
         uint256 _amountCigMin,
         uint64 _deadline,
-        bool _transferSurplus
+        bool _transferSurplus,
+        bool _mintId
     ) external payable returns( /* don't need notReentrant */
         uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
     ) {
@@ -160,7 +165,8 @@ contract Stogie {
             _amount,
             _amountCigMin,
             _deadline,
-            _transferSurplus
+            _transferSurplus,
+            _mintId
         );
     }
 
@@ -179,6 +185,7 @@ contract Stogie {
     * @param _router address of router to use (Sushi or Uniswap)
     * @param _deadline - Future timestamp, when to give up
     * @param _transferSurplus - Should the dust be refunded? May cost more gas
+    * @param _mintId mint a badge NFT for the msg.sender?
     */
     function depositWithToken(
         uint256 _amount,
@@ -187,11 +194,12 @@ contract Stogie {
         address _token,
         address _router,
         uint64 _deadline,
-        bool _transferSurplus
+        bool _transferSurplus,
+        bool _mintId
     ) external payable notReentrant returns(
         uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
     ) {
-        IV2Router r;
+
         require(
             (_token != weth) && (_token != address(cig)),
             "must not be WETH or CIG"
@@ -202,7 +210,32 @@ contract Stogie {
             msg.sender,
             address(this),
             _amount
-        );                                                  // take their token
+        ); // take their token
+        swpAmt = _swapTokenToWETH(_amount, _amountWethMin, _router, _token, _deadline);
+        // now we have WETH
+        return _depositSingleSide(
+            weth,
+            swpAmt[1],
+            _amountCigMin,
+            _deadline,
+            _transferSurplus,
+            _mintId
+        );
+    }
+
+    /**
+    * swap all tokens to WETH. Internal function used when depositing with token
+    *    other than CIG or WETH
+    */
+    function _swapTokenToWETH(
+        uint256 _amount,
+        uint256 _amountWethMin,
+        address _router,
+        address _token,
+        uint64 _deadline
+    ) internal returns (uint[] memory swpAmt) {
+
+        IV2Router r;
         if (_router == address(uniswapRouter)) {
             r = IV2Router(uniswapRouter);                   // use Uniswap for intermediate swap
         } else {
@@ -225,31 +258,33 @@ contract Stogie {
             address(this),
             _deadline
         );
-        // now we have WETH
-        return _depositSingleSide(
-            weth,
-            swpAmt[1],
-            _amountCigMin,
-            _deadline,
-            _transferSurplus
-        );
+        return swpAmt;
     }
 
+    /**
+    * @dev deposit with CIG single side liquidity
+    * @param _amount in CIG to deposit
+    * @param _amountWethMin minimum CIG we expect to get
+    * @param _deadline - Future timestamp, when to give up
+    * @param _transferSurplus - Should the dust be refunded? May cost more gas
+    * @param _mintId mint a badge NFT for the msg.sender?
+    */
     function depositWithCIG(
         uint256 _amount,
         uint256 _amountWethMin,
-        address _token,
         uint64 _deadline,
-        bool _transferSurplus
+        bool _transferSurplus,
+        bool _mintId
     ) external payable notReentrant returns(
         uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
     ) {
         return _depositSingleSide(
-            _token,
+            address(cig),
             _amount,
             _amountWethMin,
             _deadline,
-            _transferSurplus
+            _transferSurplus,
+            _mintId
         );
     }
 
@@ -266,7 +301,8 @@ contract Stogie {
         uint256 _amount,
         uint256 _amountOutMin,
         uint64 _deadline,
-        bool _transferSurplus
+        bool _transferSurplus,
+        bool _mintId
     ) internal returns(
         uint[] memory swpAmt, uint addedA, uint addedB, uint liquidity
     ) {
@@ -307,13 +343,9 @@ contract Stogie {
             block.timestamp
         );
         _wrap(address(this), address(this), liquidity);// wrap our liquidity to Stogie
-        UserInfo storage user = farmers[msg.sender];
         update();                                      // update the CIG factory
         /* update user's account of STOG, so they can withdraw it later */
-        _stake(user, liquidity);                       // update the user's account
-        cig.deposit(liquidity);                        // forward the SLP to the factory
-        emit Deposit(msg.sender, liquidity);
-        IIDCards(idCards).issueID(msg.sender);         // mint nft
+        _addStake(msg.sender, liquidity, _mintId);     // update the user's account
         if (!_transferSurplus) {
             return (swpAmt, addedA, addedB, liquidity);
         }
@@ -340,6 +372,7 @@ contract Stogie {
     * @param _amountWETHMin - minimum WETH that will be tolerated
     * @param _deadline - timestamp when to expire
     * @param _transferSurplus - send back any change?
+    * @param _mintId - mint a badge NFT?
     */
     function depositCigWeth(
         uint256 _amountCIG,
@@ -347,7 +380,8 @@ contract Stogie {
         uint256 _amountCIGMin,
         uint256 _amountWETHMin,
         uint64 _deadline,
-        bool _transferSurplus
+        bool _transferSurplus,
+        bool _mintId
     ) external returns(
         uint cigAdded, uint ethAdded, uint liquidity)
     {
@@ -363,13 +397,9 @@ contract Stogie {
             address(this),
             _deadline
         );
-        UserInfo storage user = farmers[msg.sender];
         update();                                        // update the CIG factory
         /* update user's account of STOG, so they can withdraw it later*/
-        _stake(user, liquidity);                         // update the user's account
-        cig.deposit(liquidity);                          // forward the SLP to the factory
-        emit Deposit(msg.sender, liquidity);
-        IIDCards(idCards).issueID(msg.sender);           // mint nft
+        _addStake(msg.sender, liquidity, _mintId);       // update the user's account
         if (!_transferSurplus) {
             return(cigAdded, ethAdded, liquidity);
         }
@@ -661,9 +691,7 @@ contract Stogie {
             _deadline
         );
         // stake the STOG for the user
-        _stake(user, swpAmt[1]);            // update the user's account
-        cig.deposit(swpAmt[1]);             // forward the SLP to the factory
-        emit Deposit(msg.sender, swpAmt[1]);
+        _addStake(msg.sender, swpAmt[1], false);// update the user's account
     }
 
     /**
@@ -890,23 +918,30 @@ contract Stogie {
     /**
     * @dev deposit STOG tokens to stake
     */
-    function deposit(uint256 _amount) public {
+    function deposit(uint256 _amount, bool _mintId) public {
         require(_amount != 0, "You cannot deposit only 0 tokens");           // Has enough?
         require(_transfer(address(msg.sender), address(this), _amount));     // transfer STOG to this contract
-        UserInfo storage user = farmers[msg.sender];
         update();                                                            // updates the CIG factory
-        _stake(user, _amount);                                               // update the user's account
-        cig.deposit(_amount);                                                // forward the SLP to the factory
-        emit Deposit(msg.sender, _amount);
-        IIDCards(idCards).issueID(msg.sender);                               // mint nft
+        _addStake(msg.sender, _amount, _mintId);                             // update the user's account
     }
 
     /**
-    * @dev _stake updates how many STOG has been deposited for the user
+    * @dev _addStake updates how many STOG has been deposited for the user
+    * @param _user address of user we are updating the stake for
     */
-    function _stake(UserInfo storage _user, uint256 _amount) internal {
-        _user.deposit += _amount;
-        _user.rewardDebt += _amount * accCigPerShare / 1e12;
+    function _addStake(
+        address _user,
+        uint256 _amount,
+        bool _mintId
+    ) internal {
+        UserInfo storage user = farmers[_user];
+        user.deposit += _amount;
+        user.rewardDebt += _amount * accCigPerShare / 1e12;
+        cig.deposit(_amount);                              // forward the SLP to the factory
+        emit Deposit(msg.sender, _amount);
+        if (_mintId) {
+            IIDCards(idCards).issueID(_user);              // mint nft
+        }
     }
 
     /**
@@ -1007,7 +1042,6 @@ contract Stogie {
         cig.transfer(_to, delta);                                 // give them their rewards
         _user.rewardDebt = _user.deposit * accCigPerShare / 1e12; // Recalculate their reward debt
         emit Harvest(msg.sender, _to, delta);
-
         return delta;
     }
 
