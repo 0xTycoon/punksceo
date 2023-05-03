@@ -4,7 +4,7 @@
 // Project: Hamburger Hut / Cigarettes
 // About: Harberger tax marketplace & protocol for NFTs
 // 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.19;
 
 import "hardhat/console.sol";
 
@@ -558,7 +558,7 @@ contract Stogie {
             _liquidity,
             msg.sender,
             address(this)
-        );                          // harvest and withdraw on behalf of msg.sender
+        );                         // harvest and withdraw on behalf of msg.sender
         cig.transfer(
             msg.sender,
             harvested
@@ -566,7 +566,7 @@ contract Stogie {
         _unwrap(
             address(this),
             _liquidity
-        );                          // Unwrap STOG to CIG/ETH SLP token, burning STOG
+        );                         // Unwrap STOG to CIG/ETH SLP token, burning STOG
         (amtCIGOut, amtWETHout) = sushiRouter.removeLiquidity(
             address(cig),
             weth,
@@ -652,7 +652,8 @@ contract Stogie {
     * @dev wrap LP tokens to STOG
     */
     function wrap(uint256 _amountLP) external {
-        _wrap(msg.sender, msg.sender, _amountLP);
+        require(_amountLP != 0, "_amountLP cannot be 0"); // Has enough?
+        _wrap(msg.sender, address(this), _amountLP);
     }
 
     /**
@@ -926,6 +927,17 @@ contract Stogie {
     }
 
     /**
+    * @dev wrapAndDeposit is used for migration, it will wrap old SLP tokens to
+    * Stogies & deposit in staking
+    */
+    function wrapAndDeposit(uint256 _amount, bool _mintId) external {
+        require(_amount != 0, "You cannot deposit only 0 tokens"); // Has enough?
+        _wrap(msg.sender, address(this), _amount);
+        update();
+        _addStake(msg.sender, _amount, _mintId);                   // update the user's account
+    }
+
+    /**
     * @dev _addStake updates how many STOG has been deposited for the user
     * @param _user address of user we are updating the stake for
     */
@@ -938,7 +950,7 @@ contract Stogie {
         user.deposit += _amount;
         user.rewardDebt += _amount * accCigPerShare / 1e12;
         cig.deposit(_amount);                              // forward the SLP to the factory
-        emit Deposit(msg.sender, _amount);
+        emit Deposit(_user, _amount);
         if (_mintId) {
             IIDCards(idCards).issueID(_user);              // mint nft
         }

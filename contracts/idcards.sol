@@ -15,6 +15,7 @@ pragma solidity ^0.8.19;
 contract EmployeeIDCards {
     using DynamicBufferLib for DynamicBufferLib.DynamicBuffer;
     enum State {
+        Uninitialized,
         Active,
         PendingExpiry,
         Expired
@@ -43,8 +44,8 @@ contract EmployeeIDCards {
     address private deployer;
     uint public minSTOG = 10 ether;                // minimum STOG required to mint
     uint64 public minSTOGUpdatedAt;                // block number of last change
-    uint16 private immutable EPOCH;
-    uint16 private immutable DURATION;
+    uint16 private immutable EPOCH;                // 1 day (7200 blocks)
+    uint16 private immutable DURATION;             // EPOCHS to elapse for expiration (30)
     event StateChanged(uint256 indexed id, address caller, State s0, State s1);
     event MinSTOGChanged(uint256 minSTOG, uint256 amt);
 
@@ -69,8 +70,8 @@ contract EmployeeIDCards {
     * @dev setStogie can only be called once
     */
     function setStogie(address _s) public {
-        require (msg.sender == deployer);
-        require (address(stogie) == address(0));
+        require (msg.sender == deployer, "not deployer");
+        require (address(stogie) == address(0), "stogie already set");
         stogie = IStogie(_s);
     }
 
@@ -99,22 +100,33 @@ contract EmployeeIDCards {
         cardsIndex[_to] = id;
         Card storage c = cards[id];
         c.state = State.Active;
-        emit Transfer(address(0), _to, id);
+        c.lastEventAt = uint64(block.number);
+        emit StateChanged(
+            id,
+            msg.sender,
+            State.Uninitialized,
+            State.Active
+        );
+        emit Transfer(address(0), _to, id); // mint
         unchecked {id++;}
         employeeHeight = id;
         minters[_to] = uint64(block.timestamp);
-        c.identiconSeed = _to; // used for the identicon
+        c.identiconSeed = _to; // save seed, used for the identicon
     }
 
-
     /**
-    * @dev Initiate s.PendingExpiry if account does not possess minimal stake.
-    *   or, place NFT to s.Expired after spending 30 days in s.PendingExpiry.
+    * @dev expire a token.
+    *   Initiate s.PendingExpiry if account does not possess minimal stake.
+    *   or, place NFT to s.Expired after spending DURATION (30) days in
+    *   s.PendingExpiry.
+    * @param _tokenId the token to expire
     */
     function expire(uint256 _tokenId) external returns (State) {
         Card storage c = cards[_tokenId];
         State s = c.state;
-        IStogie.UserInfo memory i = stogie.farmers(msg.sender);
+        require(s == State.Active || s == State.PendingExpiry, "invalid state");
+
+        IStogie.UserInfo memory i = stogie.farmers(c.owner);
         if ((s == State.Active) &&
             (i.deposit < minSTOG)) {
             c.state = State.PendingExpiry;
@@ -127,7 +139,7 @@ contract EmployeeIDCards {
             );
             return State.PendingExpiry;
         } else if (s == State.PendingExpiry) {
-            if (c.lastEventAt < block.number - 7200 * 30) {
+            if (c.lastEventAt < block.number - EPOCH * DURATION) {
                 c.state = State.Expired;
                 c.lastEventAt = uint64(block.number);
                 emit StateChanged(
@@ -148,6 +160,29 @@ contract EmployeeIDCards {
     }
 
     /**
+    * @dev reactivate a token. Must be in State.PendingExpiry state.
+    *    At least `minSTOG` of Stogies are needed to reactivate.
+    */
+    function reactivate(uint256 _tokenId) external returns(State) {
+        Card storage c = cards[_tokenId];
+        State s = c.state;
+        require(s == State.PendingExpiry, "invalid state");
+        IStogie.UserInfo memory i = stogie.farmers(c.owner);
+        if (i.deposit >= minSTOG) {
+            c.state = State.Active;
+            c.lastEventAt = uint64(block.number);
+            emit StateChanged(
+                _tokenId,
+                msg.sender,
+                State.PendingExpiry,
+                State.Active
+            );
+            return State.Active;
+        }
+        return s;
+    }
+
+    /**
     * @dev respawn an expired token. Can only be respawned by an address that
     * hasn't minted.
     * @param _tokenId the token id to respawn
@@ -158,7 +193,12 @@ contract EmployeeIDCards {
         require (c.state == State.Expired, "must be expired");
         IStogie.UserInfo memory i = stogie.farmers(msg.sender);
         require(i.deposit > minSTOG, "insert more STOG");
-        emit StateChanged(_tokenId, msg.sender, State.Expired, State.Active);
+        emit StateChanged(
+            _tokenId,
+            msg.sender,
+            State.Expired,
+            State.Active
+        );
         c.state = State.Active;
         minters[msg.sender] = uint64(block.timestamp);
         c.identiconSeed = msg.sender;                  // used for the identicon
@@ -169,16 +209,16 @@ contract EmployeeIDCards {
 
     /**
     * minSTOGChange allows the CEO of CryptoPunks to change the minSTOG
-    *    either increasing or decreasing by 10%. Cannot be below 1 STOG, or
+    *    either increasing or decreasing by 1%. Cannot be below 1 STOG, or
     *    above 0.1% of staked STOG supply.
-    * @param _up increase by 20% if true, decrease otherwise.
+    * @param _up increase by 1% if true, decrease otherwise.
     */
     function minSTOGChange(bool _up) external {unchecked {
         require(msg.sender == cig.The_CEO(), "need to be CEO");
         require(block.number > cig.taxBurnBlock() - 20, "need to be CEO longer");
-        require(block.number > minSTOGUpdatedAt + 7200, "wait more blocks");
+        require(block.number > minSTOGUpdatedAt + EPOCH, "wait more blocks");
         minSTOGUpdatedAt = uint64(block.number);
-        uint256 amt = minSTOG / 10;                               // %10
+        uint256 amt = minSTOG / 1e3 * 10;                               // %1
         uint256 newMin;
         if (_up) {
             newMin = minSTOG + amt;
@@ -273,11 +313,14 @@ contract EmployeeIDCards {
 
     bytes constant badgeEnd = '</svg>';
 
-    function _generateBade(uint256 _tokenId, address _seed) internal view returns (bytes memory) {
+    function _generateBadge(uint256 _tokenId, address _seed) internal view returns (bytes memory) {
         DynamicBufferLib.DynamicBuffer memory result;
 
-        // todo generate barcode + punk
-
+        string memory bars = barcode.draw(_tokenId, "40", "406", "c0c0c0", 64, 2);
+        bytes32[] memory traits = identicons.pick(_seed, 0);
+        string memory punk = pblocks.svgFromKeys(traits, 60, 158, 240, 0);
+        result.append(badgeStart, bytes(bars), bytes(punk));
+        result.append(badgeEnd);
         return result.data;
     }
 
@@ -289,12 +332,14 @@ contract EmployeeIDCards {
         require ( _tokenId < employeeHeight, "index out of range");
         Card storage c = cards[_tokenId];
 
-        string memory bars = barcode.draw(_tokenId, "232", "232", "#c0c0c0", 32, 2);
-        result.append('{\n"description": "Employee ID Cards for the Cigarette Factory', "\n",
+        bytes memory badge = _generateBadge(_tokenId, c.identiconSeed);
+
+
+        result.append('{\n"description": "Employee ID Cards for the Cigarette Factory",', "\n",
         '"external_url": "https://cigtoken.eth.limo/#idCard-');
         result.append( bytes(_intToString(_tokenId)),'",', "\n");
         result.append('"image": "data:image/svg+xml;base64,');
-        result.append(bytes(Base64.encode(result.data)), '",', "\n");
+        result.append(bytes(Base64.encode(badge)), '",', "\n");
         result.append('"attributes": ',_getAttributes(), "\n}");
 
 
@@ -319,6 +364,7 @@ contract EmployeeIDCards {
 
     function _getAttributes() internal view returns (bytes memory) {
         DynamicBufferLib.DynamicBuffer memory result;
+        result.append('["test1", "test2", "test3"]');
         return result.data;
     }
 
@@ -896,10 +942,16 @@ interface IPunkIdenticons {
     function pick(
         address _a,
         uint64 _cid) view external returns (bytes32[] memory);
+
 }
 
 interface IPunkBlocks {
-    function svgFromKeys(bytes32[] calldata _attributeKeys, uint16 _x, uint16 _y, uint16 _size, uint32 _orderID) external view returns (string memory);
+    function svgFromKeys(
+        bytes32[] calldata _attributeKeys,
+        uint16 _x,
+        uint16 _y,
+        uint16 _size,
+        uint32 _orderID) external view returns (string memory);
 }
 
 interface IBarcode {
