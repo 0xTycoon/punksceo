@@ -343,7 +343,6 @@ contract Stogie {
             block.timestamp
         );
         _wrap(address(this), address(this), liquidity);// wrap our liquidity to Stogie
-        update();                                      // update the CIG factory
         /* update user's account of STOG, so they can withdraw it later */
         _addStake(msg.sender, liquidity, _mintId);     // update the user's account
         if (!_transferSurplus) {
@@ -397,7 +396,6 @@ contract Stogie {
             address(this),
             _deadline
         );
-        update();                                        // update the CIG factory
         /* update user's account of STOG, so they can withdraw it later*/
         _addStake(msg.sender, liquidity, _mintId);       // update the user's account
         if (!_transferSurplus) {
@@ -673,7 +671,6 @@ contract Stogie {
         uint64 _deadline
     ) external {
         UserInfo storage user = farmers[msg.sender];
-        update();                           // fetch CIG rewards for everyone
         uint harvested = _harvest(
             user,
             address(this)
@@ -872,7 +869,7 @@ contract Stogie {
     *  be distributed to STOG stakers
     * @return cigReward - the amount of CIG that was credited to this contract
     */
-    function update() public returns (uint256 cigReward){
+    function fetchCigarettes() public returns (uint256 cigReward){
         if (block.number <= lastRewardBlock) {
             return 0;                                         // can only be called once per block
         }
@@ -890,6 +887,7 @@ contract Stogie {
         return cigReward;
     }
 
+
     /**
     * Fill the contract with additional CIG for rewards
     */
@@ -906,14 +904,20 @@ contract Stogie {
     * @return the amount of CIG they can claim
     */
     function pendingCig(address _user) view public returns (uint256) {
-        uint256 _acps = accCigPerShare;                       // accumulated cig per share
+        // calculate the accumulated cig already harvested
+        uint256 _acps = accCigPerShare;                     // accumulated cig per share
         UserInfo storage user = farmers[_user];
-        uint256 supply = balanceOf[address(this)];            // how much is staked in total
+        uint256 supply = balanceOf[address(this)];          // how much is staked in total
         if (block.number > lastRewardBlock && supply != 0) {
-            uint256 cigReward = cig.pendingCig(address(this));// get our pending reward
+            uint256 cigReward = cig.balanceOf(address(this));// get cig that can be distributed as rewards
             _acps = _acps + (cigReward * 1e12 / supply);
         }
-        return (user.deposit * _acps / 1e12) - user.rewardDebt;
+        // add the CIG that's yet to be paid out
+        //uint256 depositRatio =  user.deposit  * 1e12 /supply;
+        uint256 pending = cig.pendingCig(address(this)) *
+            (user.deposit * 1e12 / supply)
+            / 1e12;                                          // _user's portion of pending CIG
+        return ((user.deposit * _acps / 1e12) - user.rewardDebt) + pending;
     }
 
     /**
@@ -922,7 +926,6 @@ contract Stogie {
     function deposit(uint256 _amount, bool _mintId) public {
         require(_amount != 0, "You cannot deposit only 0 tokens");           // Has enough?
         require(_transfer(address(msg.sender), address(this), _amount));     // transfer STOG to this contract
-        update();                                                            // updates the CIG factory
         _addStake(msg.sender, _amount, _mintId);                             // update the user's account
     }
 
@@ -933,7 +936,6 @@ contract Stogie {
     function wrapAndDeposit(uint256 _amount, bool _mintId) external {
         require(_amount != 0, "You cannot deposit only 0 tokens"); // Has enough?
         _wrap(msg.sender, address(this), _amount);
-        update();
         _addStake(msg.sender, _amount, _mintId);                   // update the user's account
     }
 
@@ -998,7 +1000,7 @@ contract Stogie {
         UserInfo storage user = farmers[_farmer];
         require(user.deposit >= _amount, "no STOG deposited");
         /* update() will harvest CIG for everyone before emergencyWithdraw, this important. */
-        update();                                                  // fetch CIG rewards for everyone
+        fetchCigarettes();                                                  // fetch CIG rewards for everyone
         /*
         Due to a bug in the Cig contract, we can only use emergencyWithdraw().
         This will take out the entire TVL first, subtract the _amount and
@@ -1040,7 +1042,7 @@ contract Stogie {
     */
     function harvest() public returns (uint256 received) {
         UserInfo storage user = farmers[msg.sender];
-        update();
+        fetchCigarettes();                          // harvest CIG from factory v1
         return _harvest(user, msg.sender);
     }
 
