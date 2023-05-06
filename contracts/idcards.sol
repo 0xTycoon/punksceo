@@ -5,7 +5,7 @@
 // About: ERC721 for Employee ID cards
 // 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 pragma solidity ^0.8.19;
-
+import "hardhat/console.sol";
 /*
 
 
@@ -311,16 +311,19 @@ contract EmployeeIDCards {
 
     bytes constant badgeStart = '<svg xmlns="http://www.w3.org/2000/svg" width="2343.307" height="1927.559" viewBox="0 0 620 510" shape-rendering="crispEdges"><path d="M330 118h270v350H330z" fill="#ebebeb"/><path d="M589.999 118.668h10v10h-10z" fill="#fff"/><g transform="matrix(0 .999959 -.999889 0 -899.44629 -4620.8766)"><path d="M6755.152-2343.785v-1149.049h-9740.396v1149.049z" fill="#ff0"/><path d="M4739.738-909.547v-10h360v10zm0-590v-10h360v10z"/><path d="M5099.738-919.547v-10h10v10z"/><path d="M5089.738-919.547v-10h10v10zm0-570v-10h10v10z" fill="#a0a0a0"/><path d="M4729.738-1489.547v-10h10v10zm370 0v-10h10v10z"/><path d="M5069.738-1489.547v-10h10v10zm-320-.065v-10h10v10z" fill="#dedede"/><path d="M5109.738-929.547v-560h10v560zm-389.669-.002v-560h10v560z"/><path d="M5099.738-929.547v-560h10v560z" fill="#a0a0a0"/><path d="M5079.738-929.547v-560.062h10v560.062zm-340-.002v-560.062h10v560.062z" fill="#dedede"/><g fill="#fff"><path d="M5080-920v-10h10v10zm-.262-569.547v-10h10v10z"/><path d="M5089.738-929.547v-560h10v560zm-360 0v-560h10v560z"/></g><path d="M4730.069-919.548v-10.001h10v10.001z"/><path d="M4740-920v-310h350v310z" fill="#dedede"/></g><path d="M20 458h10v10H20zm0-339h10v10H20z" fill="#fff"/><path d="M320 148h250v40H320zm0 110h40v20h-40zm0 40h60v20h-60zm0 40h250v20H320zm0 50h250v20H320zm70-90h60v20h-60zm70 0h40v20h-40zm50 0h20v20h-20zm30 0h30v20h-30zm-170-40h30v20h-30zm40 0h70v20h-70zm90 0h70v20h-70z" fill="#7c7b7e"/><path d="M40 148h260v260H40z" fill="#3e545f"/><path d="M50 158h240v240H50z" fill="#638596"/><path d="M270 0h80v130h-80z"/><path d="M280 90h60v30h-60z" fill="#7e7e7e"/><path d="M280 10h60v70h-60z" fill="#c1c1c1"/><path d="M290 80h40v10h-40z" fill="#ddd"/><path d="M290 90h40v10h-40zm10-20h20v10h-20zm0-20h20v10h-20z"/><path d="M320 60h10v10h-10z"/><path d="M300 60h20v10h-20zm-20 10h10v10h-10zm50 0h10v10h-10z" fill="#ddd"/><path d="M290 100h40v10h-40zm-9.583-11.07h10v10h-10zm50 0h10v10h-10z" fill="#6a6a6a"/><path d="M270 130h80v10h-80z" fill="#bfbfbf"/><g fill="#a9a9a9"><path d="M290 70h10v10h-10zm30 0h10v10h-10z"/><path d="M330 60h10v10h-10zm-50-50h20v60h-20z"/></g><path d="M290 60h10v10h-10z"/>';
 
-    bytes constant badgeEnd = '</svg>';
+    bytes constant badgeText = '<svg><defs><style>@font-face {font-family: "C64";src: url(data:font/woff2;base64,d09GMgABAAAAAAVgAA0AAAAAFlgAAAUJAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP0ZGVE0cGhgGYACCWhEICpsEkngLgRwAATYCJAOBbgQgBYQZB4NcG8oQIxGmjE4A4K+TJ0Osoz0yHHiUIkeu8JnCS5uIH1YhT02PLEKlTJ7cqgZVF/5IPHyugb2f7G5SAkXAGljj+Hr2gK6WSeiyg3PnT0iMUWvb91CYfvgbZppEPEaGUigFhE0YA/WRi3POTSggSRRs2fnJ2yeodbZZS3aT5NqzSb5BVxKj6QrdHMN9vERqLCweg+Eon8X6+uo2ar9f/XKLyXSxG1KhEc0iIT+B+6KChSLq0RKhkhiaSi2eIqURK5lMKJlF3GQEMrhGtO1N/74I+LMvU4FPHryBP75yAIXRGA8SOiTkMiVu6qk6hE6HTsjqyBRDN6RUIxAAcGSFcSOOGBYNRZgFcRm9ArNQyMiYhgJHMQLTsDaBqkqYK2DYGmaxS7RG+9l+oAIy6IiBAERCAgAEmQ4A+qH8VNQgwLhXk+wdpp+fVqc3GE1mEeRfRojWAPsAd7Ee0kfyaYhVENsAkGjkSLKQBEUiwcczH8tj/BlZjPR4gciOhukMmG/KPkMmmc0uuWmX7vPFjZQCTKpgN+4z58WghjLNctLuw6qV7mzQFaQCKPjwbOxyRrRqww5jG54lgTpsLi3QH/iqrBWMoFWcTDY6QmOfrVTozOCl7F1evHrv9iAMzShgDTA/KkFTbR4xVisj1YDKNcsYXonRTZiFGJc9rPsYza7KqMo4bBzqMTNDzNQ1l47OjQ3lXd26BA7vUdPRU4hvGaPT8ywb8swsskD+EsahHh1dPpzz9uUMix8UdUNi2YAfuxDlzC5gWqqmqWsjrK2laIRALSvnilvXRppxJ1ePi1aV47jqbJ9eQbiH7Sbfs48oewX3cKofdLojr+rLGjEyjpQIm+VOY/cJG3eK5DX7sJzeFFVHRuvep641aKXl+UL1ma56eRh9ldT9GDGyPCdL85UU+LA+qiN/zrHa2uGPJ/TIKHqeop5Ha3NLFHFspGdLghd6AgUoRpTdTSHLT9TqwVwc6y3IIatqwjAogOmjn+dVGgrzNfQLN34S35USopfAxoYuaOwykhOkB/bkWAKk6ZxgRWuw1nh5KkHiENHImzSY6+xKj3sC9taEpeknfdBVklDE0Id1GE8pKXVxSjU70sggixzyKKCIEsqgIUGGAhUWWGFLs/+lOf7hhAtueOCFD34EEEQIYUQQRQxxeeK4k+TuSfDjjeRcRgoqARYybCjfYTh8p25MpS0FFKifGgFi/c9/+De//W3YHHrPm8V/gagSCIqGEaASAIAlFVCFihEovLkrylL0tWavtplBK5dEecQJAvsQDJQEPCwkjPVSABZp6jQUV6QJ92g22Z92ir9pb2psuXgwxBmM6EbgIOg0jHVOmnCHZot8aWesv2hvQ6SHDEbHcR+zONk52Fnw5gEqouXmbWfOihCt3GjBSZDNcI041cvN6uhiSYIn3xCptvwCJPFfW9GJn3gTPyQ0b5DPWEQWF9ibnk3Ug0fY62T/XvjFcNjc0t3O2AV+pe2oOU8P6pq7uFo7OiAcrJwc1XRbPuF9MLQ6HS3H99AeknDy8qjeoYVnZdgqzUADbejzGxb0fHZFF+g3HMXT9PSmrAx+wX0gIskGk2hcqtQarU5vMJrMFqvN7nC63B4vgAgTyrAcL4iSHCCk0nTDtGzH9XyECWUcL4iSrKiabpiW7bhe/bf/7yORMBGixBBLXKovbQhnIAgMgcLAwhGfTgAEgSFQGFg44tMZgCAwBAoDq3Y=);}.t {fill: #7c7b7e; stroke: none; font-size: 22px; font-family: \'C64\',monospace; text-anchor: end}</style></defs><text x="570px" y="210px" class="t">CIG FACTORY</text><text x="570px" y="232px" class="t">EMPLOYEE</text><text x="570px" y="254px" class="t">#';
+    bytes constant badgeEnd = '</text></svg></svg>';
 
     function _generateBadge(uint256 _tokenId, address _seed) internal view returns (bytes memory) {
         DynamicBufferLib.DynamicBuffer memory result;
-
-        string memory bars = barcode.draw(_tokenId, "40", "406", "c0c0c0", 64, 2);
+console.log("before barcode");
+        string memory bars = barcode.draw(_tokenId, "42069", "408", "c0c0c0", 61, 4);
+        console.log("about to pick", _seed);
         bytes32[] memory traits = identicons.pick(_seed, 0);
+        console.log("after pick");
         string memory punk = pblocks.svgFromKeys(traits, 60, 158, 240, 0);
         result.append(badgeStart, bytes(bars), bytes(punk));
-        result.append(badgeEnd);
+        result.append(badgeText, bytes(_intToString(_tokenId)), badgeEnd);
         return result.data;
     }
 
@@ -329,7 +332,7 @@ contract EmployeeIDCards {
      */
     function tokenURI(uint256 _tokenId) public view returns (string memory) {
         DynamicBufferLib.DynamicBuffer memory result;
-        require ( _tokenId < employeeHeight, "index out of range");
+        //require ( _tokenId < employeeHeight, "index out of range"); // todo put back in
         Card storage c = cards[_tokenId];
 
         bytes memory badge = _generateBadge(_tokenId, c.identiconSeed);
