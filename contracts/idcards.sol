@@ -10,7 +10,7 @@ import "hardhat/console.sol";
 /*
 
 If you hold Stogies or deposited in the CIG factory, you can continue to hold
-the ID, or else it will expire
+the Employee ID Card, or else it will expire.
 
 
 RULES
@@ -18,7 +18,7 @@ RULES
 1. Each address can mint an NFT once. With the exception that if their NFT
    expires, then if their expired NFT gets reclaimed, then they can mint again.
 
-2. The NFT can expire! If you do not have  a minimum amount of Stogies on the
+2. The NFT can expire! If you do not have a minimum amount of Stogies on the
    same address, or have not deposited a minimum amount of Stogies into the
    Cigarette Factory, then anybody can call the `expire` function.
 
@@ -32,14 +32,14 @@ RULES
 
 5. If the NFT has been expired in `PendingExpiry` for more than 90 days, then it
    can be reclaimed by anyone, simply by calling the `reclaim` function. The
-   caller must hold a min amount of Stogies to reclaim. Also, the address
+   caller must hold a minimum amount of Stogies to reclaim. Also, the address
    reclaiming must not have minted an NFT before.
 
 6. The supply of the NFT is unlimited. However, since Stogies are required
    for minting and holding the NFT, there is an economic scarcity to the NFT.
    This means it cannot be minted forever, since CIG and ETH is needed to
-   create Stogies, and both may have limited availability, if demand for these
-   is high.
+   create Stogies, and both may have limited availability, if demand for any of
+   these is high.
 
 7. Each unique address can only mint a max of 1 NFT. However, they can hold
    an unlimited number of NFTs, just not mint new NFTs.
@@ -48,17 +48,62 @@ RULES
    reclaim an expired NFT. The NFT being reclaimed must be in the PendingExpiry
    state for more than 90 days. One caveat: Once an NFT is reclaimed, the
    picture will change to reflect the address that is reclaiming it. Also, the
-   previous owner will be allowed to mint a new NFT again.
+   previous owner will be allowed to mint a new NFT again. The number if ID
+   will remain the same.
 
 9. Reactivate: NFTs that are in `PendingExpiry` state for less than 90 days
    can still be reactivated. Their owner would need to place a minimum
    amount of stogies on their address or stake them in the factory, and then
-   call the reactivate method. Any address can call this mathod on behalf of
+   call the reactivate method. Any address can call this method on behalf of
    any NFT id.
 
- 10. CEO can change the minimum Stogies required. 1% up or down, every 30 days.
-    With the limit that the change must be
+10. CEO can change the minimum Stogies required. 1% up or down, every 30 days.
+    With the limit that the result of the change must be not higher than 0.1%
+    of Stogies staked supply, and never less than 1 Stogie.
 
+11. The punk picture is chosen randomly based on the address that minted it.
+    There is also a special feature:
+    Addresses starting with 5 or more zeros get a rare type. The more 0's, the
+    rarer the type!
+
+    The list is like this:
+
+                zeros = name
+                5 = Alien 3
+                6 = Alienette 3
+                7 = Killer Bot
+                8 = Killer Botina
+                9 = Green Alien
+                10 = Green Alienette
+                11 = Alien 4
+                12 = Alienette 4
+                13 = Alien 5
+                14 = Alienette 5
+                15 = Alien 6
+                16 = Blue Ape
+                17 = Alienette 6
+
+     The more zeros, the harder it it is to get. It should be very difficult to
+     get the last few, but maybe impossible to get 16 and 17.
+
+     Some "back of the napkin" estimations if you have a GPU:
+
+                17 = 26,722 years
+                16 = 1,670 years
+                15 = 104 years
+                14 = 6.5 years
+                13 = 0.4 years
+                12 = 1.3 weeks
+                11 = 14 hours
+                10 = 0.9 hours
+
+12. Changing the punk picture: It is possible to change the punk picture by
+    transferring the punk to a fresh address that has never minted an ID before,
+    and then calling the `snapshot` method. This method can only be called once
+    per address.
+
+
+END 🚬
 
 */
 
@@ -95,10 +140,10 @@ contract EmployeeIDCards {
     mapping(address => uint256) private balances;   // counts of ownership
     mapping(address => mapping(uint256 => uint256)) private ownedCards; // track enumeration
     mapping(uint256 => Card) public cards;                              // all of the cards
-    uint256 employeeHeight;                                             // the next available employee id
+    uint256 public employeeHeight;                                      // the next available employee id
     mapping(address => mapping(address => bool)) private approvalAll;   // operator approvals
     bytes4 private constant RECEIVED = 0x150b7a02;  // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
-    mapping(address => uint64) public minters;      // keep track of addresses & when minted, address => timestamp
+    mapping(address => uint64) public minters;      // ensures each card has a unique identiconSeed value, address => timestamp
     address private deployer;
     uint public minSTOG = 10 ether;                 // minimum STOG required to mint
     uint64 public minSTOGUpdatedAt;                 // block number of last change
@@ -394,10 +439,28 @@ contract EmployeeIDCards {
             State.Active
         );
         c.state = State.Active;
+        c.identiconSeed = msg.sender;                           // change identicon to reclaiming address
+        minters[c.identiconSeed] = 0;                           // allow original minter user to mint again
         minters[msg.sender] = uint64(block.timestamp);
-        c.identiconSeed = msg.sender;                           // used for the identicon
         _transfer(address(this), msg.sender, _tokenId);
         c.lastEventAt = uint64(block.number);
+    }
+
+    /**
+    * @notice allows the holder of the NFT to change the identiconSeed used to
+    *    generate the picture on the id card. Holder must not be on the minters
+    *    list. Can only be called once per address. See the rules for more details.
+    *
+    * @param _tokenId the token id to change the picture for
+    */
+    function snapshot(uint256 _tokenId) external {
+        Card storage c = cards[_tokenId];
+        require(c.state == State.Active, "state must be Active");
+        require(c.owner == msg.sender, "you must be the owner");
+        require(minters[msg.sender] == 0, "id with this pic already minted");
+        minters[c.identiconSeed] = 0; // allow original minter user to mint again
+        c.identiconSeed = msg.sender;
+        minters[msg.sender] = uint64(block.number);
     }
 
 
@@ -420,8 +483,8 @@ contract EmployeeIDCards {
                 newMin = minSTOG - amt;
             }
             require(newMin > 1 ether, "min too small");
-            require(newMin < cig.stakedlpSupply() / 1000, "too big"); // must be less than 0.1% of staked supply
-            minSTOG = newMin;                                         // write
+            require(newMin <= cig.stakedlpSupply() / 1000, "too big"); // must be less than 0.1% of staked supply
+            minSTOG = newMin;                                          // write
             emit MinSTOGChanged(minSTOG, amt);
         }}
 
@@ -615,46 +678,45 @@ contract EmployeeIDCards {
     }
 
     function _transfer(address _from, address _to, uint256 _tokenId) internal {
-        require(_from != _to, "not allowed");
+        require(_from != _to, "cannot send to self");
         require(_tokenId < employeeHeight, "index out of range");
         require(_to != address(0), "_to is zero");
-        address o = cards[_tokenId].owner;
-        require(o == _from, "_from must be owner"); // also ensures that the card exists
+        require(cards[_tokenId].state == State.Active, "state must be Active");
+        address o = cards[_tokenId].owner;                  // assuming o can never be address(0)
+        require(o == _from, "_from must be owner");         // also ensures that the card exists
         address a = cards[_tokenId].approval;
         require(
-            msg.sender == address(stogie) ||
-            o == address(this) ||
-            o == msg.sender ||
-            a == msg.sender ||
-            (approvalAll[o][msg.sender]), "not permitted"); // check permissions
+            msg.sender == address(stogie) ||                // is executed by the Stogies contract
+            o == address(this) ||                           // or is executed by this contract
+            o == msg.sender ||                              // or executed by owner
+            a == msg.sender ||                              // or owner approved the sender
+            (approvalAll[o][msg.sender]), "not permitted"); // or owner approved the operator, who's the sender
         unchecked{balances[_to]++;}
         balances[_from]--;
-        cards[_tokenId].owner = _to; // set new owner
+        cards[_tokenId].owner = _to;                        // set new owner
         removeEnumeration(_from, _tokenId);
         addEnumeration(_to, _tokenId);
         emit Transfer(_from, _to, _tokenId);
         if (a != address(0)) {
-            cards[_tokenId].approval = address(0); // clear previous approval
+            cards[_tokenId].approval = address(0);          // clear previous approval
             emit Approval(msg.sender, address(0), _tokenId);
         }
     }
 
     /**
-    * @notice The only way to transfer ownership is via the buyNFT function
-    * @dev Approvals are not supported by this contract
+    * @dev approve can be set by the owner or operator
     * @param _to The new approved NFT controller
     * @param _tokenId The NFT to approve
     */
     function approve(address _to, uint256 _tokenId) external {
         require(_tokenId < employeeHeight, "index out of range");
         address o = cards[_tokenId].owner;
-        require(o == msg.sender || isApprovedForAll(o, msg.sender), "action not token permitted");
+        require(o == msg.sender || isApprovedForAll(o, msg.sender), "action on token not permitted");
         cards[_tokenId].approval = _to;
         emit Approval(msg.sender, _to, _tokenId);
     }
     /**
-    * @notice The only way to transfer ownership is via the buyNFT function
-    * @dev Approvals are not supported by this contract
+    * @dev approve can be set by the owner or operator
     * @param _operator Address to add to the set of authorized operators
     * @param _approved True if the operator is approved, false to revoke approval
     */
@@ -664,7 +726,7 @@ contract EmployeeIDCards {
     }
 
     /**
-    * @notice The approvals feature is not supported by this contract
+    * @notice Get the approved address for a single NFT
     * @dev Throws if `_tokenId` is not a valid NFT.
     * @param _tokenId The NFT to find the approved address for
     * @return Will always return address(this)
@@ -674,7 +736,6 @@ contract EmployeeIDCards {
     }
 
     /**
-    * @notice The approvals feature is not supported by this contract
     * @param _owner The address that owns the NFTs
     * @param _operator The address that acts on behalf of the owner
     * @return Will always return false
