@@ -12,11 +12,15 @@ import "hardhat/console.sol";
 If you hold Stogies or deposited in the CIG factory, you can continue to hold
 the Employee ID Card, or else it will expire.
 
+- change so that it doesn't change pic after reclaim.
+-
 
 RULES
 
-1. Each address can mint an NFT once. With the exception that if their NFT
-   expires, then if their expired NFT gets reclaimed, then they can mint again.
+1. Each address can mint an NFT once. With the exceptions: (a) if their NFT
+   expired, once their expired NFT gets reclaimed, then they can mint again.
+   (b) The NFT gets transferred to a fresh address and the "snapshot" function
+   is executed to change the picture.
 
 2. The NFT can expire! If you do not have a minimum amount of Stogies on the
    same address, or have not deposited a minimum amount of Stogies into the
@@ -26,14 +30,14 @@ RULES
    met. If an expiry initiation transaction is successful, the token will be
    placed in the `PendingExpiry` state.
 
-4. `PendingExpiry` state lasts 90 days. During this time, the owner can still
-    put the required amount of Stogies on their address, and call the `
+4. `PendingExpiry` state lasts 90 days. During this time, anybody can still
+    put the required amount of Stogies on the address, and then call the `
     reactivate` function. This will put the NFT back into Active state.
 
-5. If the NFT has been expired in `PendingExpiry` for more than 90 days, then it
-   can be reclaimed by anyone, simply by calling the `reclaim` function. The
-   caller must hold a minimum amount of Stogies to reclaim. Also, the address
-   reclaiming must not have minted an NFT before.
+5. Reclaiming: If the NFT has been expired in `PendingExpiry` for more than 90
+    days, then it can be reclaimed by anyone, simply by calling the `reclaim`
+   function. The caller must hold a minimum amount of Stogies to reclaim. Also,
+   the address reclaiming must not have minted an NFT before.
 
 6. The supply of the NFT is unlimited. However, since Stogies are required
    for minting and holding the NFT, there is an economic scarcity to the NFT.
@@ -136,7 +140,7 @@ contract EmployeeIDCards {
     IPunkIdenticons private immutable identicons;   // 0xc55C7913BE9E9748FF10a4A7af86A5Af25C46047;
     IPunkBlocks private immutable pblocks;          // 0xe91eb909203c8c8cad61f86fc44edee9023bda4d;
     IBarcode private immutable barcode;             // 0x4872BC4a6B29E8141868C3Fe0d4aeE70E9eA6735
-    mapping(address => uint256) public cardsIndex;  // address to card id
+    mapping(address => uint256) public cardsIndex;  // address => card id
     mapping(address => uint256) private balances;   // counts of ownership
     mapping(address => mapping(uint256 => uint256)) private ownedCards; // track enumeration
     mapping(uint256 => Card) public cards;                              // all of the cards
@@ -147,8 +151,8 @@ contract EmployeeIDCards {
     address private deployer;
     uint public minSTOG = 10 ether;                 // minimum STOG required to mint
     uint64 public minSTOGUpdatedAt;                 // block number of last change
-    uint16 private immutable EPOCH;                 // 1 day (7200 blocks)
-    uint16 private immutable DURATION;              // EPOCHS to elapse for expiration (90)
+    uint16 private immutable DURATION_MIN_CHANGE;   // 30 days, or 216000 blocks (7200 * 30)
+    uint16 private immutable DURATION_STATE_CHANGE; // 90 days, or 648000 blocks (7200 * 90)
     event StateChanged(uint256 indexed id, address caller, State s0, State s1);
     event MinSTOGChanged(uint256 minSTOG, uint256 amt);
 
@@ -162,8 +166,8 @@ contract EmployeeIDCards {
     ) {
         deployer = msg.sender;
         cig = ICigToken(_cig);
-        EPOCH = _epoch;
-        DURATION = _duration;
+        DURATION_MIN_CHANGE = _epoch;
+        DURATION_STATE_CHANGE = _duration;
         identicons = IPunkIdenticons(_identicons);  // punk picking function for the punk picture
         pblocks = IPunkBlocks(_pblocks);            // stores the images of the punk traits
         barcode = IBarcode(_barcode);               // onchain barcode generator
@@ -328,16 +332,19 @@ contract EmployeeIDCards {
         _issueID(_to);
     }
 
+    /**
+    * @dev issueID mints a new NFT. Caller needs to be holding enough STOG
+    */
     function issueID() external {
+        uint256 min = minSTOG * (balanceOf(msg.sender)+1);
         IStogie.UserInfo memory i = stogie.farmers(msg.sender);
         require(
-            i.deposit > minSTOG
-            || balanceOf(msg.sender) > minSTOG, "insert more STOG");
+            i.deposit + stogie.balanceOf(msg.sender) >= min, "hold more STOG");
         _issueID(msg.sender);
     }
 
     function _issueID(address _to) internal {
-        require(minters[_to] == 0, "_to has minted a card already");
+        require(minters[_to] == 0, "_to has already minted this pic");
         uint256 id = employeeHeight;
         unchecked{balances[_to]++;}
         cardsIndex[_to] = id;
@@ -368,7 +375,8 @@ contract EmployeeIDCards {
         State s = c.state;
         require(s == State.Active, "invalid state");
         IStogie.UserInfo memory i = stogie.farmers(c.owner);
-        require ((i.deposit < minSTOG) && (balanceOf(c.owner) < minSTOG), "rule not satisfied");
+        uint256 min = minSTOG * balanceOf(c.owner); // // assuming owner has at least 1
+        require ((i.deposit + stogie.balanceOf(msg.sender) < min), "rule not satisfied");
         c.state = State.PendingExpiry;
         c.lastEventAt = uint64(block.number);
         emit StateChanged(
@@ -383,19 +391,21 @@ contract EmployeeIDCards {
     /**
     * @dev reactivate a token. Must be in State.PendingExpiry state.
     *    At least `minSTOG` of Stogies are needed to reactivate.
+    *    Can be called by anyone.
     */
     function reactivate(uint256 _tokenId) external returns (State) {
         Card storage c = cards[_tokenId];
         State s = c.state;
         require(s == State.PendingExpiry, "invalid state");
-        IStogie.UserInfo memory i = stogie.farmers(c.owner);
+        address o = c.owner;
+        uint256 min = minSTOG * balanceOf(o);    // assuming owner has at least 1
+        IStogie.UserInfo memory i = stogie.farmers(o);
         require(
-            i.deposit > minSTOG
-            || balanceOf(c.owner) > minSTOG,
-            "insert more STOG"); // must have Stogies or staking Stogies
+            i.deposit + stogie.balanceOf(o) >= min,
+            "insert more STOG");                       // must have Stogies or staking Stogies
         require(
-            c.lastEventAt > block.number - EPOCH * DURATION,
-            "time is up");      // expiration must under the deadline
+            c.lastEventAt > block.number - DURATION_STATE_CHANGE,
+            "time is up");                             // expiration must under the deadline
         c.state = State.Active;
         c.lastEventAt = uint64(block.number);
         emit StateChanged(
@@ -417,14 +427,15 @@ contract EmployeeIDCards {
         require(minters[msg.sender] == 0,
             "_to has minted a card already");                  // cannot mint more than one
         Card storage c = cards[_tokenId];
+        require(c.owner != msg.sender, "cannot reclaim by owner");
         require(c.state == State.PendingExpiry, "must be PendingExpiry");
         require(
-            c.lastEventAt < block.number - EPOCH * DURATION,
+            c.lastEventAt < block.number - DURATION_STATE_CHANGE,
             "time is not up");                                  // must be over the deadline
+        uint256 min = minSTOG * (balanceOf(msg.sender)+1);
         IStogie.UserInfo memory i = stogie.farmers(msg.sender); // check caller's deposit
         require(
-            i.deposit > minSTOG
-            || balanceOf(msg.sender) > minSTOG,
+            i.deposit + stogie.balanceOf(msg.sender) >= minSTOG,
             "insert more STOG");                                // caller  must have Stogies or staking Stogies
         emit StateChanged(
             _tokenId,
@@ -439,9 +450,11 @@ contract EmployeeIDCards {
             State.Active
         );
         c.state = State.Active;
-        c.identiconSeed = msg.sender;                           // change identicon to reclaiming address
-        minters[c.identiconSeed] = 0;                           // allow original minter user to mint again
-        minters[msg.sender] = uint64(block.timestamp);
+        if (c.owner != msg.sender) {                            // if reclaimer is not the owner then
+            c.identiconSeed = msg.sender;                       // change the identicon to reclaiming address
+            minters[c.identiconSeed] = 0;                       // allow original owner to mint again
+            minters[msg.sender] = uint64(block.timestamp);
+        }
         _transfer(address(this), msg.sender, _tokenId);
         c.lastEventAt = uint64(block.number);
     }
@@ -457,9 +470,11 @@ contract EmployeeIDCards {
         Card storage c = cards[_tokenId];
         require(c.state == State.Active, "state must be Active");
         require(c.owner == msg.sender, "you must be the owner");
-        require(minters[msg.sender] == 0, "id with this pic already minted");
-        minters[c.identiconSeed] = 0; // allow original minter user to mint again
-        c.identiconSeed = msg.sender;
+        require(
+            minters[msg.sender] == 0,
+            "id with this pic already minted"); // must be a fresh address
+        minters[c.identiconSeed] = 0;           // allow original minter user to mint again
+        c.identiconSeed = msg.sender;           // change to a new picture, destroying the old
         minters[msg.sender] = uint64(block.number);
     }
 
@@ -473,7 +488,7 @@ contract EmployeeIDCards {
     function minSTOGChange(bool _up) external {unchecked {
             require(msg.sender == cig.The_CEO(), "need to be CEO");
             require(block.number > cig.taxBurnBlock() - 20, "need to be CEO longer");
-            require(block.number > minSTOGUpdatedAt + (EPOCH*30), "wait more blocks");
+            require(block.number > minSTOGUpdatedAt + DURATION_MIN_CHANGE, "wait more blocks");
             minSTOGUpdatedAt = uint64(block.number);
             uint256 amt = minSTOG / 1e3 * 10;                         // %1
             uint256 newMin;
@@ -483,7 +498,7 @@ contract EmployeeIDCards {
                 newMin = minSTOG - amt;
             }
             require(newMin > 1 ether, "min too small");
-            require(newMin <= cig.stakedlpSupply() / 1000, "too big"); // must be less than 0.1% of staked supply
+            require(newMin <= cig.stakedlpSupply() / 10000 * 5, "too big"); // must be less than 0.005% of staked supply
             minSTOG = newMin;                                          // write
             emit MinSTOGChanged(minSTOG, amt);
         }}
@@ -1118,6 +1133,7 @@ interface IStogie {
     }
 
     function farmers(address _user) external view returns (UserInfo memory);
+    function balanceOf(address account) external view returns (uint256);
 }
 
 /**
