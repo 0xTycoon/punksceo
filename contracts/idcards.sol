@@ -62,7 +62,7 @@ RULES
    any NFT id.
 
 10. CEO can change the minimum Stogies required. 1% up or down, every 30 days.
-    With the limit that the result of the change must be not higher than 0.1%
+    With the limit that the result of the change must be not higher than 0.005%
     of Stogies staked supply, and never less than 1 Stogie.
 
 11. The punk picture is chosen randomly based on the address that minted it.
@@ -123,6 +123,7 @@ contract EmployeeIDCards {
     struct Card {
         address identiconSeed;   // address of identicon (the minter)
         address owner;           // address of current owner
+        uint256 minStog;
         address approval;        // address approved for
         uint64 lastEventAt;      // block id of when last state changed
         uint64 index;            // sequential index in the wallet
@@ -140,9 +141,11 @@ contract EmployeeIDCards {
     IPunkIdenticons private immutable identicons;   // 0xc55C7913BE9E9748FF10a4A7af86A5Af25C46047;
     IPunkBlocks private immutable pblocks;          // 0xe91eb909203c8c8cad61f86fc44edee9023bda4d;
     IBarcode private immutable barcode;             // 0x4872BC4a6B29E8141868C3Fe0d4aeE70E9eA6735
-    mapping(address => uint256) public cardsIndex;  // address => card id
+
     mapping(address => uint256) private balances;   // counts of ownership
     mapping(address => mapping(uint256 => uint256)) private ownedCards; // track enumeration
+    mapping(address => uint256) public avgMinSTOG;                      // average min Stogies required
+    mapping(uint256 => address) public expiredOwners;
     mapping(uint256 => Card) public cards;                              // all of the cards
     uint256 public employeeHeight;                                      // the next available employee id
     mapping(address => mapping(address => bool)) private approvalAll;   // operator approvals
@@ -153,8 +156,11 @@ contract EmployeeIDCards {
     uint64 public minSTOGUpdatedAt;                 // block number of last change
     uint16 private immutable DURATION_MIN_CHANGE;   // 30 days, or 216000 blocks (7200 * 30)
     uint16 private immutable DURATION_STATE_CHANGE; // 90 days, or 648000 blocks (7200 * 90)
-    event StateChanged(uint256 indexed id, address caller, State s0, State s1);
+    uint64 private constant SCALE = 1e10;
+    address private constant EXPIRED = 0x0000000000000000000000000000000000000E0F; // expired NFTs go here
+    event StateChanged(uint256 indexed id, address indexed caller, State s0, State s1);
     event MinSTOGChanged(uint256 minSTOG, uint256 amt);
+    event Snapshot(uint256 indexed id, address indexed caller);
 
     constructor(
         address _cig,
@@ -314,6 +320,27 @@ contract EmployeeIDCards {
     }
 
     /**
+    * getStats gets the information about the current user
+    */
+    function getStats(address _holder) view external returns(uint256[] memory, uint256[] memory, uint256[] memory) {
+        uint[] memory ret = new uint[](23);
+        uint[] memory inventory = new uint[](20);
+        uint[] memory expired = new uint[](40);
+        ret[0] = minSTOG;
+        ret[1] = minters[_holder];
+        ret[2] = avgMinSTOG[_holder];
+        ret[3] = balanceOf(_holder);
+        ret[4] = balanceOf(EXPIRED);
+        for (uint i = 0; i < 20; i++) {
+            inventory[i] = tokenOfOwnerByIndex(_holder, i);
+        }
+        for (uint i = 0; i < 40; i++) {
+            expired[i] = tokenOfOwnerByIndex(_holder, i);
+        }
+        return (ret, inventory, expired);
+    }
+
+    /**
     * @dev setStogie can only be called once
     */
     function setStogie(address _s) public {
@@ -328,55 +355,60 @@ contract EmployeeIDCards {
     *   not called form a contract
     */
     function issueID(address _to) external {
-        require(msg.sender == address(stogie), "you're not stogie");
-        _issueID(_to);
+        uint256 min = minSTOG;
+        uint256 id = _issueID(_to, min);
+        IStogie.UserInfo memory i = stogie.farmers(_to);
+        (uint256 newAvg, uint256 newBal) = _transfer(address(0), _to, id, min);
+        require(
+            i.deposit >= newAvg * newBal, "need to stake more STOG");
     }
 
     /**
     * @dev issueID mints a new NFT. Caller needs to be holding enough STOG
     */
     function issueID() external {
-        uint256 min = minSTOG * (balanceOf(msg.sender)+1);
+        uint256 min = minSTOG;
+        uint256 id = _issueID(msg.sender, min);
         IStogie.UserInfo memory i = stogie.farmers(msg.sender);
+        (uint256 newAvg, uint256 newBal) = _transfer(address(0), msg.sender, id, min);
         require(
-            i.deposit + stogie.balanceOf(msg.sender) >= min, "hold more STOG");
-        _issueID(msg.sender);
+            i.deposit >= newAvg * newBal, "need to stake more STOG");
     }
 
-    function _issueID(address _to) internal {
+    function _issueID(address _to, uint256 min) internal returns(uint256 id) {
         require(minters[_to] == 0, "_to has already minted this pic");
-        uint256 id = employeeHeight;
-        unchecked{balances[_to]++;}
-        cardsIndex[_to] = id;
+        id = employeeHeight;
         Card storage c = cards[id];
         c.owner = _to;
         c.state = State.Active;
         c.lastEventAt = uint64(block.number);
+        c.minStog = min;                    // record the minSTOG
+        c.identiconSeed = _to;                  // save seed, used for the identicon
         emit StateChanged(
             id,
             msg.sender,
             State.Uninitialized,
             State.Active
         );
-        emit Transfer(address(0), _to, id);     // mint
-        unchecked {id++;}
-        employeeHeight = id;
+        unchecked {employeeHeight = id++;}
         minters[_to] = uint64(block.timestamp); // mark address as a minter
-        c.identiconSeed = _to;                  // save seed, used for the identicon
     }
 
     /**
     * @dev expire a token.
     *   Initiate s.PendingExpiry if account does not possess minimal stake.
+    *   Transfers the NFT to EXPIRED account.
     * @param _tokenId the token to expire
     */
     function expire(uint256 _tokenId) external returns (State) {
         Card storage c = cards[_tokenId];
         State s = c.state;
         require(s == State.Active, "invalid state");
-        IStogie.UserInfo memory i = stogie.farmers(c.owner);
-        uint256 min = minSTOG * balanceOf(c.owner); // // assuming owner has at least 1
-        require ((i.deposit + stogie.balanceOf(msg.sender) < min), "rule not satisfied");
+        address o = c.owner;
+        uint256 bal = balanceOf(o);
+        IStogie.UserInfo memory i = stogie.farmers(o);
+        uint256 min = avgMinSTOG[c.owner] * bal; // assuming owner has at least 1
+        require (i.deposit < min, "rule not satisfied");  // deposit below the min?
         c.state = State.PendingExpiry;
         c.lastEventAt = uint64(block.number);
         emit StateChanged(
@@ -385,27 +417,29 @@ contract EmployeeIDCards {
             s,
             State.PendingExpiry
         );
+        expiredOwners[_tokenId] = o;
+        _transfer(c.owner, EXPIRED, _tokenId, c.minStog);
         return State.PendingExpiry;
     }
 
     /**
     * @dev reactivate a token. Must be in State.PendingExpiry state.
-    *    At least `minSTOG` of Stogies are needed to reactivate.
-    *    Can be called by anyone.
+    *    At least a minimum of Stogies are needed to reactivate.
+    *    Can be called by expired owner.
     */
     function reactivate(uint256 _tokenId) external returns (State) {
         Card storage c = cards[_tokenId];
         State s = c.state;
         require(s == State.PendingExpiry, "invalid state");
-        address o = c.owner;
-        uint256 min = minSTOG * balanceOf(o);    // assuming owner has at least 1
-        IStogie.UserInfo memory i = stogie.farmers(o);
-        require(
-            i.deposit + stogie.balanceOf(o) >= min,
-            "insert more STOG");                       // must have Stogies or staking Stogies
+        address o = expiredOwners[_tokenId];
+        require(o == msg.sender, "not your token");
         require(
             c.lastEventAt > block.number - DURATION_STATE_CHANGE,
-            "time is up");                             // expiration must under the deadline
+            "time is up");                                     // expiration must be under the deadline
+        (uint256 newAvg, uint256 newBal) = _transfer(EXPIRED, o, _tokenId, minSTOG); // return token to owner
+        IStogie.UserInfo memory i = stogie.farmers(o);
+        require(
+            i.deposit >= newAvg * newBal, "insert more STOG"); // must have Stogies or staking Stogies
         c.state = State.Active;
         c.lastEventAt = uint64(block.number);
         emit StateChanged(
@@ -414,28 +448,33 @@ contract EmployeeIDCards {
             State.PendingExpiry,
             State.Active
         );
+        expiredOwners[_tokenId] = address(0);
+        c.minStog = minSTOG;                                    // reset to current value
         return State.Active;
     }
+
+
 
     /**
     * @dev respawn an expired token. Can only be respawned by an address that
     *    hasn't minted. This is because respawn changes the badge picture.
-    *    in other words, the c.identiconSeed is updated.
+    *    in other words, the c.identiconSeed is updated. The minimum Stogies
+    *    value of the NFT will be reset to the current minSTOG value.
     * @param _tokenId the token id to respawn
     */
     function reclaim(uint256 _tokenId) external {
         require(minters[msg.sender] == 0,
             "_to has minted a card already");                  // cannot mint more than one
         Card storage c = cards[_tokenId];
-        require(c.owner != msg.sender, "cannot reclaim by owner");
         require(c.state == State.PendingExpiry, "must be PendingExpiry");
         require(
             c.lastEventAt < block.number - DURATION_STATE_CHANGE,
             "time is not up");                                  // must be over the deadline
-        uint256 min = minSTOG * (balanceOf(msg.sender)+1);
+        c.minStog = minSTOG;                                    // reset minStog
+        (uint256 newAvg, uint256 newBal) = _transfer(address(this), msg.sender, _tokenId, minSTOG);
         IStogie.UserInfo memory i = stogie.farmers(msg.sender); // check caller's deposit
         require(
-            i.deposit + stogie.balanceOf(msg.sender) >= minSTOG,
+            i.deposit >= newAvg * newBal,
             "insert more STOG");                                // caller  must have Stogies or staking Stogies
         emit StateChanged(
             _tokenId,
@@ -449,13 +488,11 @@ contract EmployeeIDCards {
             State.Expired,
             State.Active
         );
+
         c.state = State.Active;
-        if (c.owner != msg.sender) {                            // if reclaimer is not the owner then
-            c.identiconSeed = msg.sender;                       // change the identicon to reclaiming address
-            minters[c.identiconSeed] = 0;                       // allow original owner to mint again
-            minters[msg.sender] = uint64(block.timestamp);
-        }
-        _transfer(address(this), msg.sender, _tokenId);
+        c.identiconSeed = msg.sender;                       // change the identicon to reclaiming address
+        minters[c.identiconSeed] = 0;                       // allow original owner to mint again
+        minters[msg.sender] = uint64(block.timestamp);
         c.lastEventAt = uint64(block.number);
     }
 
@@ -476,13 +513,15 @@ contract EmployeeIDCards {
         minters[c.identiconSeed] = 0;           // allow original minter user to mint again
         c.identiconSeed = msg.sender;           // change to a new picture, destroying the old
         minters[msg.sender] = uint64(block.number);
+        emit Snapshot(_tokenId, msg.sender);
     }
+
 
 
     /**
     * minSTOGChange allows the CEO of CryptoPunks to change the minSTOG
-    *    either increasing or decreasing by 1%. Cannot be below 1 STOG, or
-    *    above 0.1% of staked STOG supply.
+    *    either increasing or decreasing by %2.5. Cannot be below 1 STOG, or
+    *    above 0.005% of staked SLP supply.
     * @param _up increase by 1% if true, decrease otherwise.
     */
     function minSTOGChange(bool _up) external {unchecked {
@@ -490,16 +529,16 @@ contract EmployeeIDCards {
             require(block.number > cig.taxBurnBlock() - 20, "need to be CEO longer");
             require(block.number > minSTOGUpdatedAt + DURATION_MIN_CHANGE, "wait more blocks");
             minSTOGUpdatedAt = uint64(block.number);
-            uint256 amt = minSTOG / 1e3 * 10;                         // %1
+            uint256 amt = minSTOG / 10000 * 250;                        // %2.5
             uint256 newMin;
             if (_up) {
                 newMin = minSTOG + amt;
+                require(newMin <= cig.stakedlpSupply() / 100000 * 5, "too big");// must be less than 0.005% of staked supply
             } else {
                 newMin = minSTOG - amt;
+                require(newMin > 1 ether, "min too small");
             }
-            require(newMin > 1 ether, "min too small");
-            require(newMin <= cig.stakedlpSupply() / 10000 * 5, "too big"); // must be less than 0.005% of staked supply
-            minSTOG = newMin;                                          // write
+            minSTOG = newMin;                                         // write
             emit MinSTOGChanged(minSTOG, amt);
         }}
 
@@ -557,7 +596,7 @@ contract EmployeeIDCards {
     /// @param _index A counter less than `balanceOf(_owner)`
     /// @return The token identifier for the `_index`th NFT assigned to `_owner`,
     ///   (sort order not specified)
-    function tokenOfOwnerByIndex(address _owner, uint256 _index) external view returns (uint256) {
+    function tokenOfOwnerByIndex(address _owner, uint256 _index) public view returns (uint256) {
         require(_index <= balances[_owner], "index out of range");
         require(_owner != address(0), "invalid _owner");
         return ownedCards[_owner][_index];
@@ -580,7 +619,6 @@ contract EmployeeIDCards {
         return "EMPLOYEE";
     }
 
-
     bytes constant badgeStart = '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500" shape-rendering="crispEdges"><defs><style>.g2,.g4,.g5{stroke:#000;fill:#a8a9a8;stroke-width:0}.g4,.g5{fill:#dcdddc}.g5{fill:#696a69}.g7{fill:#dedede}.g9{fill:#a0a0a0}.g10{fill:#7c7b7e}.w{fill:#fff}.boxb{fill:#38535e}</style></defs><path d="M30 100h230v10H30zM20 110h10v10H20zM10 120h10v360H10zM20 480h10v10H20zM30 490h540v10H30zM570 480h10v10h-10zM580 120h10v360h-10zM570 110h10v10h-10zM340 100h230v10H340z"/><path d="M320 120h260v340H320z" style="fill:#ebebeb"/><path d="M20 130h300v340H20zM20 120h550v10H20z" class="g7"/><path d="M20 120h10v10H20zM20 460h10v10H20zM30 110h540v10H30zM570 120h10v10h-10z" class="w"/><path d="M570 130h10v10h-10zM570 450h10v10h-10z" class="g7"/><path d="M570 460h10v10h-10z" class="w"/><path d="M320 460h250v10H320z" class="g4"/><path d="M30 470h540v10H30z" class="w"/><path d="M30 480h540v10H30zM20 470h10v10H20zM570 470h10v10h-10z" class="g9"/><path d="M330 0h10v130h-10z"/><path d="M260 0h80v10h-80zM260 120h80v10h-80z"/><path d="M260 0h10v130h-10z"/><path d="M270 10h20v60h-20z" class="g2"/><path d="M290 10h40v60h-40z" style="stroke:#000;fill:#ccc;stroke-width:0"/><path d="M270 70h60v20h-60z" class="g4"/><path d="M290 50h20v10h-20zM290 70h20v10h-20zM280 60h10v10h-10zM310 60h10v10h-10zM280 90h40v10h-40z"/><path d="M280 70h10v10h-10zM310 70h10v10h-10zM320 60h10v10h-10z" class="g2"/><path d="M270 80h10v10h-10zM320 80h10v10h-10z"/><path d="M270 100h60v20h-60z" style="stroke:#000;fill:#7a7a7a;stroke-width:0"/><path d="M280 100h40v10h-40zM270 90h10v10h-10zM320 90h10v10h-10z" class="g5"/><path d="M260 130h80v10h-80z" style="fill:#bebfbe;stroke-width:0"/><path d="M40 160h240v250H40z" style="stroke:#38535e;fill:#598495;stroke-width:0;stroke-alignment:inner"/><path d="M40 160h240v10H40z" class="boxb"/><path d="M40 160h10v250H40z" class="boxb"/><path d="M40 400h240v10H40z" class="boxb"/><path d="M270 160h10v250h-10z" class="boxb"/><path d="M310 380h240v20H310zM310 340h60v20h-60zM380 340h60v20h-60zM450 340h30v20h-30zM490 340h20v20h-20zM520 340h30v20h-30z" class="g10"/>';
 
     bytes constant badgeText = '<svg><defs><style>@font-face {font-family: "C64";src: url(data:font/woff2;base64,d09GMgABAAAAAAVgAA0AAAAAFlgAAAUJAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP0ZGVE0cGhgGYACCWhEICpsEkngLgRwAATYCJAOBbgQgBYQZB4NcG8oQIxGmjE4A4K+TJ0Osoz0yHHiUIkeu8JnCS5uIH1YhT02PLEKlTJ7cqgZVF/5IPHyugb2f7G5SAkXAGljj+Hr2gK6WSeiyg3PnT0iMUWvb91CYfvgbZppEPEaGUigFhE0YA/WRi3POTSggSRRs2fnJ2yeodbZZS3aT5NqzSb5BVxKj6QrdHMN9vERqLCweg+Eon8X6+uo2ar9f/XKLyXSxG1KhEc0iIT+B+6KChSLq0RKhkhiaSi2eIqURK5lMKJlF3GQEMrhGtO1N/74I+LMvU4FPHryBP75yAIXRGA8SOiTkMiVu6qk6hE6HTsjqyBRDN6RUIxAAcGSFcSOOGBYNRZgFcRm9ArNQyMiYhgJHMQLTsDaBqkqYK2DYGmaxS7RG+9l+oAIy6IiBAERCAgAEmQ4A+qH8VNQgwLhXk+wdpp+fVqc3GE1mEeRfRojWAPsAd7Ee0kfyaYhVENsAkGjkSLKQBEUiwcczH8tj/BlZjPR4gciOhukMmG/KPkMmmc0uuWmX7vPFjZQCTKpgN+4z58WghjLNctLuw6qV7mzQFaQCKPjwbOxyRrRqww5jG54lgTpsLi3QH/iqrBWMoFWcTDY6QmOfrVTozOCl7F1evHrv9iAMzShgDTA/KkFTbR4xVisj1YDKNcsYXonRTZiFGJc9rPsYza7KqMo4bBzqMTNDzNQ1l47OjQ3lXd26BA7vUdPRU4hvGaPT8ywb8swsskD+EsahHh1dPpzz9uUMix8UdUNi2YAfuxDlzC5gWqqmqWsjrK2laIRALSvnilvXRppxJ1ePi1aV47jqbJ9eQbiH7Sbfs48oewX3cKofdLojr+rLGjEyjpQIm+VOY/cJG3eK5DX7sJzeFFVHRuvep641aKXl+UL1ma56eRh9ldT9GDGyPCdL85UU+LA+qiN/zrHa2uGPJ/TIKHqeop5Ha3NLFHFspGdLghd6AgUoRpTdTSHLT9TqwVwc6y3IIatqwjAogOmjn+dVGgrzNfQLN34S35USopfAxoYuaOwykhOkB/bkWAKk6ZxgRWuw1nh5KkHiENHImzSY6+xKj3sC9taEpeknfdBVklDE0Id1GE8pKXVxSjU70sggixzyKKCIEsqgIUGGAhUWWGFLs/+lOf7hhAtueOCFD34EEEQIYUQQRQxxeeK4k+TuSfDjjeRcRgoqARYybCjfYTh8p25MpS0FFKifGgFi/c9/+De//W3YHHrPm8V/gagSCIqGEaASAIAlFVCFihEovLkrylL0tWavtplBK5dEecQJAvsQDJQEPCwkjPVSABZp6jQUV6QJ92g22Z92ir9pb2psuXgwxBmM6EbgIOg0jHVOmnCHZot8aWesv2hvQ6SHDEbHcR+zONk52Fnw5gEqouXmbWfOihCt3GjBSZDNcI041cvN6uhiSYIn3xCptvwCJPFfW9GJn3gTPyQ0b5DPWEQWF9ibnk3Ug0fY62T/XvjFcNjc0t3O2AV+pe2oOU8P6pq7uFo7OiAcrJwc1XRbPuF9MLQ6HS3H99AeknDy8qjeoYVnZdgqzUADbejzGxb0fHZFF+g3HMXT9PSmrAx+wX0gIskGk2hcqtQarU5vMJrMFqvN7nC63B4vgAgTyrAcL4iSHCCk0nTDtGzH9XyECWUcL4iSrKiabpiW7bhe/bf/7yORMBGixBBLXKovbQhnIAgMgcLAwhGfTgAEgSFQGFg44tMZgCAwBAoDq3Y=);}.t {fill: #ff04b4; stroke: none; font-size: 26px; font-family: \'C64\',monospace; text-anchor: end}</style></defs><text x="550px" y="190px" class="t">CIG FACTORY</text><text x="550px" y="232px" class="t">EMPLOYEE</text><text x="550px" y="274px" class="t">#';
@@ -589,15 +627,11 @@ contract EmployeeIDCards {
     function _generateBadge(uint256 _tokenId, address _seed) internal view
     returns (bytes memory, bytes32[] memory traits) {
         DynamicBufferLib.DynamicBuffer memory result;
-        DynamicBufferLib.DynamicBuffer memory attys;
-        string memory bars = barcode.draw(42069, "40", "408", "ebebeb", 52, 6);
+        string memory bars = barcode.draw(_tokenId, "40", "408", "ebebeb", 52, 6);
         traits = identicons.pick(_seed, 0);
-        for (uint256 i = 0; i < traits.length; i++) {
-            Attribute memory t = atts[traits[i]];
-        }
         string memory punk = pblocks.svgFromKeys(traits, 40, 160, 240, 0);
         result.append(badgeStart, bytes(bars), bytes(punk));
-        result.append(badgeText, bytes(_intToString(42069)), badgeEnd);
+        result.append(badgeText, bytes(_intToString(_tokenId)), badgeEnd);
         return (result.data, traits);
     }
 
@@ -615,8 +649,6 @@ contract EmployeeIDCards {
         result.append('"image": "data:image/svg+xml;base64,');
         result.append(bytes(Base64.encode(badge)), '",', "\n");
         result.append('"attributes": [ ', _getAttributes(traits), "]\n}");
-
-
         return string(abi.encodePacked("data:application/json;base64,",
             Base64.encode(
                 result.data
@@ -669,7 +701,7 @@ contract EmployeeIDCards {
     * @param _tokenId The NFT to transfer
     */
     function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes memory _data) external {
-        _transfer(_from, _to, _tokenId);
+        _transfer(_from, _to, _tokenId, cards[_tokenId].minStog);
         require(_checkOnERC721Received(_from, _to, _tokenId, _data), "ERC721: transfer to non ERC721Receiver implementer");
     }
 
@@ -684,36 +716,57 @@ contract EmployeeIDCards {
     */
     function safeTransferFrom(address _from, address _to, uint256 _tokenId) external {
         bytes memory data = new bytes(0);
-        _transfer(_from, _to, _tokenId);
+        _transfer(_from, _to, _tokenId, cards[_tokenId].minStog);
         require(_checkOnERC721Received(_from, _to, _tokenId, data), "ERC721: transfer to non ERC721Receiver implementer");
     }
 
     function transferFrom(address _from, address _to, uint256 _tokenId) external {
-        _transfer(_from, _to, _tokenId);
+        _transfer(_from, _to, _tokenId, cards[_tokenId].minStog);
     }
 
-    function _transfer(address _from, address _to, uint256 _tokenId) internal {
-        require(_from != _to, "cannot send to self");
-        require(_tokenId < employeeHeight, "index out of range");
-        require(_to != address(0), "_to is zero");
-        require(cards[_tokenId].state == State.Active, "state must be Active");
-        address o = cards[_tokenId].owner;                  // assuming o can never be address(0)
-        require(o == _from, "_from must be owner");         // also ensures that the card exists
-        address a = cards[_tokenId].approval;
-        require(
-            msg.sender == address(stogie) ||                // is executed by the Stogies contract
-            o == address(this) ||                           // or is executed by this contract
-            o == msg.sender ||                              // or executed by owner
-            a == msg.sender ||                              // or owner approved the sender
-            (approvalAll[o][msg.sender]), "not permitted"); // or owner approved the operator, who's the sender
-        unchecked{balances[_to]++;}
-        balances[_from]--;
-        cards[_tokenId].owner = _to;                        // set new owner
-        removeEnumeration(_from, _tokenId);
+    function _transfer(
+        address _from,
+        address _to,
+        uint256 _tokenId,
+        uint256 _min) internal
+        returns (uint256 toAvg, uint256 toBal) {
+        address a;
+        if (_from != address(0)) {
+            require(_tokenId < employeeHeight, "index out of range");
+            require(_from != _to, "cannot send to self");
+            require(_to != address(0), "_to is zero");
+            require(cards[_tokenId].state == State.Active, "state must be Active");
+            address o = cards[_tokenId].owner;                  // assuming o can never be address(0)
+            require(o == _from, "_from must be owner");         // also ensures that the card exists
+            a = cards[_tokenId].approval;
+            require(
+                msg.sender == address(stogie) ||                // is executed by the Stogies contract
+                o == address(this) ||                           // or is executed by this contract
+                o == msg.sender ||                              // or executed by owner
+                a == msg.sender ||                              // or owner approved the sender
+                (approvalAll[o][msg.sender]), "not permitted"); // or owner approved the operator, who's the sender
+            uint fromBal = balances[_from]--;
+            balances[_from] = fromBal;
+            if (fromBal == 0) {
+                avgMinSTOG[_from] = 0;
+            } else {
+                avgMinSTOG[_from] = (avgMinSTOG[_from] - _min) * SCALE / fromBal;
+            }
+            removeEnumeration(_from, _tokenId);
+        }
+        toBal = balances[_to]++;
+        balances[_to] = toBal;
+        if (toBal == 1) {
+            toAvg = _min;
+        } else {
+            toAvg = (avgMinSTOG[_to] + _min) * SCALE / toBal;
+        }
+        avgMinSTOG[_to] = toAvg;
+        cards[_tokenId].owner = _to;                            // set new owner
         addEnumeration(_to, _tokenId);
         emit Transfer(_from, _to, _tokenId);
         if (a != address(0)) {
-            cards[_tokenId].approval = address(0);          // clear previous approval
+            cards[_tokenId].approval = address(0);              // clear previous approval
             emit Approval(msg.sender, address(0), _tokenId);
         }
     }
@@ -864,7 +917,6 @@ contract EmployeeIDCards {
         }
         return string(buffer);
     }
-
 }
 
 /**
@@ -1074,10 +1126,8 @@ library Base64 {
         assembly {
         // Prepare the lookup table (skip the first "length" byte)
             let tablePtr := add(table, 1)
-
         // Prepare result pointer, jump over length
             let resultPtr := add(result, 32)
-
         // Run over the input, 3 bytes at a time
             for {
                 let dataPtr := data
@@ -1088,7 +1138,6 @@ library Base64 {
             // Advance 3 bytes
                 dataPtr := add(dataPtr, 3)
                 let input := mload(dataPtr)
-
             // To write each character, shift the 3 bytes (18 bits) chunk
             // 4 times in blocks of 6 bits for each character (18, 12, 6, 0)
             // and apply logical AND with 0x3F which is the number of
@@ -1096,22 +1145,17 @@ library Base64 {
             // The result is then added to the table to get the character to write,
             // and finally write it in the result pointer but with a left shift
             // of 256 (1 byte) - 8 (1 ASCII char) = 248 bits
-
                 mstore8(resultPtr, mload(add(tablePtr, and(shr(18, input), 0x3F))))
                 resultPtr := add(resultPtr, 1) // Advance
-
                 mstore8(resultPtr, mload(add(tablePtr, and(shr(12, input), 0x3F))))
                 resultPtr := add(resultPtr, 1) // Advance
-
                 mstore8(resultPtr, mload(add(tablePtr, and(shr(6, input), 0x3F))))
                 resultPtr := add(resultPtr, 1) // Advance
-
                 mstore8(resultPtr, mload(add(tablePtr, and(input, 0x3F))))
                 resultPtr := add(resultPtr, 1) // Advance
             }
-
-        // When data `bytes` is not exactly 3 bytes long
-        // it is padded with `=` characters at the end
+            // When data `bytes` is not exactly 3 bytes long
+            // it is padded with `=` characters at the end
             switch mod(mload(data), 3)
             case 1 {
                 mstore8(sub(resultPtr, 1), 0x3d)
@@ -1121,7 +1165,6 @@ library Base64 {
                 mstore8(sub(resultPtr, 1), 0x3d)
             }
         }
-
         return result;
     }
 }
@@ -1131,7 +1174,6 @@ interface IStogie {
         uint256 deposit;    // How many LP tokens the user has deposited.
         uint256 rewardDebt; // keeps track of how much reward was paid out
     }
-
     function farmers(address _user) external view returns (UserInfo memory);
     function balanceOf(address account) external view returns (uint256);
 }
@@ -1150,9 +1192,7 @@ interface IERC165 {
  */
 interface IERC721Metadata {
     function name() external view returns (string memory);
-
     function symbol() external view returns (string memory);
-
     function tokenURI(uint256 tokenId) external view returns (string memory);
 }
 
@@ -1165,9 +1205,7 @@ interface IERC721TokenReceiver {
 ///  Note: the ERC-165 identifier for this interface is 0x780e9d63.
 interface IERC721Enumerable {
     function totalSupply() external view returns (uint256);
-
     function tokenByIndex(uint256 _index) external view returns (uint256);
-
     function tokenOfOwnerByIndex(address _owner, uint256 _index) external view returns (uint256);
 }
 /**
@@ -1177,31 +1215,22 @@ interface IERC721 is IERC165, IERC721Metadata, IERC721Enumerable, IERC721TokenRe
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
-
     function balanceOf(address owner) external view returns (uint256 balance);
-
     function ownerOf(uint256 tokenId) external view returns (address owner);
-
     function safeTransferFrom(
         address from,
         address to,
         uint256 tokenId
     ) external;
-
     function transferFrom(
         address from,
         address to,
         uint256 tokenId
     ) external;
-
     function approve(address to, uint256 tokenId) external;
-
     function getApproved(uint256 tokenId) external view returns (address operator);
-
     function setApprovalForAll(address operator, bool _approved) external;
-
     function isApprovedForAll(address owner, address operator) external view returns (bool);
-
     function safeTransferFrom(
         address from,
         address to,
@@ -1224,12 +1253,9 @@ interface IERC721Receiver {
     ) external returns (bytes4);
 }
 
-
 interface ICigToken {
     function stakedlpSupply() external view returns (uint256);
-
     function taxBurnBlock() external view returns (uint256);
-
     function The_CEO() external view returns (address);
 }
 
