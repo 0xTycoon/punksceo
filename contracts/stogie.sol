@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 // 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 // Author: tycoon.eth
-// Project: Hamburger Hut / Cigarettes
-// About: Harberger tax marketplace & protocol for NFTs
 // 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 pragma solidity ^0.8.19;
 
@@ -28,7 +26,6 @@ rewards are distributed based on how much has been deposited.
 
 
 contract Stogie {
-
     ICigToken private immutable cig;           // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
     ILiquidityPool private immutable cigEthSLP;// 0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed (SLP, it's also an ERC20)
     address private immutable weth;            // 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
@@ -41,7 +38,7 @@ contract Stogie {
     // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
     bytes32 public constant PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
     mapping(address => uint) public nonces;    // EIP-2612 permit functionality
-    address private immutable idCards;         // id cards erc721
+    IIDCards private immutable idCards;        // id cards erc721
     constructor(
         address _cig,
         address _CigEthSLP,
@@ -57,7 +54,7 @@ contract Stogie {
         sushiFactory = _sushiFactory;
         uniswapRouter = IV2Router(_uniswapRouter);
         weth = _weth;
-        idCards = _idCards;
+        idCards = IIDCards(_idCards);
         uint chainId;
         assembly {
             chainId := chainid()
@@ -103,6 +100,25 @@ contract Stogie {
         address recoveredAddress = ecrecover(digest, v, r, s);
         require(recoveredAddress != address(0) && recoveredAddress == owner, 'Stogie: INVALID_SIGNATURE');
         _approve(owner, spender, value);
+    }
+
+    /**
+    * Sending ETH to this contract will automatically issue Stogies and stake them
+    *    it will also issue a badge to the user. Can only be used by addresses that
+    *    have not minted. Limited yp 1 ETH or less.
+    */
+    receive() external payable {
+        require(msg.value > 0, "need ETH");
+        require(msg.value <= 1 ether, "Too much ETH");
+        IWETH(weth).deposit{value:msg.value}();// wrap ETH to WETH
+        _depositSingleSide(
+            weth,
+            msg.value,
+            0,                                  // no min
+            uint64(block.timestamp),            // same block
+            false,                              // no surplus
+            (idCards.minters(msg.sender) == 0)  // mint an id?
+        );
     }
 
     /**
@@ -887,6 +903,23 @@ contract Stogie {
         return cigReward;
     }
 
+    function test(uint256 _user) view external returns(uint256) {
+        UserInfo storage user = farmers[msg.sender];
+        uint256 depositRatio = (10 ether * 1e12) / (uint256(30 ether) ) ;
+
+
+        //333333333333000000
+
+        // 1460706847345
+
+        console.log("tycoon has        :", user.deposit);
+        console.log("total             :", balanceOf[address(this)]);
+        //console.log("tycoon should have:",  balanceOf[address(this)] * 1e12 / depositRatio);
+        // return depositRatio;
+        uint256 out = 1 ether;
+        return out *  depositRatio / 1e12;
+    }
+
 
     /**
     * Fill the contract with additional CIG for rewards
@@ -951,10 +984,10 @@ contract Stogie {
         UserInfo storage user = farmers[_user];
         user.deposit += _amount;
         user.rewardDebt += _amount * accCigPerShare / 1e12;
-        cig.deposit(_amount);                              // forward the SLP to the factory
+        cig.deposit(_amount);                 // forward the SLP to the factory
         emit Deposit(_user, _amount);
         if (_mintId) {
-            IIDCards(idCards).issueID(_user);              // mint nft
+            idCards.issueID(_user);           // mint nft
         }
     }
 
@@ -974,8 +1007,8 @@ contract Stogie {
         userTo.rewardDebt = userFrom.rewardDebt;
         userFrom.deposit = 0;
         userFrom.rewardDebt = 0;
-        if (IIDCards(idCards).ownerOf(_tokenID) == msg.sender) {
-            IIDCards(idCards).transferFrom(msg.sender, _to, _tokenID);
+        if (idCards.ownerOf(_tokenID) == msg.sender) {
+            idCards.transferFrom(msg.sender, _to, _tokenID);
         }
     }
 
@@ -1070,7 +1103,7 @@ contract Stogie {
         bytes32,
         uint112[] memory
     ) {
-        uint[] memory ret = new uint[](59);
+        uint[] memory ret = new uint[](23);
         uint[] memory cigdata;
         address theCEO;
         bytes32 graffiti;
@@ -1078,7 +1111,7 @@ contract Stogie {
     uint112[] memory reserves = new uint112[](2);
         (cigdata, theCEO, graffiti, reserves) = cig.getStats(_user); //  new uint[](27);
         UserInfo memory info = farmers[_user];
-
+        uint256 t = uint256(idCards.minters(_user));   // timestamp of id card mint
         ret[0] = info.deposit;                         // how much STOG staked by user
         ret[1] = info.rewardDebt;                      // amount of rewards paid out for user
         ret[2] = balanceOf[address(this)];             // contract's STOGE balance
@@ -1102,15 +1135,13 @@ contract Stogie {
         (ret[15], ret[16],) = ethusd.getReserves();    // WETH/DAI reserves (15 = DAI, 16 = WETH)
         ret[17] = sushiRouter.getAmountOut(
             1 ether, ret[15], ret[16]);                // ETH price in USD
-        ret[18] = r7; // ETH reserve of CIG/ETH
-        ret[19] = r8; // CIH reserve of CIG/ETH
+        ret[18] = r7;                                  // ETH reserve of CIG/ETH
+        ret[19] = r8;                                  // CIH reserve of CIG/ETH
         ret[20] = block.timestamp;                     // current timestamp
         ret[21] = cig.balanceOf(address(this));        // CIG in contract
-
-
+        ret[22] = t;                                   // timestamp of id card mint (damn you stack too deep)
         return (ret, cigdata, theCEO, graffiti, reserves);
     }
-
 
     function safeERC20Transfer(IERC20 _token, address _to, uint256 _amount) internal {
         bytes memory payload = abi.encodeWithSelector(_token.transfer.selector, _to, _amount);
@@ -1136,7 +1167,6 @@ contract Stogie {
             interfaceId == type(IERC2612).interfaceId;
     }
 }
-
 
 
 interface IUniswapV2Factory {
@@ -1237,6 +1267,7 @@ interface IIDCards {
     function transferFrom(address,address,uint256) external;
     function issueID(address _to) external;
     function ownerOf(uint256 _id) external view returns (address);
+    function minters(address) external view returns(uint64);
 }
 
 interface IERC2612 {

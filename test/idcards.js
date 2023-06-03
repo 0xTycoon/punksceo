@@ -11,7 +11,7 @@ const unlimited = BigNumber.from("2").pow(BigNumber.from("256")).sub(BigNumber.f
 
 
 
-describe("Stogie", function () {
+describe("ID Cards", function () {
     let owner, simp, elizabeth, tycoon, impersonatedSigner; // accounts
     let pool, Stogie, stogie, cig, cigeth, IDCards; // contracts
     let feth = utils.formatEther;
@@ -33,8 +33,8 @@ describe("Stogie", function () {
         EmployeeIDCards = await ethers.getContractFactory("EmployeeIDCards");
         cards = await EmployeeIDCards.deploy(
             CIG_ADDRESS,
-            3,
-            1,
+            3, // epoch (blocks)
+            1, // duration (number of epochs to wait)
             "0xc55C7913BE9E9748FF10a4A7af86A5Af25C46047",
             "0xe91eb909203c8c8cad61f86fc44edee9023bda4d",
             "0x4872BC4a6B29E8141868C3Fe0d4aeE70E9eA6735"
@@ -69,7 +69,7 @@ describe("Stogie", function () {
 
     });
 
-    it("init the stogie", async function () {
+    it("init the id cards", async function () {
         /*
                 await tycoon.sendTransaction({
                     to: "0x0000000000000000000000000000000000000000",
@@ -77,11 +77,19 @@ describe("Stogie", function () {
                 });
         */
 
+        let ts = Math.floor(Date.now() / 1000);
 
+
+        /**
+         * Here we assume that the block is 17294564
+         * We harvest the CIGs first, withdraw SLP.
+         *
+         * Then the simp account deposits into Stogies with ETH
+         * Then tycoon wraps SLP to stogies, minting an id
+         */
 
         console.log("pending cig: " + await cig.connect(tycoon).pendingCig(EOA));
-        //return;
-        // harvest
+
         expect(await cig.connect(tycoon).harvest()).to.emit(cig, 'Harvest');
 
         // withdraw our slp from staking
@@ -101,18 +109,57 @@ describe("Stogie", function () {
 
         //expect(await stogie.connect(tycoon).wrap(slpBal)).to.emit(stogie, 'Transfer');
 
-        expect(await stogie.connect(tycoon).wrapAndDeposit(slpBal, true)).to.emit(stogie, 'Transfer');
+        expect(await stogie.connect(simp).depositWithETH(
+            1,
+            BigNumber.from(ts+60),
+            true,
+            false, // do not mint id
+            {value : peth("1")})).to.emit(stogie, 'Transfer');
 
-        await stogie.connect(tycoon).update();
+        expect(await stogie.connect(tycoon).wrapAndDeposit(slpBal, true)).to.emit(stogie, 'Transfer'); // deposit stogies and mint card for tycoon
 
+
+        console.log("test: " + await (stogie.connect(tycoon).test(EOA)));
         console.log("pending reward: " +  feth(await stogie.connect(tycoon).pendingCig(EOA)));
 
-        let badge = await cards.tokenURI(0);
-        console.log(badge);
+
+        // generate the badge url
+        //let badge = await cards.tokenURI(0);
+        //console.log(badge);
+
+        /**
+         * reduce the minStog to 15.5 then mint a card using the simp account
+         * then transfer the card to tycoon.
+         * Tycoon's average should change to 17.75, because (20 + 15.5) / 2 = 17.75
+         * meanwhile, simp's should be 0
+         */
+        await cards.connect(owner).setMin(peth("15.5"));
+        await expect(await cards.connect(simp).issueMeID()).to.emit(cards, "Transfer").withArgs("0x0000000000000000000000000000000000000000",  simp.address, 1);
+        await cards.connect(simp).transferFrom(simp.address, EOA, 1); // simp gived ID to tycoon
+
+        let [a,b, c] = await cards.connect(tycoon).getStats(EOA);
+       // console.log(a); // ang sgoukd ve 17.75
+        await expect(a[2]).to.equal(BigNumber.from("17750000000000000000")); // 17.75 stog
+        //console.log(b);
+        [a,b, c] = await cards.connect(tycoon).getStats(simp.address);
+       // console.log(a); // todo average should be 0
+        await expect(a[2]).to.equal(BigNumber.from("00000000000000000000"));
+
+
 
     });
 
-    it("init the badges", async function () {
+    it("test expiry", async function () {
+
+        // tycoon withdraws stogies.
+        let [a,b, c] = await cards.connect(tycoon).getStats(EOA);
+        await stogie.connect(tycoon).withdraw(a[6]);
+
+        // tycoon was sent some NFTs but doesn't have any stogies deposited. Oh no!
+
+
+
+        await (await cards.expire(1)).to.emit(cards, "StateChanged");
 
     });
 
