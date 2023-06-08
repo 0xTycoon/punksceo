@@ -125,7 +125,7 @@ contract EmployeeIDCards {
         address owner;           // address of current owner
         uint256 minStog;         // minimum stogies deposit needed
         address approval;        // address approved for
-        uint64 lastEventAt;      // block id of when last state changed
+        uint64 transferAt;       // block id of when was the last transfer
         uint64 index;            // sequential index in the wallet
         State state;             // NFT's state
     }
@@ -152,10 +152,11 @@ contract EmployeeIDCards {
     bytes4 private constant RECEIVED = 0x150b7a02;  // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
     mapping(address => uint64) public minters;      // ensures each card has a unique identiconSeed value, address => timestamp
     address private curator;
-    uint256 public minSTOG = 20 ether;                 // minimum STOG required to mint
+    uint256 public minSTOG = 20 ether;              // minimum STOG required to mint
     uint64 public minSTOGUpdatedAt;                 // block number of last change
     uint16 private immutable DURATION_MIN_CHANGE;   // 30 days, or 216000 blocks (7200 * 30)
     uint16 private immutable DURATION_STATE_CHANGE; // 90 days, or 648000 blocks (7200 * 90)
+    uint64 private immutable GRACE_PERIOD;          // Number of blocks to wait after transfer before it can be cancelled (21600)
     uint64 private constant SCALE = 1e10;
     address private constant EXPIRED = 0x0000000000000000000000000000000000000E0F; // expired NFTs go here
     event StateChanged(uint256 indexed id, address indexed caller, State s0, State s1);
@@ -163,17 +164,19 @@ contract EmployeeIDCards {
     event Snapshot(uint256 indexed id, address indexed caller);
 
     constructor(
-        address _cig,
-        uint16 _epoch,
-        uint16 _duration,
-        address _identicons,
-        address _pblocks,
-        address _barcode
+        address _cig,                 // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
+        uint16 _duration_min_change,  // 216000
+        uint16 _duration_state_change,// 648000
+        uint64 _gracePeriod,          // 21600
+        address _identicons,          // 0xc55C7913BE9E9748FF10a4A7af86A5Af25C46047
+        address _pblocks,             // 0xe91eb909203c8c8cad61f86fc44edee9023bda4d
+        address _barcode              // 0x4872BC4a6B29E8141868C3Fe0d4aeE70E9eA6735
     ) {
         _transferOwnership(msg.sender);
         cig = ICigToken(_cig);
-        DURATION_MIN_CHANGE = _epoch;
-        DURATION_STATE_CHANGE = _duration;
+        DURATION_MIN_CHANGE = _duration_min_change;
+        DURATION_STATE_CHANGE = _duration_state_change;
+        GRACE_PERIOD = _gracePeriod;
         identicons = IPunkIdenticons(_identicons);  // punk picking function for the punk picture
         pblocks = IPunkBlocks(_pblocks);            // stores the images of the punk traits
         barcode = IBarcode(_barcode);               // onchain barcode generator
@@ -322,12 +325,15 @@ contract EmployeeIDCards {
     /**
     * getStats gets the information about the current user
     * @return uint256[] state info for the contract
-    * @return uint256[] list of token ids owned by owner (20)
+    * @return Card[] list of token ids owned by owner (max 20)
     * @return uint256[] list of token ids expired (max 40)
     */
-    function getStats(address _holder) view external returns(uint256[] memory, uint256[] memory, uint256[] memory) {
+    function getStats(address _holder) view external returns(
+        uint256[] memory,
+        Card[] memory,
+        uint256[] memory) {
         uint[] memory ret = new uint[](23);
-        uint[] memory inventory = new uint[](20);
+        Card[] memory inventory = new Card[](20);
         uint[] memory expired = new uint[](40);
         ret[0] = minSTOG;
         ret[1] = minters[_holder];
@@ -336,20 +342,44 @@ contract EmployeeIDCards {
         ret[4] = balanceOf(EXPIRED);
         ret[5] = employeeHeight; // that's also the totalSupply();
         (ret[6], ret[7]) = stogie.farmers(_holder); // (deposit, rewardDebt)
+        ret[8] = GRACE_PERIOD;
+        ret[9] = DURATION_STATE_CHANGE;
+        ret[10] = DURATION_MIN_CHANGE;
         for (uint i = 0; i < balanceOf(_holder); i++) {
-            inventory[i] = tokenOfOwnerByIndex(_holder, i);
             if (i > 20) {
                 break;
             }
+            inventory[i] = cards[tokenOfOwnerByIndex(_holder, i)];
         }
         for (uint i = 0; i < balanceOf(EXPIRED); i++) {
-            expired[i] = tokenOfOwnerByIndex(EXPIRED, i);
             if (i > 40) {
                 break;
             }
+            expired[i] = tokenOfOwnerByIndex(EXPIRED, i);
         }
         return (ret, inventory, expired);
     }
+
+    /**
+    * @param _page starting from 0 for the first page
+    */
+    function getCards(address _holder, uint16 _page, uint16 _perPage) view external returns(
+        Card[] memory,
+        uint32 balance
+    ) {
+        Card[] memory inventory = new Card[](_perPage);
+        balance =  uint32(balanceOf(_holder));
+        uint256 offset = _page * _perPage;
+        require (offset < balance, "page over");
+        for (uint256 i = offset; i < offset + _perPage; i++) {
+            if (i + offset > balance) {
+                return (inventory, balance);
+            }
+            inventory[i] = cards[tokenOfOwnerByIndex(_holder, offset+i)];
+        }
+        return (inventory, balance);
+    }
+
 
     // for testing
     function setMin(uint256 _m) external {
@@ -415,7 +445,6 @@ contract EmployeeIDCards {
         id = employeeHeight;
         Card storage c = cards[id];
         c.state = State.Active;
-        c.lastEventAt = uint64(block.number);
         c.minStog = min;                    // record the minSTOG
         c.identiconSeed = _to;              // save seed, used for the identicon
         emit StateChanged(
@@ -438,8 +467,10 @@ contract EmployeeIDCards {
         Card storage c = cards[_tokenId];
         State s = c.state;
         require(s == State.Active, "invalid state");     // must be Active
-        require(c.lastEventAt < block.timestamp - 50400,
-            "during grace period");                      // A 7 day grace period is granted to freshly minted NFTs
+        console.log("c.transferAt   :", c.transferAt);
+        console.log("block.timestamp:", block.number);
+        require(c.transferAt < block.number - uint256(GRACE_PERIOD),
+            "during grace period");                      // A 72 hour grace period is granted to recently transferred tokens
         address o = c.owner;
         uint256 bal = balanceOf(o);
         (uint256 deposit,) = stogie.farmers(o);
@@ -451,7 +482,6 @@ contract EmployeeIDCards {
         expiredOwners[_tokenId] = o;
         _transfer(c.owner, EXPIRED, _tokenId, c.minStog);// transfer to the expired address
         c.state = State.PendingExpiry; // change state after transfer
-        c.lastEventAt = uint64(block.number);
         emit StateChanged(
             _tokenId,
             msg.sender,
@@ -472,15 +502,16 @@ contract EmployeeIDCards {
         require(s == State.PendingExpiry, "invalid state");
         address o = expiredOwners[_tokenId];
         require(o == msg.sender, "not your token");
+        console.log("r c.transferAt:", c.transferAt);
+        console.log("r block.number:", block.number);
         require(
-            c.lastEventAt > block.number - DURATION_STATE_CHANGE,
+            block.number - c.transferAt >= DURATION_STATE_CHANGE,
             "time is up");                                     // expiration must be under the deadline
         (uint256 newAvg, uint256 newBal) = _transfer(EXPIRED, o, _tokenId, minSTOG); // return token to owner
         (uint256 deposit,) = stogie.farmers(o);
         require(
             deposit >= newAvg * newBal, "insert more STOG");   // must have Stogies or staking Stogies
         c.state = State.Active;
-        c.lastEventAt = uint64(block.number);
         emit StateChanged(
             _tokenId,
             msg.sender,
@@ -505,10 +536,10 @@ contract EmployeeIDCards {
         Card storage c = cards[_tokenId];
         require(c.state == State.PendingExpiry, "must be PendingExpiry");
         require(
-            c.lastEventAt < block.number - DURATION_STATE_CHANGE,
+            c.transferAt < block.number - DURATION_STATE_CHANGE,
             "time is not up");                                  // must be over the deadline
         c.minStog = minSTOG;                                    // reset minStog
-        (uint256 newAvg, uint256 newBal) = _transfer(address(this), msg.sender, _tokenId, minSTOG);
+        (uint256 newAvg, uint256 newBal) = _transfer(EXPIRED, msg.sender, _tokenId, minSTOG);
         (uint256 deposit,) = stogie.farmers(msg.sender); // check caller's deposit
         require(
             deposit >= newAvg * newBal,
@@ -525,12 +556,10 @@ contract EmployeeIDCards {
             State.Expired,
             State.Active
         );
-
         c.state = State.Active;
         c.identiconSeed = msg.sender;                       // change the identicon to reclaiming address
         minters[c.identiconSeed] = 0;                       // allow original owner to mint again
         minters[msg.sender] = uint64(block.timestamp);
-        c.lastEventAt = uint64(block.number);
     }
 
     /**
@@ -634,7 +663,9 @@ contract EmployeeIDCards {
     function tokenOfOwnerByIndex(address _owner, uint256 _index) public view returns (uint256) {
         require(_index <= balances[_owner], "index out of range");
         require(_owner != address(0), "invalid _owner");
-        return ownedCards[_owner][_index];
+        uint256 id = ownedCards[_owner][_index];
+        require(cards[id].owner != address(0), "token at _index not found");
+        return id;
     }
 
     /**
@@ -737,6 +768,8 @@ contract EmployeeIDCards {
     * @param _tokenId The NFT to transfer
     */
     function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes memory _data) external {
+        require(_to != EXPIRED, "cannot transfer there");
+        _validateTransfer(_from, _tokenId);
         _transfer(_from, _to, _tokenId, cards[_tokenId].minStog);
         require(_checkOnERC721Received(_from, _to, _tokenId, _data), "ERC721: transfer to non ERC721Receiver implementer");
     }
@@ -751,44 +784,72 @@ contract EmployeeIDCards {
     * @param _tokenId The NFT to transfer
     */
     function safeTransferFrom(address _from, address _to, uint256 _tokenId) external {
+        require(_to != EXPIRED, "cannot transfer there");
         bytes memory data = new bytes(0);
+        _validateTransfer(_from, _tokenId);
         _transfer(_from, _to, _tokenId, cards[_tokenId].minStog);
         require(_checkOnERC721Received(_from, _to, _tokenId, data), "ERC721: transfer to non ERC721Receiver implementer");
     }
 
     function transferFrom(address _from, address _to, uint256 _tokenId) external {
+        require(_to != EXPIRED, "cannot transfer there");
+        _validateTransfer(_from, _tokenId);
         _transfer(_from, _to, _tokenId, cards[_tokenId].minStog);
     }
 
+    /**
+    * @dev _validateTransfer does a check to see if the _tokenId id an existing
+    *   id, and _form is the owner of the token. It then checks the approval.
+    */
+    function _validateTransfer(address _from, uint256 _tokenId) internal {
+        address a;
+        address o = cards[_tokenId].owner;                  // assuming o can never be address(0)
+        //console.log("o:", o, " _form:", _from);
+        require(o == _from, "_from must be owner");         // also ensures that the card exists & owner is not 0x0
+        a = cards[_tokenId].approval;                       // a is an address that has approval
+        require(
+            msg.sender == address(stogie) ||                // is executed by the Stogies contract
+            o == msg.sender ||                              // or executed by owner
+            a == msg.sender ||                              // or owner approved the sender
+            (approvalAll[o][msg.sender]), "not permitted"); // or owner approved the operator, who's the sender
+        if (a != address(0)) {
+            cards[_tokenId].approval = address(0);          // clear previous approval
+            emit Approval(msg.sender, address(0), _tokenId);
+        }
+    }
+
+    /**
+    * @dev _transfer is a low-level token transfer between addresses without
+    *    checking approvals. It can mint if _from is 0x0. It can send Active
+    *    tokens to the EXPIRED account, or tokens that are PendingExpiry out
+    *    of the EXPIRED account. On each transfer, the function will recalculate
+    *    the average minSTOG (minimum STOG required) for both parties.
+    *    The function also records the time of transfer and updates enumeration.
+    */
     function _transfer(
         address _from,
         address _to,
         uint256 _tokenId,
         uint256 _min) internal
         returns (uint256 toAvg, uint256 toBal) {
-        address a;
         if (_from != address(0)) {
-            require(_tokenId < employeeHeight, "index out of range");
+            //require(_tokenId < employeeHeight, "index out of range");
             require(_from != _to, "cannot send to self");
             require(_to != address(0), "_to is zero");
-            require(cards[_tokenId].state == State.Active, "state must be Active");
-            address o = cards[_tokenId].owner;                  // assuming o can never be address(0)
-            require(o == _from, "_from must be owner");         // also ensures that the card exists
-            a = cards[_tokenId].approval;                       // a is address that has approval
-            // todo allow contract to move to EXPIRED address
-            require(
-                msg.sender == address(stogie) ||                // is executed by the Stogies contract
-                //o == address(this) ||                           // or is executed by this contract
-                o == msg.sender ||                              // or executed by owner
-                a == msg.sender ||                              // or owner approved the sender
-                (approvalAll[o][msg.sender]), "not permitted"); // or owner approved the operator, who's the sender
+            if (_from == EXPIRED) {
+                console.log("state is a:", uint256(cards[_tokenId].state));
+                require(cards[_tokenId].state == State.PendingExpiry, "state must be PendingExpiry");
+            } else {
+                console.log("state is b :", uint256(cards[_tokenId].state));
+                require(cards[_tokenId].state == State.Active, "state must be Active");
+            }
             uint fromBal;
             unchecked{fromBal = --balances[_from];}
             balances[_from] = fromBal;
             if (fromBal == 0) {
                 avgMinSTOG[_from] = 0;
             } else {
-                unchecked{avgMinSTOG[_from] = (avgMinSTOG[_from] - _min)  / fromBal;}
+                avgMinSTOG[_from] = (avgMinSTOG[_from] - _min)  / fromBal;
             }
             removeEnumeration(_from, _tokenId);
         }
@@ -801,12 +862,9 @@ contract EmployeeIDCards {
         }
         avgMinSTOG[_to] = toAvg;
         cards[_tokenId].owner = _to;                            // set new owner
+        cards[_tokenId].transferAt = uint64(block.number);
         addEnumeration(_to, _tokenId);
         emit Transfer(_from, _to, _tokenId);
-        if (a != address(0)) {
-            cards[_tokenId].approval = address(0);              // clear previous approval
-            emit Approval(msg.sender, address(0), _tokenId);
-        }
     }
 
     /**

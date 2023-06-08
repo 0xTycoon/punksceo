@@ -19,16 +19,16 @@ For CryptoPunk owners
 ====
 
 You can deposit your punk into the contract and that will issue you a NFT that wraps your punk.
-This wrapped punk is then called a "Deed" and you become the "Initiator" of the deed.
+This wrapped punk is then called a "Deed" and you become the "Curator" of the deed.
 The twist here is that when you create a wrapped punk, that wrapped punk will be always be for sale, and whoever holds
 this wrapped punk will need to pay a tax.
 
 The rate of the tax depends on the price of the NFT. You can change the price at any time while you are holding
-this deed. The rate may vary and it's configured by the Initiator when the deed is first created. For example,
+this deed. The rate may vary and it's configured by the Curator when the deed is first created. For example,
 the usual rate may be %0.1 per day. So, if your "buy" price is 10 WETH, then it means somebody will need to pay 0.01 ETH
 per day to hold the wrapped punk in their wallet.
 
-If someone buys the wrapped punk, a portion of the revenue from the sale will be sent to you, the "Initiator".
+If someone buys the wrapped punk, a portion of the revenue from the sale will be sent to you, the "Curator".
 This also can be set up so that a portion goes to the previous owner (seller).
 
 Want your punk back? No problem, just take-over the wrapped punk by buying back the deed, then take take it out
@@ -42,7 +42,7 @@ Wrap your .eth in the BurgerMarket wrapper, and you may.
 
 People who takeover your .eth name will need to pay a fee that will be distributed to you.
 Additionally, when someone else does a takeover of the .eth name, a portion of the revenue from the sale will be sent
-to you, the "Initiator". This also can be set up so that a portion goes to the previous owner (seller).
+to you, the "Curator". This also can be set up so that a portion goes to the previous owner (seller).
 
 Also, the person who taken over the .eth name will have full control over it - they will be able to set
 their own address, content and other records for that name.
@@ -64,20 +64,20 @@ Burger Market Rules:
 
 - Deposited tax refunds: If someone does a takeover, any tax deposit you may have will be returned to you.
 - You cannot transfer the Deed to any other wallet. The only way to transfer it by buying the deed. (BuyDeed function)
-- Unwrapping: The NFT can be taken out by the Initiator, if they also hold the deed.
-The Initiator is required to wait 2 days in order to take out the NFT.
-This means that the Initiator will need to be a holder of the deed for at least 2 days.
+- Unwrapping: The NFT can be taken out by the Curator, if they also hold the deed.
+The Curator is required to wait 2 days in order to take out the NFT.
+This means that the Curator will need to be a holder of the deed for at least 2 days.
 - if the NFT being wrapped as a Deed is an ENS, then reclaim() is called after wrapping. Reclaim will be called again
 after un-wrapping. Additionally, the holder of the deed can administer the .eth name as if they own it. This means
 they can set the ENS records, such as the address, content hash, text records and so on.
 - You cannot buy a deed from yourself
-- When paying tax, the revenue is split to the initiator and any remaining revenue is burned. It can be configured
-so that all revenue goes to the initiator.
-- When paying tax for a deed which you are also the "initiator", the revenue from consuming the tax is burned rather
+- When paying tax, the revenue is split to the Curator and any remaining revenue is burned. It can be configured
+so that all revenue goes to the Curator.
+- When paying tax for a deed which you are also the "Curator", the revenue from consuming the tax is burned rather
 than split with you. This is to encourage you to sell the deed. Otherwise, if the tax went to you, then you'd be
 just paying yourself, which would not make any sense.
-- When buying a deed, the revenue from the sale can be split with the initiator and seller, according to a percentage.
-- The percentage that the revenue is split can only be configured once by the initiator once, during deed creation.
+- When buying a deed, the revenue from the sale can be split with the Curator and seller, according to a percentage.
+- The percentage that the revenue is split can only be configured once by the Curator once, during deed creation.
 - You can only pay tax from the holder's account, nobody else can pay tax for you.
 
 todo: finish rules comment
@@ -106,7 +106,7 @@ contract Harberger {
         uint256 price;      // takeover price in 'priceToken'
         uint256 taxBalance; // amount of tax pre-paid
         bytes32 graffiti;   // a 32 character graffiti set when buying a deed
-        address initiator;  // address of the creator of the deed
+        address curator;    // address of the creator of the deed
         address holder;     // address of current holder and tax payer
         address nftContract;// address of the NFT that is wrapped in this deed
         IERC20 priceToken;  // address of the payment token
@@ -171,13 +171,13 @@ contract Harberger {
     event Takeover(uint256 indexed deedID, address indexed user, uint256 new_price, bytes32 graffiti);
     // TaxDeposit
     event TaxDeposit(uint256 indexed deedID, address indexed user, uint256 amount);     // when tax is deposited
-    // RevenueSplit when tax revenue is paid out and split between owner and initiator
+    // RevenueSplit when tax revenue is paid out and split between owner and curator
     event RevenueSplit(
         uint256 indexed deedID,
         address indexed user,
         uint256 amount,
         uint16 split,
-        address indexed initiator);
+        address indexed curator);
     // Defaulted when owner defaulted on tax
     event Defaulted(uint256 indexed deedID, address indexed called_by, uint256 reward);
     // PriceChange // when owner changed price
@@ -222,7 +222,7 @@ contract Harberger {
     * @param _tax_amount amount of tax to pre-pay
     * @param _priceToken address of the ERC20 to use as the payment token
     * @param _taxRate a number between 1 and 1000, eg 1 represents 0.1%, 11 = %1.1 333 = 33.3
-    * @param _shareRate of revenue that goes to initiator, remainder is burned. The type is same as _taxRate
+    * @param _shareRate of revenue that goes to curator, remainder is burned. The type is same as _taxRate
     * @param _ensName .eth name, required if nft is an ENS .eth (without the .eth suffix, normalized)
     */
     function newDeed(
@@ -240,7 +240,7 @@ contract Harberger {
         require(_price > MIN_PRICE, "price cannot be < 0.000001");
         unchecked{deedID = ++deedHeight;}                                                 // starts from 1
         Deed storage d = deeds[deedID];
-        d.initiator = msg.sender;
+        d.curator = msg.sender;
         d.nftContract = _nftContract;
         d.nftTokenID = _tokenID;
         d.priceToken = IERC20(_priceToken);
@@ -288,7 +288,7 @@ contract Harberger {
         address _to
     ) external notReentrant {
         Deed memory d = deeds[_deedID];
-        require (d.initiator != address(0), "no such deed");
+        require (d.curator != address(0), "no such deed");
         if (d.state == State.OnSale && (d.taxBurnBlock != uint64(block.number))) {
             d.state = _consumeTax(
                 _deedID,
@@ -298,7 +298,7 @@ contract Harberger {
                 d.taxBurnBlock,
                 d.taxBalance,
                 d.holder,
-                d.initiator,
+                d.curator,
                 d.priceToken
             );                                                             // _consumeTax can change d.state to 2
             deeds[_deedID].taxBurnBlock = uint64(block.number);            // store the block number of last burn
@@ -320,10 +320,10 @@ contract Harberger {
             d.priceToken,
             d.price,
             d.rates[1],
-            d.initiator,
+            d.curator,
             d.holder
         );                                                                  // split the revenue from the sale
-        emit RevenueSplit(_deedID, msg.sender, d.price, d.rates[1], d.initiator);
+        emit RevenueSplit(_deedID, msg.sender, d.price, d.rates[1], d.curator);
         if (d.taxBalance > 0) {
             safeERC20Transfer(d.priceToken, d.holder, d.taxBalance);        // return deposited tax back to old holder
             // deeds[_deedID].taxBalance                                    // not needed, will be overwritten
@@ -367,7 +367,7 @@ contract Harberger {
                 d.taxBurnBlock,
                 d.taxBalance,
                 d.holder,
-                d.initiator,
+                d.curator,
                 d.priceToken);                                                       // settle any tax debt
             deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
@@ -394,7 +394,7 @@ contract Harberger {
             d.taxBurnBlock,
             d.taxBalance,
             d.holder,
-            d.initiator,
+            d.curator,
             d.priceToken);
         deeds[_deedID].taxBurnBlock = uint64(block.number);
     }
@@ -419,7 +419,7 @@ contract Harberger {
                 d.taxBurnBlock,
                 d.taxBalance,
                 d.holder,
-                d.initiator,
+                d.curator,
                 d.priceToken);
             deeds[_deedID].taxBurnBlock = uint64(block.number);
         }
@@ -432,14 +432,14 @@ contract Harberger {
     }
 
     /**
-    * @dev takeout allows the deed's initiator to unwrap and remove the nft
+    * @dev takeout allows the deed's curator to unwrap and remove the nft
     */
     function takeout(uint256 _deedID) external notReentrant returns (State state) {
         Deed memory d = deeds[_deedID];
         require (d.holder == msg.sender, "only holdoor");
         require (d.state == State.OnSale, "deed not active");
         require (d.blockStamp + (epochBlocks*2) >= block.number, "must wait 2 epochs");
-        require (d.initiator == msg.sender, "only initinatoor");
+        require (d.curator == msg.sender, "only initinatoor");
         if (d.taxBurnBlock == uint64(block.number)) return d.state;
         state = _consumeTax(
             _deedID,
@@ -449,7 +449,7 @@ contract Harberger {
             d.taxBurnBlock,
             d.taxBalance,
             d.holder,
-            d.initiator,
+            d.curator,
             d.priceToken);
         if (state != State.OnSale) { // defaulted on tax?
             return state;
@@ -457,7 +457,7 @@ contract Harberger {
         deeds[_deedID].state = State.TakenOut;
         deeds[_deedID].taxBurnBlock = uint64(block.number);
         if (d.nftContract == address(punks)) {                               // if punk
-            punks.offerPunkForSaleToAddress(d.nftTokenID, 0, msg.sender);    // allow initiator to take it out
+            punks.offerPunkForSaleToAddress(d.nftTokenID, 0, msg.sender);    // allow curator to take it out
         } else {
             if (d.nftContract == address(dotEthReg)) {                       // if ENS
                 dotEthReg.reclaim(d.nftTokenID, msg.sender);                 // relinquish the controller
@@ -491,7 +491,7 @@ contract Harberger {
         uint64 _taxBurnBlock,
         uint256 _taxBalance,
         address _holder,
-        address _initiator,
+        address _curator,
         IERC20 _token
     ) internal returns(State /*state*/) {
         State s = State.OnSale;                                 // assume it's on sale
@@ -512,15 +512,15 @@ contract Harberger {
             _token,
             debt,
             _split,
-            _initiator,
+            _curator,
             BURN_ADDR                                           // holder's portion burned
-        );                                                      // distribute only to _initiator (burn _holder's)
+        );                                                      // distribute only to _curator (burn _holder's)
         emit RevenueSplit(
             _deedID,
             msg.sender,
             debt,
             _split,
-            _initiator
+            _curator
         );
         return s;
     }
@@ -598,23 +598,23 @@ contract Harberger {
     * @dev distribute revenue
     * @param _token The token to distribute
     * @param _amount The amount to distribute
-    * @param _split The % to send to initiator
-    * @param _initiator address to send the revenue split
+    * @param _split The % to send to curator
+    * @param _curator address to send the revenue split
     * @param _holder send remainder to here. (May be 0x0 to burn it)
     */
     function _splitRevenue(
         IERC20 _token,
         uint256 _amount,
         uint16 _split,
-        address _initiator,
+        address _curator,
         address _holder
     ) internal {
 
         if (_split == 1000) {
-            safeERC20Transfer(_token, _initiator, _amount);           // distribute all
+            safeERC20Transfer(_token, _curator, _amount);             // distribute all
         } else if (_split > 0) {
             uint256 distribute = _amount / SCALE * _split;
-            safeERC20Transfer(_token, _initiator, distribute);        // distribute portion
+            safeERC20Transfer(_token, _curator, distribute);          // distribute portion
             safeERC20Transfer(_token, _holder, _amount - distribute); // send remainder _holder (or to BURN_ADDR)
         } else if (_split == 0) {
             safeERC20Transfer(_token, _holder, _amount);              // send all to _holder (may be BURN_ADDR)
@@ -750,6 +750,7 @@ contract Harberger {
     function tokenByIndex(uint256 _index) external view returns (uint256) {
         require (_index < deedHeight, "index out of range");
         return ++_index; // index starts from 0
+        // todo test this
     }
 
     /// @notice Enumerate NFTs assigned to an owner
@@ -762,7 +763,9 @@ contract Harberger {
     function tokenOfOwnerByIndex(address _owner, uint256 _index) external view returns (uint256) {
         require (_index < balances[_owner], "index out of range");
         require (_owner != address(0), "invalid _owner");
-        return ownedDeeds[_owner][_index];
+        uint256 id = ownedDeeds[_owner][_index];
+        require(deeds[id].curator != address(0), "no such token at _index");
+        return id;
     }
 
     /**

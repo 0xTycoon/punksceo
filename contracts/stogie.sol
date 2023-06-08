@@ -1013,7 +1013,7 @@ contract Stogie {
     }
 
     /**
-    * @dev withdraw takes out the LP tokens
+    * @dev withdraw takes out the LP tokens. This will also harvest.
     * @param _amount the amount to withdraw
     * @return harvested amount of CIG harvested
     */
