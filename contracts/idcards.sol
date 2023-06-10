@@ -109,6 +109,9 @@ RULES
 
 END 🚬
 
+1. tycoon gets 1
+2. simp gets 2, send to tycoon. Tycoon has 1, 2
+3.
 */
 
 contract EmployeeIDCards {
@@ -324,17 +327,21 @@ contract EmployeeIDCards {
 
     /**
     * getStats gets the information about the current user
-    * @return uint256[] state info for the contract
-    * @return Card[] list of token ids owned by owner (max 20)
-    * @return uint256[] list of token ids expired (max 40)
+    * todo return doc
     */
-    function getStats(address _holder) view external returns(
-        uint256[] memory,
-        Card[] memory,
-        uint256[] memory) {
+    function getStats(
+        address _holder,
+        uint256 _perPage
+    ) view external returns(
+        uint256[] memory, // ret
+        Card[] memory inventory,    // cards
+        uint32 balance,          // balance
+        string[] memory uris,  // uris
+        uint256[] memory ids, // ids
+        uint256[] memory expired, // expired ids
+        Card[] memory expInventory     // expired cards
+        ) {
         uint[] memory ret = new uint[](23);
-        Card[] memory inventory = new Card[](20);
-        uint[] memory expired = new uint[](40);
         ret[0] = minSTOG;
         ret[1] = minters[_holder];
         ret[2] = avgMinSTOG[_holder];
@@ -345,39 +352,65 @@ contract EmployeeIDCards {
         ret[8] = GRACE_PERIOD;
         ret[9] = DURATION_STATE_CHANGE;
         ret[10] = DURATION_MIN_CHANGE;
-        for (uint i = 0; i < balanceOf(_holder); i++) {
-            if (i > 20) {
-                break;
-            }
-            inventory[i] = cards[tokenOfOwnerByIndex(_holder, i)];
+        (inventory,
+        balance,
+        uris,
+        ids) = getCards(_holder, 0, uint16(_perPage));
+        uint256 max = balanceOf(EXPIRED);
+        if (max > _perPage) {
+            max = _perPage; // cap
         }
-        for (uint i = 0; i < balanceOf(EXPIRED); i++) {
-            if (i > 40) {
-                break;
-            }
+        expired = new uint[](max);
+        expInventory = new Card[](max);
+        for (uint i = 0; i < max; i++) {
             expired[i] = tokenOfOwnerByIndex(EXPIRED, i);
+            expInventory[i] = cards[expired[i]];
         }
-        return (ret, inventory, expired);
+        return (ret, inventory, balance, uris, ids, expired, expInventory);
     }
 
     /**
-    * @param _page starting from 0 for the first page
+    * @dev getCards get cards of a holder with pagination. It will dynamically
+    *   adjust the resulting array to match the amount of results returned. So,
+    *   if you start from page 0 with 30 items per page, and there are only 5
+    *   cards, it will return and array with 5 entries only.
+    *   Return an empty array if balance is 0
+    *   Throws if a non-existent page is requested.
+    * @param _holder address of account
+    * @param _page number starting from 0 for the first page
+    * @param _perPage how many tokens per gape
+    * @return inventory Card[] memory result of cards.
+    * @return balance uint32 the total balance of all cards
+    * @return uris string[] of the tokenURI for each token
+    * @return ids uint256[] list of the token ids
     */
-    function getCards(address _holder, uint16 _page, uint16 _perPage) view external returns(
-        Card[] memory,
-        uint32 balance
+    function getCards(address _holder, uint16 _page, uint16 _perPage) view public returns(
+        Card[] memory,   // inventory
+        uint32 balance,
+        string[] memory, // uris
+        uint256[] memory // ids
     ) {
-        Card[] memory inventory = new Card[](_perPage);
         balance =  uint32(balanceOf(_holder));
+        if (balance == 0) {
+            return (new Card[](0), 0, new string[](0), new uint256[](0));
+        }
         uint256 offset = _page * _perPage;
         require (offset < balance, "page over");
-        for (uint256 i = offset; i < offset + _perPage; i++) {
-            if (i + offset > balance) {
-                return (inventory, balance);
-            }
-            inventory[i] = cards[tokenOfOwnerByIndex(_holder, offset+i)];
+        uint256 len = balance - offset;
+        if (len >= _perPage) {
+            len = _perPage;
         }
-        return (inventory, balance);
+        Card[] memory inventory = new Card[](len);
+        string[] memory uris = new string[](len);
+        uint256[] memory ids = new uint256[](len);
+        uint256 id;
+        for (uint256 i = 0; i < len; i++) {
+            id = tokenOfOwnerByIndex(_holder, offset+i);
+            inventory[i] = cards[id];
+            ids[i] = id;
+            uris[i] = tokenURI(id);
+        }
+        return (inventory, balance, uris, ids);
     }
 
 
@@ -385,10 +418,6 @@ contract EmployeeIDCards {
     function setMin(uint256 _m) external {
         require(msg.sender == curator, "only curator");
         minSTOG = _m;
-    }
-
-    function testing() view external {
-        console.log(100000 / 10000 * 250);
     }
 
     /**
@@ -661,7 +690,8 @@ contract EmployeeIDCards {
     /// @return The token identifier for the `_index`th NFT assigned to `_owner`,
     ///   (sort order not specified)
     function tokenOfOwnerByIndex(address _owner, uint256 _index) public view returns (uint256) {
-        require(_index <= balances[_owner], "index out of range");
+        console.log("bal:", balances[_owner], " index:", _index);
+        require(_index < balances[_owner], "index out of range");
         require(_owner != address(0), "invalid _owner");
         uint256 id = ownedCards[_owner][_index];
         require(cards[id].owner != address(0), "token at _index not found");
@@ -672,7 +702,6 @@ contract EmployeeIDCards {
      * @dev Returns the number of tokens in ``owner``'s account.
      */
     function balanceOf(address _holder) public view returns (uint256) {
-        // each address can only own 1
         require(_holder != address(0), "invalid _owner");
         return balances[_holder];
     }
