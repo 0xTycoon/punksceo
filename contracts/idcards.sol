@@ -333,40 +333,32 @@ contract EmployeeIDCards {
         address _holder,
         uint256 _perPage
     ) view external returns(
-        uint256[] memory, // ret
+        uint256[] memory,           // different stats, including balances, etc
         Card[] memory inventory,    // cards
-        uint32 balance,          // balance
-        string[] memory uris,  // uris
-        uint256[] memory ids, // ids
-        uint256[] memory expired, // expired ids
-        Card[] memory expInventory     // expired cards
+        string[] memory uris,       // uris
+        uint256[] memory ids,       // ids
+        Card[] memory expInventory, // expired cards
+        string[] memory expUris,    // uris of expired tokens
+        uint256[] memory expIds     // expired ids
+
         ) {
         uint[] memory ret = new uint[](23);
-        ret[0] = minSTOG;
-        ret[1] = minters[_holder];
-        ret[2] = avgMinSTOG[_holder];
-        ret[3] = balanceOf(_holder);
-        ret[4] = balanceOf(EXPIRED);
-        ret[5] = employeeHeight; // that's also the totalSupply();
+        ret[0] = minSTOG;                           // Minimum stogies required
+        ret[1] = minters[_holder];                  // timestamp of when account minted an id
+        ret[2] = avgMinSTOG[_holder];               // average minSTOG required for that _holder
+        ret[3] = balanceOf(_holder);                // holder's balance of ids
+        ret[4] = balanceOf(EXPIRED);                // Balance of expired ids
+        ret[5] = employeeHeight;                    // that's also the totalSupply();
         (ret[6], ret[7]) = stogie.farmers(_holder); // (deposit, rewardDebt)
         ret[8] = GRACE_PERIOD;
         ret[9] = DURATION_STATE_CHANGE;
         ret[10] = DURATION_MIN_CHANGE;
         (inventory,
-        balance,
+        , // don't need balance
         uris,
         ids) = getCards(_holder, 0, uint16(_perPage));
-        uint256 max = balanceOf(EXPIRED);
-        if (max > _perPage) {
-            max = _perPage; // cap
-        }
-        expired = new uint[](max);
-        expInventory = new Card[](max);
-        for (uint i = 0; i < max; i++) {
-            expired[i] = tokenOfOwnerByIndex(EXPIRED, i);
-            expInventory[i] = cards[expired[i]];
-        }
-        return (ret, inventory, balance, uris, ids, expired, expInventory);
+        (expInventory, , expUris, expIds) = getCards(EXPIRED, 0, uint16(40));
+        return (ret, inventory, uris, ids,  expInventory, expUris, expIds);
     }
 
     /**
