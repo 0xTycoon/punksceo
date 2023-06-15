@@ -330,8 +330,7 @@ contract EmployeeIDCards {
     * todo return doc
     */
     function getStats(
-        address _holder,
-        uint256 _perPage
+        address _holder
     ) view external returns(
         uint256[] memory,           // different stats, including balances, etc
         Card[] memory inventory,    // cards
@@ -356,8 +355,8 @@ contract EmployeeIDCards {
         (inventory,
         , // don't need balance
         uris,
-        ids) = getCards(_holder, 0, uint16(_perPage));
-        (expInventory, , expUris, expIds) = getCards(EXPIRED, 0, uint16(40));
+        ids) = getCards(_holder, 0, 10);
+        (expInventory, , expUris, expIds) = getCards(EXPIRED, 0, uint16(20));
         return (ret, inventory, uris, ids,  expInventory, expUris, expIds);
     }
 
@@ -707,7 +706,6 @@ contract EmployeeIDCards {
     }
 
     bytes constant badgeStart = '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500" shape-rendering="crispEdges"><defs><style>.g2,.g4,.g5{stroke:#000;fill:#a8a9a8;stroke-width:0}.g4,.g5{fill:#dcdddc}.g5{fill:#696a69}.g7{fill:#dedede}.g9{fill:#a0a0a0}.g10{fill:#7c7b7e}.w{fill:#fff}.boxb{fill:#38535e}</style></defs><path d="M30 100h230v10H30zM20 110h10v10H20zM10 120h10v360H10zM20 480h10v10H20zM30 490h540v10H30zM570 480h10v10h-10zM580 120h10v360h-10zM570 110h10v10h-10zM340 100h230v10H340z"/><path d="M320 120h260v340H320z" style="fill:#ebebeb"/><path d="M20 130h300v340H20zM20 120h550v10H20z" class="g7"/><path d="M20 120h10v10H20zM20 460h10v10H20zM30 110h540v10H30zM570 120h10v10h-10z" class="w"/><path d="M570 130h10v10h-10zM570 450h10v10h-10z" class="g7"/><path d="M570 460h10v10h-10z" class="w"/><path d="M320 460h250v10H320z" class="g4"/><path d="M30 470h540v10H30z" class="w"/><path d="M30 480h540v10H30zM20 470h10v10H20zM570 470h10v10h-10z" class="g9"/><path d="M330 0h10v130h-10z"/><path d="M260 0h80v10h-80zM260 120h80v10h-80z"/><path d="M260 0h10v130h-10z"/><path d="M270 10h20v60h-20z" class="g2"/><path d="M290 10h40v60h-40z" style="stroke:#000;fill:#ccc;stroke-width:0"/><path d="M270 70h60v20h-60z" class="g4"/><path d="M290 50h20v10h-20zM290 70h20v10h-20zM280 60h10v10h-10zM310 60h10v10h-10zM280 90h40v10h-40z"/><path d="M280 70h10v10h-10zM310 70h10v10h-10zM320 60h10v10h-10z" class="g2"/><path d="M270 80h10v10h-10zM320 80h10v10h-10z"/><path d="M270 100h60v20h-60z" style="stroke:#000;fill:#7a7a7a;stroke-width:0"/><path d="M280 100h40v10h-40zM270 90h10v10h-10zM320 90h10v10h-10z" class="g5"/><path d="M260 130h80v10h-80z" style="fill:#bebfbe;stroke-width:0"/><path d="M40 160h240v250H40z" style="stroke:#38535e;fill:#598495;stroke-width:0;stroke-alignment:inner"/><path d="M40 160h240v10H40z" class="boxb"/><path d="M40 160h10v250H40z" class="boxb"/><path d="M40 400h240v10H40z" class="boxb"/><path d="M270 160h10v250h-10z" class="boxb"/><path d="M310 380h240v20H310zM310 340h60v20h-60zM380 340h60v20h-60zM450 340h30v20h-30zM490 340h20v20h-20zM520 340h30v20h-30z" class="g10"/>';
-
     bytes constant badgeText = '<svg><defs><style>@font-face {font-family: "C64";src: url(data:font/woff2;base64,d09GMgABAAAAAAVgAA0AAAAAFlgAAAUJAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP0ZGVE0cGhgGYACCWhEICpsEkngLgRwAATYCJAOBbgQgBYQZB4NcG8oQIxGmjE4A4K+TJ0Osoz0yHHiUIkeu8JnCS5uIH1YhT02PLEKlTJ7cqgZVF/5IPHyugb2f7G5SAkXAGljj+Hr2gK6WSeiyg3PnT0iMUWvb91CYfvgbZppEPEaGUigFhE0YA/WRi3POTSggSRRs2fnJ2yeodbZZS3aT5NqzSb5BVxKj6QrdHMN9vERqLCweg+Eon8X6+uo2ar9f/XKLyXSxG1KhEc0iIT+B+6KChSLq0RKhkhiaSi2eIqURK5lMKJlF3GQEMrhGtO1N/74I+LMvU4FPHryBP75yAIXRGA8SOiTkMiVu6qk6hE6HTsjqyBRDN6RUIxAAcGSFcSOOGBYNRZgFcRm9ArNQyMiYhgJHMQLTsDaBqkqYK2DYGmaxS7RG+9l+oAIy6IiBAERCAgAEmQ4A+qH8VNQgwLhXk+wdpp+fVqc3GE1mEeRfRojWAPsAd7Ee0kfyaYhVENsAkGjkSLKQBEUiwcczH8tj/BlZjPR4gciOhukMmG/KPkMmmc0uuWmX7vPFjZQCTKpgN+4z58WghjLNctLuw6qV7mzQFaQCKPjwbOxyRrRqww5jG54lgTpsLi3QH/iqrBWMoFWcTDY6QmOfrVTozOCl7F1evHrv9iAMzShgDTA/KkFTbR4xVisj1YDKNcsYXonRTZiFGJc9rPsYza7KqMo4bBzqMTNDzNQ1l47OjQ3lXd26BA7vUdPRU4hvGaPT8ywb8swsskD+EsahHh1dPpzz9uUMix8UdUNi2YAfuxDlzC5gWqqmqWsjrK2laIRALSvnilvXRppxJ1ePi1aV47jqbJ9eQbiH7Sbfs48oewX3cKofdLojr+rLGjEyjpQIm+VOY/cJG3eK5DX7sJzeFFVHRuvep641aKXl+UL1ma56eRh9ldT9GDGyPCdL85UU+LA+qiN/zrHa2uGPJ/TIKHqeop5Ha3NLFHFspGdLghd6AgUoRpTdTSHLT9TqwVwc6y3IIatqwjAogOmjn+dVGgrzNfQLN34S35USopfAxoYuaOwykhOkB/bkWAKk6ZxgRWuw1nh5KkHiENHImzSY6+xKj3sC9taEpeknfdBVklDE0Id1GE8pKXVxSjU70sggixzyKKCIEsqgIUGGAhUWWGFLs/+lOf7hhAtueOCFD34EEEQIYUQQRQxxeeK4k+TuSfDjjeRcRgoqARYybCjfYTh8p25MpS0FFKifGgFi/c9/+De//W3YHHrPm8V/gagSCIqGEaASAIAlFVCFihEovLkrylL0tWavtplBK5dEecQJAvsQDJQEPCwkjPVSABZp6jQUV6QJ92g22Z92ir9pb2psuXgwxBmM6EbgIOg0jHVOmnCHZot8aWesv2hvQ6SHDEbHcR+zONk52Fnw5gEqouXmbWfOihCt3GjBSZDNcI041cvN6uhiSYIn3xCptvwCJPFfW9GJn3gTPyQ0b5DPWEQWF9ibnk3Ug0fY62T/XvjFcNjc0t3O2AV+pe2oOU8P6pq7uFo7OiAcrJwc1XRbPuF9MLQ6HS3H99AeknDy8qjeoYVnZdgqzUADbejzGxb0fHZFF+g3HMXT9PSmrAx+wX0gIskGk2hcqtQarU5vMJrMFqvN7nC63B4vgAgTyrAcL4iSHCCk0nTDtGzH9XyECWUcL4iSrKiabpiW7bhe/bf/7yORMBGixBBLXKovbQhnIAgMgcLAwhGfTgAEgSFQGFg44tMZgCAwBAoDq3Y=);}.t {fill: #ff04b4; stroke: none; font-size: 26px; font-family: \'C64\',monospace; text-anchor: end}</style></defs><text x="550px" y="190px" class="t">CIG FACTORY</text><text x="550px" y="232px" class="t">EMPLOYEE</text><text x="550px" y="274px" class="t">#';
     bytes constant badgeEnd = '</text><text x="550px" y="320px" style="font-family: \'C64\',monospace; text-anchor: end; font-size: 16.5px; fill: #a7a7a7;">CONFIDIMUS IN CEO</text></svg></svg>';
 

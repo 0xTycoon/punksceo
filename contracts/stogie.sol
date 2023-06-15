@@ -85,7 +85,7 @@ contract Stogie {
         locked = 1; // exit
     }
 
-    /**
+    /** todo test
     * @dev permit is eip-2612 compliant
     */
     function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external {
@@ -102,7 +102,7 @@ contract Stogie {
         _approve(owner, spender, value);
     }
 
-    /**
+    /** todo test
     * Sending ETH to this contract will automatically issue Stogies and stake them
     *    it will also issue a badge to the user. Can only be used by addresses that
     *    have not minted. Limited yp 1 ETH or less.
@@ -294,6 +294,7 @@ contract Stogie {
     ) external payable notReentrant returns(
         uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
     ) {
+        cig.transferFrom(msg.sender, address(this), _amount); // tage their CIG
         return _depositSingleSide(
             address(cig),
             _amount,
@@ -429,7 +430,7 @@ contract Stogie {
         return(cigAdded, ethAdded, liquidity);
     }
 
-    /**
+    /** todo test
     * @dev withdrawToETH unstake, remove liquidity & swap CIG portion to WETH.
     *    Also, CIG will be harvested and sold for WETH.
     *    Note: UI should check to see how much WETH is expected to be output
@@ -463,7 +464,7 @@ contract Stogie {
         return out;
     }
 
-    /**
+    /** todo test
     * @dev withdrawToCIG unstake, remove liquidity & swap ETH portion to CIG.
     *    Note: UI should check to see how much CIG is expected to be output
     *    by estimating the removal of liquidity and then simulating the swap.
@@ -490,7 +491,7 @@ contract Stogie {
         return out;
     }
 
-    /**
+    /** todo test
     * @param _amount, how much STOG to withdraw
     * @param _token, address of token to withdraw to
     * @param _router, address of V2 router to use for the swap (Uni/Sushi)
@@ -552,7 +553,7 @@ contract Stogie {
         return out;
     }
 
-    /**
+    /** todo test
      * @dev withdrawCIGWETH harvests CIG, withdraws and un-stakes STOG, then
      *    burns STOG down to WETH & CIG, which is returned back to the caller.
      * @param _liquidity, amount of STOG to withdraw
@@ -662,7 +663,7 @@ contract Stogie {
     }
 
 
-    /**
+    /** todo test
     * @dev wrap LP tokens to STOG
     */
     function wrap(uint256 _amountLP) external {
@@ -677,7 +678,29 @@ contract Stogie {
         _unwrap(msg.sender, _amountSTOG);
     }
 
-    /**
+
+    /** todo test
+    * @dev unwrap STOG to CIG and ETH tokens
+    */
+    function unwrapToCIGETH(
+        uint256 _amountSTOG,
+        uint _amountCIGMin,
+        uint _amountWETHMin,
+        uint _deadline) external returns(uint amtCIGOut, uint amtWETHout) {
+        _transfer(msg.sender, address(this), _amountSTOG);            // take their STOG
+        (amtCIGOut, amtWETHout) = sushiRouter.removeLiquidity(
+            address(cig),
+            weth,
+            _amountSTOG,
+            _amountCIGMin,
+            _amountWETHMin,
+            msg.sender,                                              // return CIG/ETH to user
+            _deadline
+        );
+        _burn(_amountSTOG);                                           // Burn the STOG
+    }
+
+    /** todo test
     * @dev Harvest CIG, then use our CIG holdings to buy STOG, then stake the STOG.
     * @param _amountSTOGMin min amount of STOG we should get after swapping the
     *   harvested CIG.
@@ -745,7 +768,7 @@ contract Stogie {
     mapping(address => mapping(address => uint256)) public allowance;
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
-    /**
+    /** todo test
     * @dev transfer transfers tokens for a specified address
     * @param _to The address to transfer to.
     * @param _value The amount to be transferred.
@@ -754,7 +777,7 @@ contract Stogie {
         _transfer(msg.sender, _to, _value);
         return true;
     }
-    /**
+    /** todo test
     * @dev transferFrom transfers tokens from one address to another
     * @param _from address The address which you want to send tokens from
     * @param _to address The address which you want to transfer to
@@ -774,7 +797,7 @@ contract Stogie {
         _transfer(_from, _to, _value);
         return true;
     }
-    /**
+    /** todo test
     * @dev Approve tokens of mount _value to be spent by _spender
     * @param _spender address The spender
     * @param _value the stipend to spend
@@ -784,14 +807,13 @@ contract Stogie {
         return true;
     }
     /**
-    * @dev burn some tokens
-    * @param _from The address to burn from
+    * @dev burn some STOG tokens
     * @param _amount The amount to burn
     */
-    function _burn(address _from, uint256 _amount) internal {
-        balanceOf[_from] = balanceOf[_from] - _amount;
+    function _burn(uint256 _amount) internal {
+        balanceOf[address(this)] = balanceOf[address(this)] - _amount;
         totalSupply = totalSupply - _amount;
-        emit Transfer(_from, address(0), _amount);
+        emit Transfer(address(this), address(0), _amount);
     }
 
     /**
@@ -825,10 +847,10 @@ contract Stogie {
     */
     function _unwrap(address _from, uint256 _amount) internal {
         if (_from != address(this)) {
-            _transfer(_from, address(this), _amount);            // take STOG
-            cigEthSLP.transfer(_from, _amount);                  // give SLP back
+            _transfer(_from, address(this), _amount);     // take STOG
+            cigEthSLP.transfer(_from, _amount);           // give SLP back
         }
-        _burn(_from, _amount);                                   // burn STOG
+        _burn(_amount);                                   // burn STOG
     }
 
     /**
@@ -880,7 +902,7 @@ contract Stogie {
     event EmergencyWithdraw(address indexed user, uint256 amount);  // when withdrawing LP tokens, no rewards claimed
 
 
-    /**
+    /** todo test
     * @dev update updates the accCigPerShare value and harvests CIG from the Cigarette Token contract to
     *  be distributed to STOG stakers
     * @return cigReward - the amount of CIG that was credited to this contract
@@ -903,6 +925,9 @@ contract Stogie {
         return cigReward;
     }
 
+    /**
+    * todo remove this
+    */
     function test(uint256 _user) view external returns(uint256) {
         UserInfo storage user = farmers[msg.sender];
         uint256 depositRatio = (10 ether * 1e12) / (uint256(30 ether) ) ;
@@ -921,7 +946,7 @@ contract Stogie {
     }
 
 
-    /**
+    /** todo test
     * Fill the contract with additional CIG for rewards
     */
     function fill(uint256 _amount) external {
@@ -931,29 +956,23 @@ contract Stogie {
         accCigPerShare = accCigPerShare + (_amount * 1e12 / supply);
     }
 
-    /**
+    /** todo test
     * @dev pendingCig returns the amount of cig to be claimed
     * @param _user the address to report
     * @return the amount of CIG they can claim
     */
     function pendingCig(address _user) view public returns (uint256) {
-        // calculate the accumulated cig already harvested
-        uint256 _acps = accCigPerShare;                     // accumulated cig per share
+        uint256 _acps = accCigPerShare;                       // accumulated cig per share
         UserInfo storage user = farmers[_user];
-        uint256 supply = balanceOf[address(this)];          // how much is staked in total
+        uint256 supply = balanceOf[address(this)];            // how much is staked in total
         if (block.number > lastRewardBlock && supply != 0) {
-            uint256 cigReward = cig.balanceOf(address(this));// get cig that can be distributed as rewards
+            uint256 cigReward = cig.pendingCig(address(this));// get our pending reward
             _acps = _acps + (cigReward * 1e12 / supply);
         }
-        // add the CIG that's yet to be paid out
-        //uint256 depositRatio =  user.deposit  * 1e12 /supply;
-        uint256 pending = cig.pendingCig(address(this)) *
-            (user.deposit * 1e12 / supply)
-            / 1e12;                                          // _user's portion of pending CIG
-        return ((user.deposit * _acps / 1e12) - user.rewardDebt) + pending;
+        return (user.deposit * _acps / 1e12) - user.rewardDebt;
     }
 
-    /**
+    /** todo test
     * @dev deposit STOG tokens to stake
     */
     function deposit(uint256 _amount, bool _mintId) public {
@@ -962,7 +981,7 @@ contract Stogie {
         _addStake(msg.sender, _amount, _mintId);                             // update the user's account
     }
 
-    /**
+    /** todo test
     * @dev wrapAndDeposit is used for migration, it will wrap old SLP tokens to
     * Stogies & deposit in staking
     */
@@ -987,11 +1006,12 @@ contract Stogie {
         cig.deposit(_amount);                 // forward the SLP to the factory
         emit Deposit(_user, _amount);
         if (_mintId) {
+            console.log("ID cards address: ", address(idCards));
             idCards.issueID(_user);           // mint nft
         }
     }
 
-    /**
+    /** todo test
     * @dev transferStake transfers a stake to a new address
     *   _to must not have any stake. Harvests the stake before transfer
     *   _tokenID optionally, transfer the ID card NFT
@@ -1012,7 +1032,7 @@ contract Stogie {
         }
     }
 
-    /**
+    /** todo test
     * @dev withdraw takes out the LP tokens. This will also harvest.
     * @param _amount the amount to withdraw
     * @return harvested amount of CIG harvested
@@ -1069,7 +1089,7 @@ contract Stogie {
         _user.rewardDebt -= _rewardAmount;
     }
 
-    /**
+    /** todo test
     * @dev harvest redeems pending rewards & updates state
     * @return received is the amount that was harvested
     */
@@ -1097,11 +1117,11 @@ contract Stogie {
     * @param _user the user address to lookup
     */
     function getStats(address _user) external view returns (
-        uint256[] memory,
-        uint256[] memory,
-        address,
-        bytes32,
-        uint112[] memory
+        uint256[] memory, // ret
+        uint256[] memory, // cigdata
+        address,          // theCEO
+        bytes32,          // graffiti
+        uint112[] memory  // reserves
     ) {
         uint[] memory ret = new uint[](23);
         uint[] memory cigdata;

@@ -138,19 +138,14 @@ describe("ID Cards", function () {
        // console.log(a); // todo average should be 0
         await expect(a[2]).to.equal(BigNumber.from("00000000000000000000"));
 
-
-
     });
 
     it("test expiry", async function () {
-
         // tycoon withdraws stogies.
         let [a,b, c] = await cards.connect(tycoon).getStats(EOA);
         await stogie.connect(tycoon).withdraw(a[6]); // tycoon rugs his own stogies
 
         // tycoon was sent some NFTs but doesn't have any stogies deposited. Oh no!
-
-
 
         await expect(cards.expire(1)).to.be.revertedWith("during grace period"); // cannot be expired just after transfer
         await expect(await cards.expire(1)).to.emit(cards, "StateChanged");
@@ -203,28 +198,10 @@ describe("ID Cards", function () {
         console.log("liz: "+await cards.connect(degen).balanceOf(elizabeth.address));
         console.log("simp: "+await cards.connect(degen).balanceOf(simp.address));
         console.log("degen: "+await cards.connect(degen).balanceOf(degen.address));
-
         await expect(cards.connect(simp).issueMeID()).to.be.revertedWith("_to has already minted this pic");
-
-        //await expect(cards.connect(tycoon).issueMeID()).to.be.revertedWith("_to has already minted this pic");
-
-        //expect(await employee1.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(elizabeth.address, ethers.utils.parseEther("1"));
-
-        //expect(await employee2.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(elizabeth.address, ethers.utils.parseEther("1"));
-
-        //await cards.connect(degen).safeTransferFrom(degen.address, EOA, await cards.tokenOfOwnerByIndex(degen.address, 0))
-
-
-
-       // console.log("At POSITIOJN 9: "+await cards.tokenOfOwnerByIndex(EOA, 1));
-
-
-
-
     });
 
     it("test getCards", async function () {
-
         let tx = {
             to: stogie.address,
             // Convert currency unit from ether to wei
@@ -260,6 +237,13 @@ describe("ID Cards", function () {
 
 
     })
+
+    it("test everything else", async function () {
+        // snapshots
+
+        // burning curator
+
+    });
 
 });
 
