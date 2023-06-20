@@ -33,6 +33,7 @@ describe("Stogie", function () {
     const CIGETH_SLP_ADDRESS = "0x22b15c7Ee1186A7C7CFfB2D942e20Fc228F6E4Ed";
     const ENS_ADDRESS = "0xc18360217d8f7ab5e7c516566761ea12ce7f9d72" // ENS token on mainnet
     const WETH_Address = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+    const UNIV2Router_Address = '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f';
     before(async function () {
         // assuming we are at block 14148801
 
@@ -294,7 +295,7 @@ describe("Stogie", function () {
     });
 
 
-
+   // todo test with Uniswap router
     it("deposit with ENS token and stake", async function () {
 
         let ens = await hre.ethers.getContractAt(CIG_ABI,  ENS_ADDRESS); // we can use CIG_ABI since it's ERC20 compatible
@@ -448,8 +449,101 @@ describe("Stogie", function () {
 
         )).to.emit(stogie, "Deposit");
 
-        // withdraw and todo sell back to eth
+        // withdraw and  sell back to eth
 
+        [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
+       // console.log("deposit:", deposit);
+        expect(deposit).to.gt(BigNumber.from("0"));
+        //let reward = await stogie.connect(tycoon).fetchCigarettes();
+        //console.log("reward: "+ await reward);
+        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.196842578672527888")); // after staking
+        await expect(await stogie.connect(tycoon).withdraw(deposit)).to.emit(stogie, "Withdraw").withArgs(EOA, deposit).to.emit(stogie, "Harvest");
+        await expect(await stogie.connect(tycoon).unwrapToCIGETH(
+            await stogie.balanceOf(EOA), 1, 1, Math.floor(Date.now() / 1000) + 1200)
+        ).to.emit(stogie, "Transfer").to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("1639100.008254948369271857"));
+        // go back to ETH
+        await expect(await router.connect(tycoon).swapExactTokensForETH(
+            await cig.balanceOf(EOA), // amountOutMin the CIG to sell,
+            peth("0.01"),
+            [CIG_ADDRESS, WETH_Address],
+            EOA,
+            Math.floor(Date.now() / 1000) + 1200, // deadline + 20 min
+        )).to.emit(cig, "Transfer");
+
+    });
+
+    it("test withdrawToWETH", async function () {
+        let tx = {
+            to: stogie.address,
+            // Convert currency unit from ether to wei
+            value: ethers.utils.parseEther("1")
+        }
+        let supply = await stogie.totalSupply();
+        // test the sending on ETH to get stogies
+         expect(await tycoon.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(EOA, ethers.utils.parseEther("1"));
+        let supply2 = await stogie.totalSupply();
+        expect(supply2).gt(supply);
+        let deposit;
+        [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
+      // console.log("deposit is: "+deposit);
+        let weth = await hre.ethers.getContractAt(WETH_ABI,  WETH_Address);
+       await expect(await stogie.connect(tycoon).withdrawToWETH(deposit, 1,1, Math.floor(Date.now() / 1000) + 1200)).to.emit(stogie, "Withdraw").withArgs(EOA, deposit).to.emit(stogie, "Harvest").to.emit(weth, "Transfer").withArgs(stogie.address, EOA, peth("0.997021579226591595"));
+        supply2 = await stogie.totalSupply();
+        expect(supply).eq(supply2);
+    });
+
+    it("test withdrawToCIG", async function () {
+        let tx = {
+            to: stogie.address,
+            // Convert currency unit from ether to wei
+            value: ethers.utils.parseEther("1")
+        }
+        let supply = await stogie.totalSupply();
+        // test the sending on ETH to get stogies
+        expect(await tycoon.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(EOA, ethers.utils.parseEther("1"));
+        let supply2 = await stogie.totalSupply();
+        expect(supply2).gt(supply);
+        let deposit;
+        [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
+        // console.log("deposit is: "+deposit);
+        await expect(await stogie.connect(tycoon).withdrawToCIG(
+            deposit,
+            1,
+            1,
+            Math.floor(Date.now() / 1000) + 1200
+        )).to.emit(stogie, "Withdraw").withArgs(EOA, deposit)
+            .to.emit(stogie, "Harvest")
+            .to.emit(cig, "Transfer").withArgs(stogie.address, EOA, peth("3265286.879172157881871045"));
+        supply2 = await stogie.totalSupply();
+        expect(supply).eq(supply2);
+
+    });
+
+    it("test withdrawCIGWETH", async function () {
+        let tx = {
+            to: stogie.address,
+            // Convert currency unit from ether to wei
+            value: ethers.utils.parseEther("1")
+        }
+        let supply = await stogie.totalSupply();
+        // test the sending on ETH to get stogies
+        expect(await tycoon.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(EOA, ethers.utils.parseEther("1"));
+        let supply2 = await stogie.totalSupply();
+        expect(supply2).gt(supply);
+        let deposit;
+        [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
+        // withdraw to ENS
+        //let ens = await hre.ethers.getContractAt(CIG_ABI,  ENS_ADDRESS); // we can use CIG_ABI since it's ERC20 compatible
+        await expect(await stogie.connect(tycoon).withdrawCIGWETH(
+            deposit,
+            1,
+            1,
+            Math.floor(Date.now() / 1000) + 1200
+        )).to.emit(stogie, "Withdraw").withArgs(EOA, deposit)
+            .to.emit(stogie, "Harvest")
+            .to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("1607918.803646858516344626"));
+        supply2 = await stogie.totalSupply();
+        expect(supply).eq(supply2);
 
     });
 

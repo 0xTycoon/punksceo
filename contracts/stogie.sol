@@ -413,7 +413,7 @@ contract Stogie {
             address(this),
             _deadline
         );
-        /* update user's account of STOG, so they can withdraw it later*/
+        _wrap(address(this), address(this), liquidity);  // wrap our liquidity to Stogie
         _addStake(msg.sender, liquidity, _mintId);       // update the user's account
         if (!_transferSurplus) {
             return(cigAdded, ethAdded, liquidity);
@@ -430,7 +430,7 @@ contract Stogie {
         return(cigAdded, ethAdded, liquidity);
     }
 
-    /** todo test
+    /**
     * @dev withdrawToETH unstake, remove liquidity & swap CIG portion to WETH.
     *    Also, CIG will be harvested and sold for WETH.
     *    Note: UI should check to see how much WETH is expected to be output
@@ -444,8 +444,8 @@ contract Stogie {
     */
     function withdrawToWETH(
         uint _liquidity,
-        uint _amountCIGMin,
-        uint _amountWETHMin,
+        uint _amountCIGMin,  // input
+        uint _amountWETHMin, // output
         uint _deadline
     ) external returns(uint out) {
         out = _withdrawSingleSide(
@@ -464,15 +464,19 @@ contract Stogie {
         return out;
     }
 
-    /** todo test
+    /**
     * @dev withdrawToCIG unstake, remove liquidity & swap ETH portion to CIG.
     *    Note: UI should check to see how much CIG is expected to be output
     *    by estimating the removal of liquidity and then simulating the swap.
+    * @param _liquidity amount of Stog to remove
+    * @param  _amountWETHMin min out WETH  when removing liquidity
+    * @param _amountCIGMin  min out CIG  when removing liquidity
+    * @param _deadline timestamp in seconds
     */
     function withdrawToCIG(
         uint256 _liquidity,
-        uint _amountCIGMin,
         uint _amountWETHMin,
+        uint _amountCIGMin,
         uint _deadline
     ) external returns (uint out) {
         out = _withdrawSingleSide(
@@ -491,7 +495,7 @@ contract Stogie {
         return out;
     }
 
-    /** todo test
+    /**
     * @param _amount, how much STOG to withdraw
     * @param _token, address of token to withdraw to
     * @param _router, address of V2 router to use for the swap (Uni/Sushi)
@@ -509,7 +513,7 @@ contract Stogie {
         address _router,
         uint _amountCIGMin,
         uint _amountWETHMin,
-        uint256 _amountTokenMin,
+        uint _amountTokenMin,
         uint _deadline
     ) external notReentrant returns (uint out) {
         require(
@@ -553,7 +557,7 @@ contract Stogie {
         return out;
     }
 
-    /** todo test
+    /**
      * @dev withdrawCIGWETH harvests CIG, withdraws and un-stakes STOG, then
      *    burns STOG down to WETH & CIG, which is returned back to the caller.
      * @param _liquidity, amount of STOG to withdraw
