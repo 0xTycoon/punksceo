@@ -892,13 +892,11 @@ contract Stogie {
     */
     uint256 accCigPerShare; // Accumulated cigarettes per share, times 1e12.
     uint256 lastRewardBlock;
-    uint256 employeeHeight; // the next available employee id
     // UserInfo keeps track of user LP deposits and withdrawals
     struct UserInfo {
         uint256 deposit;    // How many LP tokens the user has deposited.
         uint256 rewardDebt; // keeps track of how much reward was paid out
     }
-    mapping (uint256 => address) cardOwners;
     mapping (address => UserInfo) public farmers;                   // keeps track of staking deposits and rewards
     event Deposit(address indexed user, uint256 amount);            // when depositing LP tokens to stake
     event Harvest(address indexed user, address to, uint256 amount);// when withdrawing LP tokens form staking
