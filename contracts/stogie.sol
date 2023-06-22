@@ -672,7 +672,7 @@ contract Stogie {
     */
     function wrap(uint256 _amountLP) external {
         require(_amountLP != 0, "_amountLP cannot be 0"); // Has enough?
-        _wrap(msg.sender, address(this), _amountLP);
+        _wrap(msg.sender, msg.sender, _amountLP);
     }
 
     /**
@@ -960,7 +960,7 @@ contract Stogie {
         accCigPerShare = accCigPerShare + (_amount * 1e12 / supply);
     }
 
-    /** todo test
+    /**
     * @dev pendingCig returns the amount of cig to be claimed
     * @param _user the address to report
     * @return the amount of CIG they can claim
@@ -985,7 +985,7 @@ contract Stogie {
         _addStake(msg.sender, _amount, _mintId);                             // update the user's account
     }
 
-    /** todo test
+    /**
     * @dev wrapAndDeposit is used for migration, it will wrap old SLP tokens to
     * Stogies & deposit in staking
     */
@@ -1010,7 +1010,6 @@ contract Stogie {
         cig.deposit(_amount);                 // forward the SLP to the factory
         emit Deposit(_user, _amount);
         if (_mintId) {
-            console.log("ID cards address: ", address(idCards));
             idCards.issueID(_user);           // mint nft
         }
     }

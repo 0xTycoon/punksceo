@@ -236,6 +236,10 @@ describe("ID Cards", function () {
         console.log(list);
 
 
+    });
+
+    it("test CEO governace", async function () {
+
     })
 
     it("test everything else", async function () {
