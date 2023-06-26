@@ -980,7 +980,7 @@ contract Stogie2 {
         // calculate the accumulated cig already harvested
         uint256 _acps = _accCigPerShare;                      // accumulated cig per share
         UserInfo storage user = farmers[_user];
-        uint256 supply = cigEthSLP.balanceOf(address(this));  // how much is staked in total
+        (uint256 supply,) = cig.farmers(address(this));       // how much is staked in total
         if (supply == 0) {return 0;}
         uint256 t = treasury;
         if (t > 0) {
