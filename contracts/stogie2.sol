@@ -959,49 +959,20 @@ contract Stogie2 {
         _accCigPerShare = _accCigPerShare + (_amount * 1e12 / treasury);
     }
 
-    function accCigPerShare() public returns(uint256) {
+    function accCigPerShare() view public returns(uint256) {
         uint256 pending = cig.pendingCig(address(this));        // CIG yet to be paid
-        return _accCigPerShare + (pending * 1e12 / treasury);
+        (uint256 staked,) = cig.farmers(address(this));
+        console.log("cig pending:::", pending, "staked:", staked);
+        if (pending == 0 || staked == 0) {
+            return _accCigPerShare;
+        }
+        console.log("miicow:", _accCigPerShare + (pending * 1e12 / staked));
+        return _accCigPerShare + (pending * 1e12 / staked);
     }
 
     /**
-    * @dev update updates the accCigPerShare value
-    * instead of minting, rewards are fetched from the reserves.
-    *
-    */
-    /*
-    function update() public {
-        if (block.number <= lastRewardBlock) {
-            return;
-        }
-        uint256 supply = balanceOf[address(this)];
-        if (supply == 0) {
-            lastRewardBlock = block.number;
-            return;
-        }
-        // take CIGs out from reserves
-        uint256 cigReward = (block.number - lastRewardBlock) * _cpb();
-        _resupply(cigReward);
-        accCigPerShare = accCigPerShare + (
-            cigReward * 1e12 / supply
-        );
-        lastRewardBlock = block.number;
-    }
-    */
-
-    // todo: move from reserves to contract. if not enough them fetchCigarettes.
-    // if still not enough revert
-    function _resupply(uint256 _amt) internal {
-        if (treasury < _amt) {
-            fetchCigarettes();
-        }
-        treasury -= _amt;
-    }
-
-    /**
-    * @note pendingCig returns the amount of cig to be claimed
+    * @notice pendingCig returns the amount of cig to be claimed
     * @dev calculates current payout plus adds portion that was not global-harvested
-    *   using fetchCigarettes
     * @param _user the address to report
     * @return the amount of CIG they can claim
     */
@@ -1009,7 +980,8 @@ contract Stogie2 {
         // calculate the accumulated cig already harvested
         uint256 _acps = _accCigPerShare;                      // accumulated cig per share
         UserInfo storage user = farmers[_user];
-        uint256 supply = cigEthSLP.balanceOf(address(this));           // how much is staked in total
+        uint256 supply = cigEthSLP.balanceOf(address(this));  // how much is staked in total
+        if (supply == 0) {return 0;}
         uint256 t = treasury;
         if (t > 0) {
             _acps = _acps + (t * 1e12 / supply);             // get cig that can be distributed as rewards
@@ -1020,17 +992,6 @@ contract Stogie2 {
         return ((user.deposit * _acps / 1e12) - user.rewardDebt) + pending;
     }
 
-    /**
-    * Calculate cig per block based on our pooled share in the Cig Factory
-    */
-    /*
-    function _cpb() view internal returns (uint256) {
-        uint256 cpb = cig.cigPerBlock();
-        (uint256 r,) = cig.farmers(address(this));
-        r = r / cig.stakedlpSupply();
-        return cpb - (cpb * r);
-    }
-    */
 
     /** todo test
     * @dev deposit STOG tokens to stake
@@ -1062,7 +1023,7 @@ contract Stogie2 {
     ) internal {
         UserInfo storage user = farmers[_user];
         user.deposit += _amount;
-        user.rewardDebt += _amount * accCigPerShare() / 1e12;
+        user.rewardDebt += _amount * _accCigPerShare / 1e12;
         cig.deposit(_amount);                 // forward the SLP to the factory
         emit Deposit(_user, _amount);
         if (_mintId) {
@@ -1111,8 +1072,12 @@ contract Stogie2 {
     ) internal returns (uint256 harvested) {
         UserInfo storage user = farmers[_farmer];
         require(user.deposit >= _amount, "no STOG deposited");
-        /* update() will harvest CIG for everyone before emergencyWithdraw, this important. */
-        //fetchCigarettes();                                                  // fetch CIG rewards for everyone
+
+
+        console.log("_withdraw before _harvest:");
+        /* harvest beforehand, so _withdraw can safely decrement their reward count */
+        harvested = _harvest(user, _to);                           // distribute the user's reward
+        console.log("_withdraw harvested:", harvested);
         /*
         Due to a bug in the Cig contract, we can only use emergencyWithdraw().
         This will take out the entire TVL first, subtract the _amount and
@@ -1120,19 +1085,20 @@ contract Stogie2 {
         the amount of tokens withdrawn, thus we use difference between b0 and
         b1 to work it out.
         */
-        uint256 b0 = cigEthSLP.balanceOf(address(this));
-        cig.emergencyWithdraw();                                   // take out the SLP from the factory
-        uint256 b1 = cigEthSLP.balanceOf(address(this));
-        uint256 butt = b1 - b0 - _amount;                          // butt is the remainder of _farmer's deposit
+        (uint256 bal, ) = cig.farmers(address(this));
+        cig.emergencyWithdraw();
+        uint256 butt = bal - _amount;
+
         if (butt > 0) {
             cig.deposit(butt);                                     // put the SLP back into the factory, sans _amount
         }
-        /* harvest beforehand, so _withdraw can safely decrement their reward count */
-        harvested = _harvest(user, _to);                           // distribute the user's reward
+        console.log(">>>>>>> before butt is:", butt, "amount:", _amount);
         _unstake(user, _amount);                                   // update accounting for withdrawal
+        console.log(">>>>>>> butt is:", butt, "amount:", _amount);
         if (_to != address(this)) {
             _transfer(address(this), address(_to), _amount);       // send STOG back
         }
+
         emit Withdraw(_farmer, _amount);
         return harvested;
     }
@@ -1144,8 +1110,11 @@ contract Stogie2 {
     function _unstake(UserInfo storage _user, uint256 _amount) internal {
         require(_user.deposit >= _amount, "Balance is too low");
         _user.deposit -= _amount;
-        uint256 _rewardAmount = _amount * accCigPerShare() / 1e12;
+        uint256 _rewardAmount = _amount * _accCigPerShare / 1e12; // dodo check this
+        console.log("_user.rewardDebt:", _user.rewardDebt);
+        console.log("_rewardAmount   :", _rewardAmount);
         _user.rewardDebt -= _rewardAmount;
+
     }
 
     /** todo test
@@ -1154,7 +1123,6 @@ contract Stogie2 {
     */
     function harvest() public returns (uint256 received) {
         UserInfo storage user = farmers[msg.sender];
-        //fetchCigarettes();                          // harvest CIG from factory v1
         return _harvest(user, msg.sender);
     }
 
@@ -1163,9 +1131,16 @@ contract Stogie2 {
     * @param _to the amount to harvest
     */
     function _harvest(UserInfo storage _user, address _to) internal returns(uint256 delta) {
-        uint256 potentialValue = _user.deposit * accCigPerShare() / 1e12;
+        uint256 potentialValue = _user.deposit * _accCigPerShare / 1e12;
+        console.log("REEEEEEEEEEEEEEEEEEEEE:", potentialValue, " accCigPerShare():", accCigPerShare() / 1e12 );
         delta = potentialValue - _user.rewardDebt;
-        cig.transfer(_to, delta);                                 // give them their rewards
+        if (delta > cig.balanceOf(address(this))) {
+            console.log("delta:", delta);
+            fetchCigarettes();              // harvest CIG from factory v1
+        }
+
+        cig.transfer(_to, delta);          // give them their rewards
+        console.log("REEEEE after transfer()", delta);
         _user.rewardDebt = potentialValue; // Recalculate their reward debt
         emit Harvest(msg.sender, _to, delta);
         return delta;
@@ -1188,7 +1163,7 @@ contract Stogie2 {
         bytes32 graffiti;
         ILiquidityPool ethusd = ILiquidityPool(address(0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f));
         uint112[] memory reserves = new uint112[](2);
-        (cigdata, theCEO, graffiti, treasury) = cig.getStats(_user); //  new uint[](27);
+        (cigdata, theCEO, graffiti, reserves) = cig.getStats(_user); //  new uint[](27);
         UserInfo memory info = farmers[_user];
         uint256 t = uint256(idCards.minters(_user));   // timestamp of id card mint
         ret[0] = info.deposit;                         // how much STOG staked by user
@@ -1219,7 +1194,7 @@ contract Stogie2 {
         ret[20] = block.timestamp;                     // current timestamp
         ret[21] = cig.balanceOf(address(this));        // CIG in contract
         ret[22] = t;                                   // timestamp of id card mint (damn you stack too deep)
-        return (ret, cigdata, theCEO, graffiti, treasury);
+        return (ret, cigdata, theCEO, graffiti, reserves);
     }
 
     function safeERC20Transfer(IERC20 _token, address _to, uint256 _amount) internal {
