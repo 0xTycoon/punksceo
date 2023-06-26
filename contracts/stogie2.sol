@@ -1141,7 +1141,7 @@ contract Stogie2 {
 
         cig.transfer(_to, delta);          // give them their rewards
         console.log("REEEEE after transfer()", delta);
-        _user.rewardDebt = potentialValue; // Recalculate their reward debt
+        _user.rewardDebt = _user.deposit * _accCigPerShare / 1e12; // Recalculate their reward debt
         emit Harvest(msg.sender, _to, delta);
         return delta;
     }
