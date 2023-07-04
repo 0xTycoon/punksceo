@@ -147,7 +147,7 @@ contract EmployeeIDCards {
     mapping(bytes32 => Attribute) internal atts;    // punk-block to attribute name lookup table
     mapping(address => uint256) private balances;   // counts of ownership
     mapping(address => mapping(uint256 => uint256)) private ownedCards; // track enumeration
-    mapping(address => uint256) public avgMinSTOG;                      // average min Stogies required
+    mapping(address => uint256) public minStogSum;                      // average min Stogies required
     mapping(uint256 => address) public expiredOwners;
     mapping(uint256 => Card) public cards;                              // all of the cards
     uint256 public employeeHeight;                                      // the next available employee id
@@ -358,7 +358,7 @@ contract EmployeeIDCards {
         uint[] memory ret = new uint[](23);
         ret[0] = minSTOG;                           // Minimum stogies required
         ret[1] = minters[_holder];                  // timestamp of when account minted an id
-        ret[2] = avgMinSTOG[_holder];               // average minSTOG required for that _holder
+        ret[2] = avgMinSTOG(_holder);               // average minSTOG required for that _holder
         ret[3] = balanceOf(_holder);                // holder's balance of ids
         ret[4] = balanceOf(EXPIRED);                // Balance of expired ids
         ret[5] = employeeHeight;                    // that's also the totalSupply();
@@ -373,6 +373,15 @@ contract EmployeeIDCards {
         ids) = getCards(_holder, 0, 10);
         (expInventory, , expUris, expIds) = getCards(EXPIRED, 0, uint16(20));
         return (ret, inventory, uris, ids,  expInventory, expUris, expIds);
+    }
+
+    function avgMinSTOG(address _a) view public returns(uint256) {
+        uint256 v = minStogSum[_a];
+        if (v == 0) {
+            return 0;
+        }
+        v = v * 1e13 / balanceOf(_a) / 1e13;
+        return v;
     }
 
     /**
@@ -449,6 +458,10 @@ contract EmployeeIDCards {
         stogie = IStogie(_s);
     }
 
+    function _avg(uint256 _sum, uint256 _bal) internal pure returns (uint256 r) {
+        return (_sum * 1e13 / _bal) / 1e13 * _bal;
+    }
+
     /**
     * @dev issueID mints a new ID card. The account must be an active stogie
     *   staker would be called from the Stogies contract. Stogies would ensure
@@ -458,9 +471,9 @@ contract EmployeeIDCards {
         uint256 min = minSTOG;
         uint256 id = _issueID(_to, min);
         (uint256 deposit,) = stogie.farmers(_to);
-        (uint256 newAvg, uint256 newBal) = _transfer(address(0), _to, id, min);
+        (uint256 newSum, uint256 newBal) = _transfer(address(0), _to, id, min);
         require(
-            deposit >= newAvg * newBal, "need to stake more STOG");
+            deposit >= _avg(newSum, newBal) * newBal, "need to stake more STOG");
     }
 
     /**
@@ -470,9 +483,9 @@ contract EmployeeIDCards {
         uint256 min = minSTOG;
         uint256 id = _issueID(msg.sender, min);
         (uint256 deposit,) = stogie.farmers(msg.sender);
-        (uint256 newAvg, uint256 newBal) = _transfer(address(0), msg.sender, id, min);
+        (uint256 newSum, uint256 newBal) = _transfer(address(0), msg.sender, id, min);
         require(
-            deposit >= newAvg * newBal, "need to stake more STOG");
+            deposit >= _avg(newSum, newBal) * newBal, "need to stake more STOG");
     }
 
     function _issueID(address _to, uint256 min) internal returns(uint256 id) {
@@ -509,7 +522,7 @@ contract EmployeeIDCards {
         address o = c.owner;
         uint256 bal = balanceOf(o);
         (uint256 deposit,) = stogie.farmers(o);
-        uint256 min = avgMinSTOG[c.owner] * bal;         // assuming owner has at least 1
+        uint256 min = (minStogSum[c.owner] * 1e13 / bal) / 1e13 * bal;         // assuming owner has at least 1
         //console.log("o        :", o);
         //console.log("deposit:", deposit);
         //console.log("min      :", min);
@@ -542,10 +555,10 @@ contract EmployeeIDCards {
         require(
             block.number - c.transferAt >= DURATION_STATE_CHANGE,
             "time is up");                                     // expiration must be under the deadline
-        (uint256 newAvg, uint256 newBal) = _transfer(EXPIRED, o, _tokenId, minSTOG); // return token to owner
+        (uint256 newSum, uint256 newBal) = _transfer(EXPIRED, o, _tokenId, minSTOG); // return token to owner
         (uint256 deposit,) = stogie.farmers(o);
         require(
-            deposit >= newAvg * newBal, "insert more STOG");   // must have Stogies or staking Stogies
+            deposit >= _avg(newSum, newBal)  * newBal, "insert more STOG");   // must have Stogies or staking Stogies
         c.state = State.Active;
         emit StateChanged(
             _tokenId,
@@ -574,10 +587,10 @@ contract EmployeeIDCards {
             c.transferAt < block.number - DURATION_STATE_CHANGE,
             "time is not up");                                  // must be over the deadline
         c.minStog = minSTOG;                                    // reset minStog
-        (uint256 newAvg, uint256 newBal) = _transfer(EXPIRED, msg.sender, _tokenId, minSTOG);
+        (uint256 newSum, uint256 newBal) = _transfer(EXPIRED, msg.sender, _tokenId, minSTOG);
         (uint256 deposit,) = stogie.farmers(msg.sender); // check caller's deposit
         require(
-            deposit >= newAvg * newBal,
+            deposit >= newSum * newBal,
             "insert more STOG");                                // caller  must have Stogies or staking Stogies
         emit StateChanged(
             _tokenId,
@@ -864,7 +877,7 @@ contract EmployeeIDCards {
         address _to,
         uint256 _tokenId,
         uint256 _min) internal
-        returns (uint256 toAvg, uint256 toBal) {
+        returns (uint256 toSum, uint256 toBal) {
         if (_from != address(0)) {
             //require(_tokenId < employeeHeight, "index out of range");
             require(_from != _to, "cannot send to self");
@@ -879,33 +892,21 @@ contract EmployeeIDCards {
             balances[_from] = fromBal;
             removeEnumeration(_from, _tokenId);
             if (fromBal == 0) {
-                avgMinSTOG[_from] = 0;
-            } else if (fromBal == 1) {
-                avgMinSTOG[_from] = cards[tokenOfOwnerByIndex(_from, 0)].minStog; //
+                minStogSum[_from] = 0;
             } else {
-                //console.log("avgMinSTOG[_from]:", avgMinSTOG[_from]); // 4.281250000000000000
-                //console.log("_min            ?:", _min);              // 15.500000000000000000
-                // remove val: average = ((average * nbValues) - value) / (nbValues - 1);
-                avgMinSTOG[_from] = ((avgMinSTOG[_from]*fromBal) - _min)*1e13  / (fromBal-1)/ 1e13; // works?
-                //avgMinSTOG[_from] = (avgMinSTOG[_from] - _min)*1e13  / fromBal/ 1e13;
-                //console.log("who is she 2?:", avgMinSTOG[_from]);
-
+                minStogSum[_from] += _min;
             }
-
         }
         console.log("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&");
         unchecked {toBal = ++balances[_to];}
         balances[_to] = toBal;
+        toSum = minStogSum[_to];
         if (toBal == 1) {
-            toAvg = _min;
+            toSum = _min;
         } else {
-            // average = average + ((value - average) / nbValues);
-
-            //toAvg = (avgMinSTOG[_to] * (toBal-1))  * 1e13 / toBal / 1e13;
-            //unchecked{toAvg = (avgMinSTOG[_to] + _min) *1e13 / toBal/ 1e13;}
-            toAvg = (avgMinSTOG[_to] + _min) *1e13 / 2 / 1e13;
+            toSum += _min;
         }
-        avgMinSTOG[_to] = toAvg;
+        minStogSum[_to] = toSum;
         cards[_tokenId].owner = _to;                            // set new owner
         cards[_tokenId].transferAt = uint64(block.number);
         addEnumeration(_to, _tokenId);
