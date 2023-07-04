@@ -345,7 +345,7 @@ contract EmployeeIDCards {
     */
     function getStats(
         address _holder
-    ) view external returns(
+    ) view external returns (
         uint256[] memory,           // different stats, including balances, etc
         Card[] memory inventory,    // cards
         string[] memory uris,       // uris
@@ -353,8 +353,7 @@ contract EmployeeIDCards {
         Card[] memory expInventory, // expired cards
         string[] memory expUris,    // uris of expired tokens
         uint256[] memory expIds     // expired ids
-
-        ) {
+    ) {
         uint[] memory ret = new uint[](23);
         ret[0] = minSTOG;                           // Minimum stogies required
         ret[1] = minters[_holder];                  // timestamp of when account minted an id
@@ -369,19 +368,38 @@ contract EmployeeIDCards {
         ret[11] = pID[_holder];                     // the primary id
         (inventory,
         , // don't need balance
-        uris,
-        ids) = getCards(_holder, 0, 10);
-        (expInventory, , expUris, expIds) = getCards(EXPIRED, 0, uint16(20));
-        return (ret, inventory, uris, ids,  expInventory, expUris, expIds);
+            uris,
+            ids) = getCards(_holder, 0, 10);
+        (expInventory,, expUris, expIds) = getCards(EXPIRED, 0, uint16(20));
+        return (ret, inventory, uris, ids, expInventory, expUris, expIds);
     }
 
-    function avgMinSTOG(address _a) view public returns(uint256) {
+    /**
+    * avgMinSTOG is the public getter, to get the average minSTOG required for
+    *    that _holder
+    * @param _a address of holder
+    * @return uint256 the average value.
+    */
+    function avgMinSTOG(address _a) view public returns (uint256) {
         uint256 v = minStogSum[_a];
         if (v == 0) {
             return 0;
         }
-        v = v * 1e13 / balanceOf(_a) / 1e13;
-        return v;
+        return _avg(v, balanceOf(_a));
+    }
+
+    /**
+    * _avg computes the average given sum and count
+    * @param _sum the total
+    * @param _count the count
+    */
+    function _avg(uint256 _sum, uint256 _count) internal pure returns (uint256 r) {
+        if (_count == 0) {
+            return 0;
+        } else if (_count == 1) {
+            return _sum;
+        }
+        r = _sum * 1e13 / _count / 1e13;
     }
 
     /**
@@ -399,18 +417,18 @@ contract EmployeeIDCards {
     * @return uris string[] of the tokenURI for each token
     * @return ids uint256[] list of the token ids
     */
-    function getCards(address _holder, uint16 _page, uint16 _perPage) view public returns(
+    function getCards(address _holder, uint16 _page, uint16 _perPage) view public returns (
         Card[] memory,   // inventory
         uint32 balance,
         string[] memory, // uris
         uint256[] memory // ids
     ) {
-        balance =  uint32(balanceOf(_holder));
+        balance = uint32(balanceOf(_holder));
         if (balance == 0) {
             return (new Card[](0), 0, new string[](0), new uint256[](0));
         }
         uint256 offset = _page * _perPage;
-        require (offset < balance, "page over");
+        require(offset < balance, "page over");
         uint256 len = balance - offset;
         if (len >= _perPage) {
             len = _perPage;
@@ -420,14 +438,13 @@ contract EmployeeIDCards {
         uint256[] memory ids = new uint256[](len);
         uint256 id;
         for (uint256 i = 0; i < len; i++) {
-            id = tokenOfOwnerByIndex(_holder, offset+i);
+            id = tokenOfOwnerByIndex(_holder, offset + i);
             inventory[i] = cards[id];
             ids[i] = id;
             uris[i] = tokenURI(id);
         }
         return (inventory, balance, uris, ids);
     }
-
 
     // for testing
     function setMin(uint256 _m) external {
@@ -443,7 +460,7 @@ contract EmployeeIDCards {
         require(msg.sender == curator, "only curator");
         uint256 min = minSTOG;
         uint256 id;
-        for (uint256 i=0; i < _employees.length; i++) {
+        for (uint256 i = 0; i < _employees.length; i++) {
             id = _issueID(_employees[i], min);
             _transfer(address(0), _employees[i], id, min);
         }
@@ -456,10 +473,6 @@ contract EmployeeIDCards {
         require(msg.sender == curator, "not curator");
         require(address(stogie) == address(0), "stogie already set");
         stogie = IStogie(_s);
-    }
-
-    function _avg(uint256 _sum, uint256 _bal) internal pure returns (uint256 r) {
-        return (_sum * 1e13 / _bal) / 1e13 * _bal;
     }
 
     /**
@@ -488,7 +501,7 @@ contract EmployeeIDCards {
             deposit >= _avg(newSum, newBal) * newBal, "need to stake more STOG");
     }
 
-    function _issueID(address _to, uint256 min) internal returns(uint256 id) {
+    function _issueID(address _to, uint256 min) internal returns (uint256 id) {
         require(minters[_to] == 0, "_to has already minted this pic");
         id = employeeHeight;
         Card storage c = cards[id];
@@ -515,18 +528,13 @@ contract EmployeeIDCards {
         Card storage c = cards[_tokenId];
         State s = c.state;
         require(s == State.Active, "invalid state");     // must be Active
-        console.log("c.transferAt   :", c.transferAt);
-        console.log("block.timestamp:", block.number);
         require(c.transferAt < block.number - uint256(GRACE_PERIOD),
             "during grace period");                      // A 72 hour grace period is granted to recently transferred tokens
         address o = c.owner;
         uint256 bal = balanceOf(o);
         (uint256 deposit,) = stogie.farmers(o);
         uint256 min = (minStogSum[c.owner] * 1e13 / bal) / 1e13 * bal;         // assuming owner has at least 1
-        //console.log("o        :", o);
-        //console.log("deposit:", deposit);
-        //console.log("min      :", min);
-        require (deposit < min, "rule not satisfied");   // deposit below the min?
+        require(deposit < min, "rule not satisfied");   // deposit below the min?
         expiredOwners[_tokenId] = o;
         _transfer(c.owner, EXPIRED, _tokenId, c.minStog);// transfer to the expired address
         c.state = State.PendingExpiry; // change state after transfer
@@ -550,15 +558,13 @@ contract EmployeeIDCards {
         require(s == State.PendingExpiry, "invalid state");
         address o = expiredOwners[_tokenId];
         require(o == msg.sender, "not your token");
-        console.log("r c.transferAt:", c.transferAt);
-        console.log("r block.number:", block.number);
         require(
             block.number - c.transferAt >= DURATION_STATE_CHANGE,
             "time is up");                                     // expiration must be under the deadline
         (uint256 newSum, uint256 newBal) = _transfer(EXPIRED, o, _tokenId, minSTOG); // return token to owner
         (uint256 deposit,) = stogie.farmers(o);
         require(
-            deposit >= _avg(newSum, newBal)  * newBal, "insert more STOG");   // must have Stogies or staking Stogies
+            deposit >= _avg(newSum, newBal) * newBal, "insert more STOG");   // must have Stogies or staking Stogies
         c.state = State.Active;
         emit StateChanged(
             _tokenId,
@@ -641,7 +647,7 @@ contract EmployeeIDCards {
             require(block.number > cig.taxBurnBlock() - 20, "need to be CEO longer");
             require(block.number > minSTOGUpdatedAt + DURATION_MIN_CHANGE, "wait more blocks");
             minSTOGUpdatedAt = uint64(block.number);
-            uint256 amt = minSTOG / 10000 * 250;                              // %2.5
+            uint256 amt = minSTOG / 10000 * 250;                               // %2.5
             uint256 newMin;
             if (_up) {
                 newMin = minSTOG + amt;
@@ -650,7 +656,7 @@ contract EmployeeIDCards {
                 newMin = minSTOG - amt;
                 require(newMin > 1 ether, "min too small");
             }
-            minSTOG = newMin;                                                   // write
+            minSTOG = newMin;                                                  // write
             emit MinSTOGChanged(minSTOG, amt);
         }}
 
@@ -752,7 +758,6 @@ contract EmployeeIDCards {
      */
     function tokenURI(uint256 _tokenId) public view returns (string memory) {
         DynamicBufferLib.DynamicBuffer memory result;
-        console.log("height:", employeeHeight);
         require(_tokenId < employeeHeight, "index out of range");
         Card storage c = cards[_tokenId];
         (bytes memory badge, bytes32[] memory traits) = _generateBadge(_tokenId, c.identiconSeed);
@@ -850,7 +855,6 @@ contract EmployeeIDCards {
     function _validateTransfer(address _from, uint256 _tokenId) internal {
         address a;
         address o = cards[_tokenId].owner;                  // assuming o can never be address(0)
-        //console.log("o:", o, " _form:", _from);
         require(o == _from, "_from must be owner");         // also ensures that the card exists & owner is not 0x0
         a = cards[_tokenId].approval;                       // a is an address that has approval
         require(
@@ -869,15 +873,21 @@ contract EmployeeIDCards {
     *    checking approvals. It can mint if _from is 0x0. It can send Active
     *    tokens to the EXPIRED account, or tokens that are PendingExpiry out
     *    of the EXPIRED account. On each transfer, the function will recalculate
-    *    the average minSTOG (minimum STOG required) for both parties.
+    *    the sum minSTOG (minimum STOG required) for both parties
     *    The function also records the time of transfer and updates enumeration.
+    * @param _from address transferring from
+    * @param _to address transferring to
+    * @param _tokenId, the token identifier
+    * @param _min, the minimum stogie required for that token
+    * @return toSum the sum of minSTOG for the receiver
+    * @return toBal the new balance of the receiver
     */
     function _transfer(
         address _from,
         address _to,
         uint256 _tokenId,
         uint256 _min) internal
-        returns (uint256 toSum, uint256 toBal) {
+    returns (uint256 toSum, uint256 toBal) {
         if (_from != address(0)) {
             //require(_tokenId < employeeHeight, "index out of range");
             require(_from != _to, "cannot send to self");
@@ -897,7 +907,6 @@ contract EmployeeIDCards {
                 minStogSum[_from] += _min;
             }
         }
-        console.log("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&");
         unchecked {toBal = ++balances[_to];}
         balances[_to] = toBal;
         toSum = minStogSum[_to];
@@ -911,7 +920,6 @@ contract EmployeeIDCards {
         cards[_tokenId].transferAt = uint64(block.number);
         addEnumeration(_to, _tokenId);
         emit Transfer(_from, _to, _tokenId);
-
     }
 
     /**
@@ -965,11 +973,11 @@ contract EmployeeIDCards {
     */
     function supportsInterface(bytes4 interfaceId) public pure returns (bool) {
         return
-        interfaceId == type(IERC721).interfaceId ||
-        interfaceId == type(IERC721Metadata).interfaceId ||
-        interfaceId == type(IERC165).interfaceId ||
-        interfaceId == type(IERC721Enumerable).interfaceId ||
-        interfaceId == type(IERC721TokenReceiver).interfaceId;
+            interfaceId == type(IERC721).interfaceId ||
+            interfaceId == type(IERC721Metadata).interfaceId ||
+            interfaceId == type(IERC165).interfaceId ||
+            interfaceId == type(IERC721Enumerable).interfaceId ||
+            interfaceId == type(IERC721TokenReceiver).interfaceId;
     }
 
     // we do not allow NFTs to be send to this contract, except internally
@@ -1019,6 +1027,7 @@ contract EmployeeIDCards {
             return true;
         }
     }
+
     event OwnershipTransferred(address previousOwner, address newOwner);
     /**
     * owner is part of the Ownable interface
@@ -1029,7 +1038,7 @@ contract EmployeeIDCards {
     /**
     * renounceOwnership is part of the Ownable interface
     */
-    function renounceOwnership() external  {
+    function renounceOwnership() external {
         require(msg.sender == curator);
         _transferOwnership(address(0));
     }
@@ -1340,8 +1349,8 @@ library Base64 {
                 mstore8(resultPtr, mload(add(tablePtr, and(input, 0x3F))))
                 resultPtr := add(resultPtr, 1) // Advance
             }
-            // When data `bytes` is not exactly 3 bytes long
-            // it is padded with `=` characters at the end
+        // When data `bytes` is not exactly 3 bytes long
+        // it is padded with `=` characters at the end
             switch mod(mload(data), 3)
             case 1 {
                 mstore8(sub(resultPtr, 1), 0x3d)
