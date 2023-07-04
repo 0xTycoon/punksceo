@@ -219,7 +219,7 @@ describe("Stogie", function () {
         let stats = await getStats(EOA);
         let deposit = peth("200");
 
-        console.log(stats);
+        //console.log(stats);
         expect(stats.stakeDeposit).to.equal(0);
 
         // work out how much eth the position will sell
@@ -271,6 +271,7 @@ describe("Stogie", function () {
         await stogie.connect(elizabeth).deposit(peth("31857"), false);
 
         await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("11.792500433595000000"));
+       // return;
         await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("4.170929524482000000"));
         await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("4.170929524482000000"));
         await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("4.170929524482000000"));
@@ -305,31 +306,8 @@ describe("Stogie", function () {
 
         console.log("cig filled: " + await cig.balanceOf(stogie.address));
 
-        // 111.176112261697109481
-
-        return;
 
 
-        await stogie.connect(tycoon).fetchCigarettes();
-        let pending = await stogie.connect(tycoon).pendingCig(EOA);
-        console.log("Pending CIGGGGGGGGGGGGGGG:", feth(pending));
-
-        // harvest time
-        expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest");
-        let stats3 = await getStats(EOA);
-        //expect(parseInt(stats3.cigBal)).to.greaterThan(parseInt(stats2.cigBal)); // cig balance should increase
-        console.log("1. CIG increased by:" + feth(BigNumber.from(stats3.cigBal).sub(BigNumber.from(stats2.cigBal))));
-        ////
-        await stogie.connect(tycoon).fetchCigarettes();
-        ///
-        stats2 = await getStats(EOA);
-        expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest");
-        stats3 = await getStats(EOA);
-        //expect(parseInt(stats3.cigBal)).to.greaterThan(parseInt(stats2.cigBal)); // cig balance should increase
-        console.log("2. CIG increased by:" + feth(BigNumber.from(stats3.cigBal).sub(BigNumber.from(stats2.cigBal))));
-        // test withdraw
-        expect(await stogie.connect(tycoon).withdraw(BigNumber.from(stats3.stakeDeposit))).to.emit(stogie, "Withdraw");
-        expect(await stogie.connect(tycoon).balanceOf(EOA)).to.equal(lpDeposited);
 
     });
 

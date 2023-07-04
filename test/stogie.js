@@ -211,7 +211,6 @@ describe("Stogie", function () {
         r.cigBalContract = s2[21];
 
         return r;
-
     }
     it("deposit ETH and stake", async function () {
 

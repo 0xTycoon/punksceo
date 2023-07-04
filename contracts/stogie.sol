@@ -901,29 +901,26 @@ contract Stogie {
     event Deposit(address indexed user, uint256 amount);            // when depositing LP tokens to stake
     event Harvest(address indexed user, address to, uint256 amount);// when withdrawing LP tokens form staking
     event Withdraw(address indexed user, uint256 amount);           // when withdrawing LP tokens, no rewards claimed
-    event EmergencyWithdraw(address indexed user, uint256 amount);  // when withdrawing LP tokens, no rewards claimed
 
 
-    /** todo test
+    /**
     * @dev update updates the accCigPerShare value and harvests CIG from the Cigarette Token contract to
     *  be distributed to STOG stakers
     * @return cigReward - the amount of CIG that was credited to this contract
     */
     function fetchCigarettes() public returns (uint256 cigReward){
-        if (block.number <= lastRewardBlock) {
-            return 0;                                         // can only be called once per block
+        (uint256 supply,) = cig.farmers(address(this));       // how much is staked in total
+        if (supply == 0) {
+            return 0;
         }
         uint256 b0 = cig.balanceOf(address(this));
         cig.harvest();                                        // harvest rewards
         uint256 b1 = cig.balanceOf(address(this));
         cigReward = b1 - b0;                                  // this is how much new CIG we received
-        uint256 supply = balanceOf[address(this)];            // how much is staked in total
-        if (supply == 0) {
-            lastRewardBlock = block.number;
-            return cigReward;
+        if (cigReward == 0) {
+            return 0;
         }
         accCigPerShare = accCigPerShare + (cigReward * 1e12 / supply);
-        lastRewardBlock = block.number;
         return cigReward;
     }
 
@@ -954,7 +951,8 @@ contract Stogie {
     function fill(uint256 _amount) external {
         require (_amount > 1 ether, "insert coin");
         cig.transferFrom(msg.sender, address(this), _amount);
-        uint256 supply = balanceOf[address(this)];            // how much is staked in total
+        (uint256 supply,) = cig.farmers(address(this));            // how much is staked in total
+        require (supply > 0, "nothing staking");
         accCigPerShare = accCigPerShare + (_amount * 1e12 / supply);
     }
 
@@ -966,11 +964,12 @@ contract Stogie {
     function pendingCig(address _user) view public returns (uint256) {
         uint256 _acps = accCigPerShare;                       // accumulated cig per share
         UserInfo storage user = farmers[_user];
-        uint256 supply = balanceOf[address(this)];            // how much is staked in total
-        if (block.number > lastRewardBlock && supply != 0) {
-            uint256 cigReward = cig.pendingCig(address(this));// get our pending reward
-            _acps = _acps + (cigReward * 1e12 / supply);
+        (uint256 supply,) = cig.farmers(address(this));       // how much is staked in total
+        uint256 cigReward = cig.pendingCig(address(this));    // get our pending reward
+        if (cigReward == 0 || supply == 0) {
+            return 0;
         }
+        _acps = _acps + (cigReward * 1e12 / supply);
         return (user.deposit * _acps / 1e12) - user.rewardDebt;
     }
 
@@ -1062,10 +1061,9 @@ contract Stogie {
         the amount of tokens withdrawn, thus we use difference between b0 and
         b1 to work it out.
         */
-        uint256 b0 = cigEthSLP.balanceOf(address(this));
-        cig.emergencyWithdraw();                                   // take out the SLP from the factory
-        uint256 b1 = cigEthSLP.balanceOf(address(this));
-        uint256 butt = b1 - b0 - _amount;                          // butt is the remainder of _farmer's deposit
+        (uint256 bal, ) = cig.farmers(address(this));
+        cig.emergencyWithdraw();
+        uint256 butt = bal - _amount;
         if (butt > 0) {
             cig.deposit(butt);                                     // put the SLP back into the factory, sans _amount
         }
@@ -1135,7 +1133,7 @@ contract Stogie {
         uint256 t = uint256(idCards.minters(_user));   // timestamp of id card mint
         ret[0] = info.deposit;                         // how much STOG staked by user
         ret[1] = info.rewardDebt;                      // amount of rewards paid out for user
-        ret[2] = balanceOf[address(this)];             // contract's STOGE balance
+        (ret[2],) = cig.farmers(address(this));        // contract's STOGE balance
         ret[3] = cigEthSLP.balanceOf(address(this));   // contract CIG/ETH SLP balance
         ret[4] = balanceOf[_user];                     // user's STOG balance
         ret[5] = lastRewardBlock;                      // when rewards were last calculated
@@ -1277,7 +1275,7 @@ interface ICigToken is IERC20 {
     function pendingCig(address) external view returns (uint256);
     function cigPerBlock() external view returns (uint256);
     function getStats(address _user) external view returns(uint256[] memory, address, bytes32, uint112[] memory);
-    //function farmers(address _user) external view returns (UserInfo);
+    function farmers(address _user) external view returns (uint256 deposit, uint256 rewardDebt);
     //function stakedlpSupply() external view returns(uint256);
 
     //function withdraw(uint256 _amount) external // bugged, use emergencyWithdraw() instead.
