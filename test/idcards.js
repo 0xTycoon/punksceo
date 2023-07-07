@@ -154,8 +154,7 @@ describe("ID Cards", function () {
         expect(await cards.balanceOf(simp.address)).to.equal("0");
         expect(await cards.balanceOf(EOA)).to.equal("2"); // tycoon has 2
         let [a,b, c] = await cards.connect(tycoon).getStats(EOA);
-       // console.log(a); // ang sgoukd ve 17.75
-        await expect(a[2]).to.equal(BigNumber.from("17750000000000000000")); // 17.75 stog
+        await expect(a[2]).to.equal(BigNumber.from("35500000000000000000")); // the sum
         //console.log(b);
         [a,b, c] = await cards.connect(tycoon).getStats(simp.address);
        // console.log(a); // todo average should be 0

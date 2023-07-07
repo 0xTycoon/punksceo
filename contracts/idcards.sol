@@ -1,34 +1,92 @@
 // SPDX-License-Identifier: MIT
-// 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
+// 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
 // Author: tycoon.eth
 // Project: Cig Token
-// About: ERC721 for Employee ID cards
-// 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
+// About: ERC721 for Employee ID badges
+// 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
 pragma solidity ^0.8.19;
 
 import "hardhat/console.sol";
 /*
+  _____                 _                         ___ ____
+ | ____|_ __ ___  _ __ | | ___  _   _  ___  ___  |_ _|  _ \
+ |  _| | '_ ` _ \| '_ \| |/ _ \| | | |/ _ \/ _ \  | || | | |
+ | |___| | | | | | |_) | | (_) | |_| |  __/  __/  | || |_| |
+ |_____|_| |_| |_| .__/|_|\___/ \__, |\___|\___| |___|____/
+  ____           |_|            |___/
+ | __ )  __ _  __| | __ _  ___  ___
+ |  _ \ / _` |/ _` |/ _` |/ _ \/ __|
+ | |_) | (_| | (_| | (_| |  __/\__ \
+ |____/ \__,_|\__,_|\__, |\___||___/
+                    |___/
 
-If you hold Stogies or deposited in the CIG factory, you can continue to hold
-the Employee ID Card, or else it will expire.
+Employee ID badges are NFTs that are issued for those who have deposited
+Stogies into the Cigarette Factory. Each NFT has a unique Employee ID that
+you can put on to your Twitter / Discord profile.
 
-- change so that it doesn't change pic after reclaim.
--
+TERMINOLOGY
+
+Stogies: An ERC20 token that wraps the CIG/ETH SushiSwap Liquidity Pool (SLP)
+token, for meme-ability and ease of use. Each Stogie represents a share of the
+ETH & CIG reserves stored at 0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed. To work
+out how much is a Stogie worth, add the values of ETH and CIG in the pool,
+and divide them by the total supply of the SLP token.
+For example, if there are $100 worth of CIG and $100 worth of ETH in the pool,
+and the total supple of the SLP token is 1000, then each token would be worth
+(100+100)/1000 = 0.2, or 20 cents. Note that the SLP tokens do not have a capped
+supply and new tokens can be minted by anyone, by adding more CIG & ETH to the
+pool. This means that Stogies are not capped, only limited by the amount of ETH
+and CIG can practically be added to the pool. For the Solidity devs, you can
+read stogies.sol for the implementation of Stogies.
+
+
+Minimum Stogie Deposit: The minimum amount of Stogies required to be deposited
+in the Cig Factory to mint a badge. The value can can change, and is recorded
+for each bade. The recorded value is used to calculate the "Total Minimum Stogie
+ Deposit" for an account.
+
+
+Total Minimum Stogie Deposit: The amount of Stogies the account is required to
+deposit in the Cigarette Factory, depending on the badges they own.
+For all badges owned by an account, an average is calculated using the
+Minimum Stogie Deposit value of each badge. This value is then multiplied by the
+ number of badges in the account to determine the Total Minimum Stogie Deposit.
+ Then, the following formula is used to determine your required deposit:
+ AVERAGE MIN VALUE * NUMBER OF BADGES.
+
+Primary Bade: In case the address holds multiple badges, a primary badge can be
+chosen. The primary badge will be the one that the holder chooses to be always
+associated with their account. If the address has no primary badge set, then the
+first badge held by the address will be chosen as the primary.
 
 RULES
 
-1. Each address can mint an NFT once. With the exceptions: (a) if their NFT
-   expired, once their expired NFT gets reclaimed, then they can mint again.
-   (b) The NFT gets transferred to a fresh address and the "snapshot" function
-   is executed to change the picture.
+1. Each account can mint a badge once. With the exceptions: (a) if their badge
+   expired, once their expired badge gets reclaimed, then they can mint again.
+   (b) The badge gets transferred to a fresh account and the "snapshot" function
+   is executed from the fresh account to change the picture.
 
-2. The NFT can expire! If you do not have a minimum amount of Stogies on the
-   same address, or have not deposited a minimum amount of Stogies into the
-   Cigarette Factory, then anybody can call the `expire` function.
+2. To mint a bade, a minimum amount of stogie deposit in the Cigarette Factory
+   is required.
+
+2. Badges can expire! If you have not deposited a minimum amount of Stogies
+   into the Cigarette Factory, then anybody can call the `expire` function. So,
+   you will need to make sure to always keep a "Total Minimum Stogie Deposit"
+   in the Cigarette Factory, or else badges owned by your account can expire,
+   until the deposit amount is satisfied.
 
 3. Expiration can be initiated by anyone at any time, if the expiration rule is
    met. If an expiry initiation transaction is successful, the token will be
-   placed in the `PendingExpiry` state.
+   placed in the `PendingExpiry` state, and moved to the "Expired" account.
+   Your "Total Minimum Stogie Deposit" will also decrease based on the formula.
+
+4. Expiration grace period: After transferring a badge, it cannot be expired for
+   72 hours. The new owner will have 72 hours to put up a Minimum Stogie
+   Deposit from the account holding the badges.
+
+5. Minimum Stogie Deposit: Each account is required to hold a minimum amount of
+   stogies. Each card has its own amount, and this amount is set when the card
+   is minted by using the Global minimum value.
 
 4. `PendingExpiry` state lasts 90 days. During this time, anybody can still
     put the required amount of Stogies on the address, and then call the `
@@ -45,8 +103,9 @@ RULES
    create Stogies, and both may have limited availability, if demand for any of
    these is high.
 
-7. Each unique address can only mint a max of 1 NFT. However, they can hold
-   an unlimited number of NFTs, just not mint new NFTs.
+7. Each unique address can only mint a maximum of 1 NFT. However, they can hold
+   an unlimited number of NFTs, minted by other accounts, as long as they have
+   deposited the minimum Stogies into the Cigarette Factory. The minumum
 
 8. Reclaiming expired NFTs: Any address that hasn't minted a NFT, can
    reclaim an expired NFT. The NFT being reclaimed must be in the PendingExpiry
@@ -61,8 +120,8 @@ RULES
    call the reactivate method. Any address can call this method on behalf of
    any NFT id.
 
-10. CEO can change the minimum Stogies required. 1% up or down, every 30 days.
-    With the limit that the result of the change must be not higher than 0.005%
+10. CEO can change the Global Minimum Value. %2.5 up or down, every 30 days.
+    With the limit that the result of the change must be not higher than 0.01%
     of Stogies staked supply, and never less than 1 Stogie.
 
 11. The punk picture is chosen randomly based on the address that minted it.
@@ -109,9 +168,7 @@ RULES
 
 END 🚬
 
-1. tycoon gets 1
-2. simp gets 2, send to tycoon. Tycoon has 1, 2
-3.
+
 */
 
 contract EmployeeIDCards {
@@ -147,7 +204,7 @@ contract EmployeeIDCards {
     mapping(bytes32 => Attribute) internal atts;    // punk-block to attribute name lookup table
     mapping(address => uint256) private balances;   // counts of ownership
     mapping(address => mapping(uint256 => uint256)) private ownedCards; // track enumeration
-    mapping(address => uint256) public minStogSum;                      // average min Stogies required
+    mapping(address => uint256) public minStogSum;                      // sum of min Stogies required per account
     mapping(uint256 => address) public expiredOwners;
     mapping(uint256 => Card) public cards;                              // all of the cards
     uint256 public employeeHeight;                                      // the next available employee id
@@ -354,10 +411,10 @@ contract EmployeeIDCards {
         string[] memory expUris,    // uris of expired tokens
         uint256[] memory expIds     // expired ids
     ) {
-        uint[] memory ret = new uint[](23);
+        uint[] memory ret = new uint[](12);
         ret[0] = minSTOG;                           // Minimum stogies required
         ret[1] = minters[_holder];                  // timestamp of when account minted an id
-        ret[2] = avgMinSTOG(_holder);               // average minSTOG required for that _holder
+        ret[2] = minStogSum[_holder];              // minimum STOG required for that _holder
         ret[3] = balanceOf(_holder);                // holder's balance of ids
         ret[4] = balanceOf(EXPIRED);                // Balance of expired ids
         ret[5] = employeeHeight;                    // that's also the totalSupply();
@@ -365,7 +422,7 @@ contract EmployeeIDCards {
         ret[8] = GRACE_PERIOD;
         ret[9] = DURATION_STATE_CHANGE;
         ret[10] = DURATION_MIN_CHANGE;
-        ret[11] = pID[_holder];                     // the primary id
+        ret[11] = primaryBadge(_holder);            // the primary id
         (inventory,
         , // don't need balance
             uris,
@@ -484,9 +541,9 @@ contract EmployeeIDCards {
         uint256 min = minSTOG;
         uint256 id = _issueID(_to, min);
         (uint256 deposit,) = stogie.farmers(_to);
-        (uint256 newSum, uint256 newBal) = _transfer(address(0), _to, id, min);
+        uint256 newSum = _transfer(address(0), _to, id, min);
         require(
-            deposit >= _avg(newSum, newBal) * newBal, "need to stake more STOG");
+            deposit >= newSum, "need to stake more STOG");
     }
 
     /**
@@ -496,9 +553,9 @@ contract EmployeeIDCards {
         uint256 min = minSTOG;
         uint256 id = _issueID(msg.sender, min);
         (uint256 deposit,) = stogie.farmers(msg.sender);
-        (uint256 newSum, uint256 newBal) = _transfer(address(0), msg.sender, id, min);
+        uint256 newSum = _transfer(address(0), msg.sender, id, min);
         require(
-            deposit >= _avg(newSum, newBal) * newBal, "need to stake more STOG");
+            deposit >= newSum, "need to stake more STOG");
     }
 
     function _issueID(address _to, uint256 min) internal returns (uint256 id) {
@@ -561,10 +618,10 @@ contract EmployeeIDCards {
         require(
             block.number - c.transferAt >= DURATION_STATE_CHANGE,
             "time is up");                                     // expiration must be under the deadline
-        (uint256 newSum, uint256 newBal) = _transfer(EXPIRED, o, _tokenId, minSTOG); // return token to owner
+        uint256 newSum = _transfer(EXPIRED, o, _tokenId, minSTOG); // return token to owner
         (uint256 deposit,) = stogie.farmers(o);
         require(
-            deposit >= _avg(newSum, newBal) * newBal, "insert more STOG");   // must have Stogies or staking Stogies
+            deposit >= newSum, "insert more STOG");   // must have Stogies or staking Stogies
         c.state = State.Active;
         emit StateChanged(
             _tokenId,
@@ -593,10 +650,10 @@ contract EmployeeIDCards {
             c.transferAt < block.number - DURATION_STATE_CHANGE,
             "time is not up");                                  // must be over the deadline
         c.minStog = minSTOG;                                    // reset minStog
-        (uint256 newSum, uint256 newBal) = _transfer(EXPIRED, msg.sender, _tokenId, minSTOG);
+        uint256 newSum = _transfer(EXPIRED, msg.sender, _tokenId, minSTOG);
         (uint256 deposit,) = stogie.farmers(msg.sender); // check caller's deposit
         require(
-            deposit >= newSum * newBal,
+            deposit >= newSum,
             "insert more STOG");                                // caller  must have Stogies or staking Stogies
         emit StateChanged(
             _tokenId,
@@ -640,7 +697,7 @@ contract EmployeeIDCards {
     * minSTOGChange allows the CEO of CryptoPunks to change the minSTOG
     *    either increasing or decreasing by %2.5. Cannot be below 1 STOG, or
     *    above 0.01% of staked SLP supply.
-    * @param _up increase by 1% if true, decrease otherwise.
+    * @param _up increase by %2.5 if true, decrease otherwise.
     */
     function minSTOGChange(bool _up) external {unchecked {
             require(msg.sender == cig.The_CEO(), "need to be CEO");
@@ -788,7 +845,6 @@ contract EmployeeIDCards {
                 result.append('{"trait_type": "Type", "value": "', a.value, '"}');
             } else {
                 result.append('{"trait_type": "Accessory", "value": "', a.value, '"}');
-
             }
         }
         return result.data;
@@ -880,14 +936,14 @@ contract EmployeeIDCards {
     * @param _tokenId, the token identifier
     * @param _min, the minimum stogie required for that token
     * @return toSum the sum of minSTOG for the receiver
-    * @return toBal the new balance of the receiver
+
     */
     function _transfer(
         address _from,
         address _to,
         uint256 _tokenId,
         uint256 _min) internal
-    returns (uint256 toSum, uint256 toBal) {
+    returns (uint256 toSum) {
         if (_from != address(0)) {
             //require(_tokenId < employeeHeight, "index out of range");
             require(_from != _to, "cannot send to self");
@@ -897,24 +953,14 @@ contract EmployeeIDCards {
             } else {
                 require(cards[_tokenId].state == State.Active, "state must be Active");
             }
-            uint fromBal;
-            unchecked{fromBal = --balances[_from];}
-            balances[_from] = fromBal;
+            --balances[_from];
+            minStogSum[_from] -= _min;
             removeEnumeration(_from, _tokenId);
-            if (fromBal == 0) {
-                minStogSum[_from] = 0;
-            } else {
-                minStogSum[_from] += _min;
-            }
         }
+        uint256 toBal;
         unchecked {toBal = ++balances[_to];}
-        balances[_to] = toBal;
         toSum = minStogSum[_to];
-        if (toBal == 1) {
-            toSum = _min;
-        } else {
-            toSum += _min;
-        }
+        toSum += _min;
         minStogSum[_to] = toSum;
         cards[_tokenId].owner = _to;                            // set new owner
         cards[_tokenId].transferAt = uint64(block.number);
@@ -1055,13 +1101,16 @@ contract EmployeeIDCards {
 
     /**
     * @dev return the primary id for the user. If none is set, return the first
-    *    token of owner with the index of 0
+    *    token of owner with the index of 0.
     * @return uin256 id chosen by the user as the primary
     */
-    function primaryId(address _a) public returns (uint256) {
+    function primaryBadge(address _a) view public returns (uint256) {
         uint256 id = pID[_a];
         if (id == 0) {
-            id = tokenOfOwnerByIndex(_a, 0);
+            if (balances[_a] == 0) {
+                return 0;                    // no primary set, and address has no badges
+            }
+            id = tokenOfOwnerByIndex(_a, 0); // no primary set
         }
         return id;
     }
