@@ -26,7 +26,7 @@ describe("Stogie", function () {
     let pool, Stogie, stogie, cig, cigeth; // contracts
     let feth = utils.formatEther;
     let peth = utils.parseEther;
-    let cards, EmployeeIDCards;
+    let badges, EmployeeIDBadges;
     let router;
     const EOA = "0xc43473fA66237e9AF3B2d886Ee1205b81B14b2C8"; // EOA that has ETH and CIG to impersonate
     const CIG_ADDRESS = "0xcb56b52316041a62b6b5d0583dce4a8ae7a3c629"; // cig on mainnet
@@ -43,16 +43,17 @@ describe("Stogie", function () {
         //[owner, simp, elizabeth] = await ethers.getSigners();
         cigeth = await hre.ethers.getContractAt(SLP_ABI,  CIGETH_SLP_ADDRESS);
 
-        EmployeeIDCards = await ethers.getContractFactory("EmployeeIDCards");
-        cards = await EmployeeIDCards.deploy(CIG_ADDRESS,
+        EmployeeIDBadges = await ethers.getContractFactory("EmployeeIDBadges");
+        badges = await EmployeeIDBadges.deploy(CIG_ADDRESS,
             3, // epoch (blocks)
             1, // duration (number of epochs to wait)
             2, // grace period
             "0xc55C7913BE9E9748FF10a4A7af86A5Af25C46047", // identicons
             "0xe91eb909203c8c8cad61f86fc44edee9023bda4d", // punk blocks
-            "0x4872BC4a6B29E8141868C3Fe0d4aeE70E9eA6735"  // barcode
+            "0x4872BC4a6B29E8141868C3Fe0d4aeE70E9eA6735",  // barcode
+            0
         );
-        await cards.deployed();
+        await badges.deployed();
 
         // deploy stogie
         Stogie = await ethers.getContractFactory("Stogie");
@@ -63,11 +64,11 @@ describe("Stogie", function () {
             "0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac", // sushi factory
             "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D", // uniswap router
             "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // weth
-            cards.address
+            badges.address
         );
         await stogie.deployed();
 
-        await cards.setStogie(stogie.address);
+        await badges.setStogie(stogie.address);
 
         //await helpers.impersonateAccount(EOA);
         //let impersonatedSigner = await ethers.getSigner(EOA);
@@ -249,7 +250,7 @@ describe("Stogie", function () {
                 true,
                 true, // mint ud
                 {value: deposit})
-        ).to.emit(stogie, "Deposit").withArgs(EOA, peth("855.348102771434974731"));
+        ).to.emit(stogie, "Deposit").withArgs(EOA, peth("1129.035931538015063025"));
 
         // sanity check
         let stats2 = await getStats(EOA);
@@ -296,8 +297,10 @@ describe("Stogie", function () {
                 value: peth("0.5")
             }
         )).to.emit(ens, "Transfer");
+
         let ensBal = await ens.connect(tycoon).balanceOf(EOA);
         console.log("ENS bal:"+feth(ensBal));
+
         await expect( ens.connect(tycoon).approve(stogie.address, unlimited)).to.emit(ens, "Approval");
         let ts = Math.floor(Date.now() / 1000);
         await expect( stogie.connect(tycoon)
@@ -309,27 +312,26 @@ describe("Stogie", function () {
                 "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F",
                 BigNumber.from(ts+60),
                 true, false)
-        ).to.emit(stogie, "Deposit").withArgs(EOA, peth("423.655139721635249648"));
+        ).to.emit(stogie, "Deposit").withArgs(EOA, peth("558.546143632756056003"));
         await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest");
         let s = await getStats(EOA);
-        await expect(await stogie.connect(tycoon).withdraw(s.stakeDeposit)).to.emit(stogie, "Withdraw").withArgs(EOA, peth("423.655139721635249648")).to.emit(stogie, "Harvest");
+        await expect(await stogie.connect(tycoon).withdraw(s.stakeDeposit)).to.emit(stogie, "Withdraw").withArgs(EOA, peth("558.546143632756056003")).to.emit(stogie, "Harvest");
         await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0")); // expecting 0 since we are not staking
         //let ts = Math.floor(Date.now() / 1000) + 1200;
-        await expect(await stogie.connect(tycoon).unwrapToCIGETH(await stogie.balanceOf(EOA), 1, 1, ts)).to.emit(stogie, "Transfer").to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("2263863.160387270069519777"));
+        await expect(await stogie.connect(tycoon).unwrapToCIGETH(await stogie.balanceOf(EOA), 1, 1, ts)).to.emit(stogie, "Transfer").to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("3943139.975480167515576086"));
 
-        await expect(await cig.balanceOf(EOA)).to.equal(peth("15283012.121405500926189267"));
+        await expect(await cig.balanceOf(EOA)).to.equal(peth("14139466.707908220050098989"));
        // let weth = await hre.ethers.getContractAt(CIG_ABI,  WETH_Address);
        // await expect(await weth.connect(tycoon).approve(router.address, unlimited)).to.emit(cig, "Approval");
         // go back to ETH
         await expect(await router.connect(tycoon).swapExactTokensForETH(
-            peth("15283011"), // amountOutMin the CIG to sell,
+            peth("14139466"), // amountOutMin the CIG to sell,
             peth("0.01"),
             [CIG_ADDRESS, WETH_Address],
             EOA,
             Math.floor(Date.now() / 1000) + 1200, // deadline + 20 min
         )).to.emit(cig, "Transfer");
-
-
+        //process.exit();
 
     });
 
@@ -357,12 +359,12 @@ describe("Stogie", function () {
             true,
             false
         )).to.emit(stogie, "Deposit");
-        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.196272252929735377")); // after staking
+        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.166563952930618213")); // after staking
         let s = await getStats(EOA);
         await expect(await stogie.connect(tycoon).withdraw(s.stakeDeposit)).to.emit(stogie, "Withdraw").withArgs(EOA, s.stakeDeposit).to.emit(stogie, "Harvest");
         await expect(await stogie.connect(tycoon).unwrapToCIGETH(
             await stogie.balanceOf(EOA), 1, 1, Math.floor(Date.now() / 1000) + 1200)
-        ).to.emit(stogie, "Transfer").to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("1634358.428222069808179895"));
+        ).to.emit(stogie, "Transfer").to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("2765103.424299061635547628"));
         // go back to ETH
         await expect(await router.connect(tycoon).swapExactTokensForETH(
             await cig.balanceOf(EOA), // amountOutMin the CIG to sell,
@@ -387,11 +389,11 @@ describe("Stogie", function () {
         )).to.emit(stogie, "Deposit");
         let[deposit, debt] = await stogie.connect(tycoon).farmers(EOA);
         expect(deposit).to.gt(BigNumber.from("0"));
-        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.196847735593005284")); // after staking
+        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.167048243745398012")); // after staking
         await expect(await stogie.connect(tycoon).withdraw(deposit)).to.emit(stogie, "Withdraw").withArgs(EOA, deposit).to.emit(stogie, "Harvest");
         await expect(await stogie.connect(tycoon).unwrapToCIGETH(
             await stogie.balanceOf(EOA), 1, 1, Math.floor(Date.now() / 1000) + 1200)
-        ).to.emit(stogie, "Transfer").to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("1639146.878537389579714323"));
+        ).to.emit(stogie, "Transfer").to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("2773134.996436447141072273"));
         // go back to ETH
         await expect(await router.connect(tycoon).swapExactTokensForETH(
             await cig.balanceOf(EOA), // amountOutMin the CIG to sell,
@@ -424,7 +426,7 @@ describe("Stogie", function () {
             {
                 value: portion
             }
-        )).to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("1639100.008254948370993122"));
+        )).to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("2773030.110238247726596880"));
 
         await expect (await stogie.connect(tycoon).depositCigWeth(
             peth("1639100.008254948370993122"),
@@ -444,11 +446,11 @@ describe("Stogie", function () {
         expect(deposit).to.gt(BigNumber.from("0"));
         //let reward = await stogie.connect(tycoon).fetchCigarettes();
         //console.log("reward: "+ await reward);
-        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.196842578672527888")); // after staking
+        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.098997174644524100")); // after staking
         await expect(await stogie.connect(tycoon).withdraw(deposit)).to.emit(stogie, "Withdraw").withArgs(EOA, deposit).to.emit(stogie, "Harvest");
         await expect(await stogie.connect(tycoon).unwrapToCIGETH(
             await stogie.balanceOf(EOA), 1, 1, Math.floor(Date.now() / 1000) + 1200)
-        ).to.emit(stogie, "Transfer").to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("1639100.008254948369271857"));
+        ).to.emit(stogie, "Transfer").to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("1639100.008254948366242162"));
         // go back to ETH
         await expect(await router.connect(tycoon).swapExactTokensForETH(
             await cig.balanceOf(EOA), // amountOutMin the CIG to sell,
@@ -475,7 +477,7 @@ describe("Stogie", function () {
         [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
       // console.log("deposit is: "+deposit);
         let weth = await hre.ethers.getContractAt(WETH_ABI,  WETH_Address);
-       await expect(await stogie.connect(tycoon).withdrawToWETH(deposit, 1,1, Math.floor(Date.now() / 1000) + 1200)).to.emit(stogie, "Withdraw").withArgs(EOA, deposit).to.emit(stogie, "Harvest").to.emit(weth, "Transfer").withArgs(stogie.address, EOA, peth("0.997021579226591595"));
+       await expect(await stogie.connect(tycoon).withdrawToWETH(deposit, 1,1, Math.floor(Date.now() / 1000) + 1200)).to.emit(stogie, "Withdraw").withArgs(EOA, deposit).to.emit(stogie, "Harvest").to.emit(weth, "Transfer").withArgs(stogie.address, EOA, peth("0.997028552648040182"));
         supply2 = await stogie.totalSupply();
         expect(supply).eq(supply2);
     });
@@ -501,7 +503,7 @@ describe("Stogie", function () {
             Math.floor(Date.now() / 1000) + 1200
         )).to.emit(stogie, "Withdraw").withArgs(EOA, deposit)
             .to.emit(stogie, "Harvest")
-            .to.emit(cig, "Transfer").withArgs(stogie.address, EOA, peth("3265286.879172157881871045"));
+            .to.emit(cig, "Transfer").withArgs(stogie.address, EOA, peth("5519808.117320801736750534"));
         supply2 = await stogie.totalSupply();
         expect(supply).eq(supply2);
 
@@ -529,7 +531,7 @@ describe("Stogie", function () {
             Math.floor(Date.now() / 1000) + 1200
         )).to.emit(stogie, "Withdraw").withArgs(EOA, deposit)
             .to.emit(stogie, "Harvest")
-            .to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("1607918.803646858516344626"));
+            .to.emit(cig, "Transfer").withArgs(CIGETH_SLP_ADDRESS, EOA, peth("2703337.399335917561927381"));
         supply2 = await stogie.totalSupply();
         expect(supply).eq(supply2);
 
@@ -566,9 +568,9 @@ describe("Stogie", function () {
 
     it("test fill", async function () {
         await stogie.connect(tycoon).deposit(await stogie.balanceOf(EOA), false);
-        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("1.288525039146620020"));
-        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.706406122752902732"));
-        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.706406119522013943"));
+        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.989465690472307743"));
+        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.497752516061533615"));
+        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.497752512572990368"));
         await expect( stogie.connect(owner)
             .depositWithETH(
                 1, // peth("1"),
@@ -576,11 +578,11 @@ describe("Stogie", function () {
                 true,
                 true, // mint ud
                 {value: peth("10")})
-        ).to.emit(stogie, "Deposit").withArgs(owner.address, peth("8544.233573299167701782"));
-        await expect(await stogie.connect(tycoon).fill(await cig.balanceOf(EOA))).to.emit(cig, "Transfer").withArgs(EOA, stogie.address, peth("4873208.967196692360228424")); // fills with 4873208 CIG
+        ).to.emit(stogie, "Deposit").withArgs(owner.address, peth("10971.768074063004035697"));
+        await expect(await stogie.connect(tycoon).fill(await cig.balanceOf(EOA))).to.emit(cig, "Transfer").withArgs(EOA, stogie.address, peth("8223147.994368543340419539")); // fills with 4873208 CIG
         let pending =
-        await expect(await stogie.connect(owner).harvest()).to.emit(stogie, "Harvest").withArgs(owner.address, owner.address, peth("3536089.262786132999134764"));
-        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("1337126.008296045994009105"));
+        await expect(await stogie.connect(owner).harvest()).to.emit(stogie, "Harvest").withArgs(owner.address, owner.address, peth("6239320.771440962837161386"));
+        await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("1983832.081706683597094503"));
         let deposit;
 
         // owner 8544233573299167701782 + tycoon 3230888790697738610911

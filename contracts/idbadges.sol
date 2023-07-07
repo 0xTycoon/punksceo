@@ -45,14 +45,11 @@ in the Cig Factory to mint a badge. The value can can change, and is recorded
 for each bade. The recorded value is used to calculate the "Total Minimum Stogie
  Deposit" for an account.
 
-
 Total Minimum Stogie Deposit: The amount of Stogies the account is required to
 deposit in the Cigarette Factory, depending on the badges they own.
-For all badges owned by an account, an average is calculated using the
-Minimum Stogie Deposit value of each badge. This value is then multiplied by the
- number of badges in the account to determine the Total Minimum Stogie Deposit.
- Then, the following formula is used to determine your required deposit:
- AVERAGE MIN VALUE * NUMBER OF BADGES.
+For all badges owned by an account, a sum is calculated using the
+Minimum Stogie Deposit value of each badge. This sum is the Total Minimum Stogie
+ Deposit.
 
 Primary Bade: In case the address holds multiple badges, a primary badge can be
 chosen. The primary badge will be the one that the holder chooses to be always
@@ -69,56 +66,42 @@ RULES
 2. To mint a bade, a minimum amount of stogie deposit in the Cigarette Factory
    is required.
 
-2. Badges can expire! If you have not deposited a minimum amount of Stogies
+3. Badges can expire! If you have not deposited a minimum amount of Stogies
    into the Cigarette Factory, then anybody can call the `expire` function. So,
    you will need to make sure to always keep a "Total Minimum Stogie Deposit"
-   in the Cigarette Factory, or else badges owned by your account can expire,
-   until the deposit amount is satisfied.
+   in the Cigarette Factory, or else badges owned by your account can be expired
+   one-by-one, until the deposit amount is satisfied.
 
-3. Expiration can be initiated by anyone at any time, if the expiration rule is
-   met. If an expiry initiation transaction is successful, the token will be
+4. Expiration can be initiated by anyone at any time, if the expiration rule (4)
+   is met. If an expiry initiation transaction is successful, the token will be
    placed in the `PendingExpiry` state, and moved to the "Expired" account.
-   Your "Total Minimum Stogie Deposit" will also decrease based on the formula.
+   Your "Total Minimum Stogie Deposit" will also decrease by the "Minimum
+   Stogie Deposit" value of that bade.
 
-4. Expiration grace period: After transferring a badge, it cannot be expired for
+5. Expiration grace period: After transferring a badge, it cannot be expired for
    72 hours. The new owner will have 72 hours to put up a Minimum Stogie
    Deposit from the account holding the badges.
 
-5. Minimum Stogie Deposit: Each account is required to hold a minimum amount of
-   stogies. Each card has its own amount, and this amount is set when the card
-   is minted by using the Global minimum value.
+6. Reactivating: Badges that are in `PendingExpiry` state for less than 90 days
+   can still be reactivated. Their owner would need to place a minimum
+   amount of stogies to the Cigarette Factory, and then call the reactivate
+   method. Only the owner can reactivate.
 
-4. `PendingExpiry` state lasts 90 days. During this time, anybody can still
-    put the required amount of Stogies on the address, and then call the `
-    reactivate` function. This will put the NFT back into Active state.
-
-5. Reclaiming: If the NFT has been expired in `PendingExpiry` for more than 90
+7. Reclaiming: If the NFT has been expired in `PendingExpiry` for more than 90
     days, then it can be reclaimed by anyone, simply by calling the `reclaim`
    function. The caller must hold a minimum amount of Stogies to reclaim. Also,
-   the address reclaiming must not have minted an NFT before.
+   the address reclaiming must not have minted a badge before. Note that the
+   picture on the bade will change, however, the ID won't change.
 
-6. The supply of the NFT is unlimited. However, since Stogies are required
+8. The supply of the NFT is unlimited. However, since Stogies are required
    for minting and holding the NFT, there is an economic scarcity to the NFT.
    This means it cannot be minted forever, since CIG and ETH is needed to
    create Stogies, and both may have limited availability, if demand for any of
    these is high.
 
-7. Each unique address can only mint a maximum of 1 NFT. However, they can hold
-   an unlimited number of NFTs, minted by other accounts, as long as they have
-   deposited the minimum Stogies into the Cigarette Factory. The minumum
-
-8. Reclaiming expired NFTs: Any address that hasn't minted a NFT, can
-   reclaim an expired NFT. The NFT being reclaimed must be in the PendingExpiry
-   state for more than 90 days. One caveat: Once an NFT is reclaimed, the
-   picture will change to reflect the address that is reclaiming it. Also, the
-   previous owner will be allowed to mint a new NFT again. The number if ID
-   will remain the same.
-
-9. Reactivate: NFTs that are in `PendingExpiry` state for less than 90 days
-   can still be reactivated. Their owner would need to place a minimum
-   amount of stogies on their address or stake them in the factory, and then
-   call the reactivate method. Any address can call this method on behalf of
-   any NFT id.
+9. Each unique address can only mint a maximum of 1 badge. However, they can
+   hold an unlimited number of badges, minted by other accounts, as long as they
+   have deposited the minimum Stogies into the Cigarette Factory.
 
 10. CEO can change the Global Minimum Value. %2.5 up or down, every 30 days.
     With the limit that the result of the change must be not higher than 0.01%
@@ -171,16 +154,18 @@ END 🚬
 
 */
 
-contract EmployeeIDCards {
+contract EmployeeIDBadges {
 
     using DynamicBufferLib for DynamicBufferLib.DynamicBuffer;
+
     enum State {
         Uninitialized,
         Active,
         PendingExpiry,
         Expired
     }
-    struct Card {
+
+    struct Badge {
         address identiconSeed;   // address of identicon (the minter)
         address owner;           // address of current owner
         uint256 minStog;         // minimum stogies deposit needed
@@ -203,14 +188,14 @@ contract EmployeeIDCards {
     uint32 private immutable orderConfigId;
     mapping(bytes32 => Attribute) internal atts;    // punk-block to attribute name lookup table
     mapping(address => uint256) private balances;   // counts of ownership
-    mapping(address => mapping(uint256 => uint256)) private ownedCards; // track enumeration
+    mapping(address => mapping(uint256 => uint256)) private ownedBadges;// track enumeration
     mapping(address => uint256) public minStogSum;                      // sum of min Stogies required per account
     mapping(uint256 => address) public expiredOwners;
-    mapping(uint256 => Card) public cards;                              // all of the cards
+    mapping(uint256 => Badge) public badges;                            // all of the badges
     uint256 public employeeHeight;                                      // the next available employee id
     mapping(address => mapping(address => bool)) private approvalAll;   // operator approvals
     bytes4 private constant RECEIVED = 0x150b7a02;  // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
-    mapping(address => uint64) public minters;      // ensures each card has a unique identiconSeed value, address => timestamp
+    mapping(address => uint64) public minters;      // ensures each badge has a unique identiconSeed value, address => timestamp
     mapping(address => uint256) private pID; // store the primary id for the address
     address private curator;
     uint256 public minSTOG = 20 ether;              // minimum STOG required to mint
@@ -404,17 +389,17 @@ contract EmployeeIDCards {
         address _holder
     ) view external returns (
         uint256[] memory,           // different stats, including balances, etc
-        Card[] memory inventory,    // cards
+        Badge[] memory inventory,   // badges
         string[] memory uris,       // uris
         uint256[] memory ids,       // ids
-        Card[] memory expInventory, // expired cards
+        Badge[] memory expInventory,// expired badges
         string[] memory expUris,    // uris of expired tokens
         uint256[] memory expIds     // expired ids
     ) {
         uint[] memory ret = new uint[](12);
         ret[0] = minSTOG;                           // Minimum stogies required
         ret[1] = minters[_holder];                  // timestamp of when account minted an id
-        ret[2] = minStogSum[_holder];              // minimum STOG required for that _holder
+        ret[2] = minStogSum[_holder];               // minimum STOG required for that _holder
         ret[3] = balanceOf(_holder);                // holder's balance of ids
         ret[4] = balanceOf(EXPIRED);                // Balance of expired ids
         ret[5] = employeeHeight;                    // that's also the totalSupply();
@@ -426,14 +411,13 @@ contract EmployeeIDCards {
         (inventory,
         , // don't need balance
             uris,
-            ids) = getCards(_holder, 0, 10);
-        (expInventory,, expUris, expIds) = getCards(EXPIRED, 0, uint16(20));
+            ids) = getBadges(_holder, 0, 10);
+        (expInventory,, expUris, expIds) = getBadges(EXPIRED, 0, uint16(20));
         return (ret, inventory, uris, ids, expInventory, expUris, expIds);
     }
 
     /**
-    * avgMinSTOG is the public getter, to get the average minSTOG required for
-    *    that _holder
+    * avgMinSTOG is the public getter, to get the average minSTOG
     * @param _a address of holder
     * @return uint256 the average value.
     */
@@ -460,29 +444,29 @@ contract EmployeeIDCards {
     }
 
     /**
-    * @dev getCards get cards of a holder with pagination. It will dynamically
+    * @dev getBadges get badges of a holder with pagination. It will dynamically
     *   adjust the resulting array to match the amount of results returned. So,
     *   if you start from page 0 with 30 items per page, and there are only 5
-    *   cards, it will return and array with 5 entries only.
+    *   badges, it will return and array with 5 entries only.
     *   Return an empty array if balance is 0
     *   Throws if a non-existent page is requested.
     * @param _holder address of account
     * @param _page number starting from 0 for the first page
     * @param _perPage how many tokens per gape
-    * @return inventory Card[] memory result of cards.
-    * @return balance uint32 the total balance of all cards
+    * @return inventory Badge[] memory result of badges.
+    * @return balance uint32 the total balance of all badges
     * @return uris string[] of the tokenURI for each token
     * @return ids uint256[] list of the token ids
     */
-    function getCards(address _holder, uint16 _page, uint16 _perPage) view public returns (
-        Card[] memory,   // inventory
+    function getBadges(address _holder, uint16 _page, uint16 _perPage) view public returns (
+        Badge[] memory,   // inventory
         uint32 balance,
         string[] memory, // uris
         uint256[] memory // ids
     ) {
         balance = uint32(balanceOf(_holder));
         if (balance == 0) {
-            return (new Card[](0), 0, new string[](0), new uint256[](0));
+            return (new Badge[](0), 0, new string[](0), new uint256[](0));
         }
         uint256 offset = _page * _perPage;
         require(offset < balance, "page over");
@@ -490,13 +474,13 @@ contract EmployeeIDCards {
         if (len >= _perPage) {
             len = _perPage;
         }
-        Card[] memory inventory = new Card[](len);
+        Badge[] memory inventory = new Badge[](len);
         string[] memory uris = new string[](len);
         uint256[] memory ids = new uint256[](len);
         uint256 id;
         for (uint256 i = 0; i < len; i++) {
             id = tokenOfOwnerByIndex(_holder, offset + i);
-            inventory[i] = cards[id];
+            inventory[i] = badges[id];
             ids[i] = id;
             uris[i] = tokenURI(id);
         }
@@ -533,7 +517,7 @@ contract EmployeeIDCards {
     }
 
     /**
-    * @dev issueID mints a new ID card. The account must be an active stogie
+    * @dev issueID mints a new ID badge. The account must be an active stogie
     *   staker would be called from the Stogies contract. Stogies would ensure
     *   not called form a contract
     */
@@ -561,7 +545,7 @@ contract EmployeeIDCards {
     function _issueID(address _to, uint256 min) internal returns (uint256 id) {
         require(minters[_to] == 0, "_to has already minted this pic");
         id = employeeHeight;
-        Card storage c = cards[id];
+        Badge storage c = badges[id];
         c.state = State.Active;
         c.minStog = min;                    // record the minSTOG
         c.identiconSeed = _to;              // save seed, used for the identicon
@@ -582,7 +566,7 @@ contract EmployeeIDCards {
     * @param _tokenId the token to expire
     */
     function expire(uint256 _tokenId) external returns (State) {
-        Card storage c = cards[_tokenId];
+        Badge storage c = badges[_tokenId];
         State s = c.state;
         require(s == State.Active, "invalid state");     // must be Active
         require(c.transferAt < block.number - uint256(GRACE_PERIOD),
@@ -610,7 +594,7 @@ contract EmployeeIDCards {
     *    Can be called by expired owner.
     */
     function reactivate(uint256 _tokenId) external returns (State) {
-        Card storage c = cards[_tokenId];
+        Badge storage c = badges[_tokenId];
         State s = c.state;
         require(s == State.PendingExpiry, "invalid state");
         address o = expiredOwners[_tokenId];
@@ -643,8 +627,8 @@ contract EmployeeIDCards {
     */
     function reclaim(uint256 _tokenId) external {
         require(minters[msg.sender] == 0,
-            "_to has minted a card already");                  // cannot mint more than one
-        Card storage c = cards[_tokenId];
+            "_to has minted a badge already");                  // cannot mint more than one
+        Badge storage c = badges[_tokenId];
         require(c.state == State.PendingExpiry, "must be PendingExpiry");
         require(
             c.transferAt < block.number - DURATION_STATE_CHANGE,
@@ -675,13 +659,13 @@ contract EmployeeIDCards {
 
     /**
     * @notice allows the holder of the NFT to change the identiconSeed used to
-    *    generate the picture on the id card. Holder must not be on the minters
+    *    generate the picture on the bade. Holder must not be on the minters
     *    list. Can only be called once per address. See the rules for more details.
     *
     * @param _tokenId the token id to change the picture for
     */
     function snapshot(uint256 _tokenId) external {
-        Card storage c = cards[_tokenId];
+        Badge storage c = badges[_tokenId];
         require(c.state == State.Active, "state must be Active");
         require(c.owner == msg.sender, "you must be the owner");
         require(
@@ -722,21 +706,21 @@ contract EmployeeIDCards {
     */
     function addEnumeration(address _to, uint256 _tokenId) internal {
         uint256 last = balances[_to] - 1; // the index of the last position
-        ownedCards[_to][last] = _tokenId; // add a new entry
-        cards[_tokenId].index = uint64(last);
+        ownedBadges[_to][last] = _tokenId; // add a new entry
+        badges[_tokenId].index = uint64(last);
     }
 
     function removeEnumeration(address _from, uint256 _tokenId) internal {
         uint256 height = balances[_from];  // last index
-        uint256 i = cards[_tokenId].index; // index
+        uint256 i = badges[_tokenId].index; // index
         if (i != height) {
             // If not last, move the last token to the slot of the token to be deleted
-            uint256 lastTokenId = ownedCards[_from][height];
-            ownedCards[_from][i] = lastTokenId;   // move the last token to the slot of the to-delete token
-            cards[lastTokenId].index = uint64(i); // update the moved token's index
+            uint256 lastTokenId = ownedBadges[_from][height];
+            ownedBadges[_from][i] = lastTokenId;   // move the last token to the slot of the to-delete token
+            badges[lastTokenId].index = uint64(i); // update the moved token's index
         }
-        cards[_tokenId].index = 0;                // delete from index
-        delete ownedCards[_from][height];         // delete last slot
+        badges[_tokenId].index = 0;                // delete from index
+        delete ownedBadges[_from][height];         // delete last slot
     }
 
     /***
@@ -774,8 +758,8 @@ contract EmployeeIDCards {
     function tokenOfOwnerByIndex(address _owner, uint256 _index) public view returns (uint256) {
         require(_index < balances[_owner], "index out of range");
         require(_owner != address(0), "invalid _owner");
-        uint256 id = ownedCards[_owner][_index];
-        require(cards[id].owner != address(0), "token at _index not found");
+        uint256 id = ownedBadges[_owner][_index];
+        require(badges[id].owner != address(0), "token at _index not found");
         return id;
     }
 
@@ -788,7 +772,7 @@ contract EmployeeIDCards {
     }
 
     function name() public pure returns (string memory) {
-        return "Cigarette Factory ID Cards";
+        return "Employee ID Badges";
     }
 
     function symbol() public pure returns (string memory) {
@@ -816,10 +800,10 @@ contract EmployeeIDCards {
     function tokenURI(uint256 _tokenId) public view returns (string memory) {
         DynamicBufferLib.DynamicBuffer memory result;
         require(_tokenId < employeeHeight, "index out of range");
-        Card storage c = cards[_tokenId];
+        Badge storage c = badges[_tokenId];
         (bytes memory badge, bytes32[] memory traits) = _generateBadge(_tokenId, c.identiconSeed);
-        result.append('{\n"description": "Employee ID Cards for the Cigarette Factory",', "\n",
-            '"external_url": "https://cigtoken.eth.limo/#idCard-');
+        result.append('{\n"description": "Employee ID Badges for the Cigarette Factory",', "\n",
+            '"external_url": "https://cigtoken.eth.limo/#badge-');
         result.append(bytes(_intToString(_tokenId)), '",', "\n");
         result.append('"image": "data:image/svg+xml;base64,');
         result.append(bytes(Base64.encode(badge)), '",', "\n");
@@ -859,7 +843,7 @@ contract EmployeeIDCards {
      */
     function ownerOf(uint256 _tokenId) public view returns (address) {
         require(_tokenId < employeeHeight, "index out of range");
-        Card storage c = cards[_tokenId];
+        Badge storage c = badges[_tokenId];
         address o = c.owner;
         require(o != address(0), "not minted.");
         return o;
@@ -877,7 +861,7 @@ contract EmployeeIDCards {
     function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes memory _data) external {
         require(_to != EXPIRED, "cannot transfer there");
         _validateTransfer(_from, _tokenId);
-        _transfer(_from, _to, _tokenId, cards[_tokenId].minStog);
+        _transfer(_from, _to, _tokenId, badges[_tokenId].minStog);
         require(_checkOnERC721Received(_from, _to, _tokenId, _data), "ERC721: transfer to non ERC721Receiver implementer");
     }
 
@@ -894,14 +878,14 @@ contract EmployeeIDCards {
         require(_to != EXPIRED, "cannot transfer there");
         bytes memory data = new bytes(0);
         _validateTransfer(_from, _tokenId);
-        _transfer(_from, _to, _tokenId, cards[_tokenId].minStog);
+        _transfer(_from, _to, _tokenId, badges[_tokenId].minStog);
         require(_checkOnERC721Received(_from, _to, _tokenId, data), "ERC721: transfer to non ERC721Receiver implementer");
     }
 
     function transferFrom(address _from, address _to, uint256 _tokenId) external {
         require(_to != EXPIRED, "cannot transfer there");
         _validateTransfer(_from, _tokenId);
-        _transfer(_from, _to, _tokenId, cards[_tokenId].minStog);
+        _transfer(_from, _to, _tokenId, badges[_tokenId].minStog);
     }
 
     /**
@@ -910,16 +894,16 @@ contract EmployeeIDCards {
     */
     function _validateTransfer(address _from, uint256 _tokenId) internal {
         address a;
-        address o = cards[_tokenId].owner;                  // assuming o can never be address(0)
-        require(o == _from, "_from must be owner");         // also ensures that the card exists & owner is not 0x0
-        a = cards[_tokenId].approval;                       // a is an address that has approval
+        address o = badges[_tokenId].owner;                 // assuming o can never be address(0)
+        require(o == _from, "_from must be owner");         // also ensures that the badge exists & owner is not 0x0
+        a = badges[_tokenId].approval;                      // a is an address that has approval
         require(
             msg.sender == address(stogie) ||                // is executed by the Stogies contract
             o == msg.sender ||                              // or executed by owner
             a == msg.sender ||                              // or owner approved the sender
             (approvalAll[o][msg.sender]), "not permitted"); // or owner approved the operator, who's the sender
         if (a != address(0)) {
-            cards[_tokenId].approval = address(0);          // clear previous approval
+            badges[_tokenId].approval = address(0);          // clear previous approval
             emit Approval(msg.sender, address(0), _tokenId);
         }
     }
@@ -949,9 +933,9 @@ contract EmployeeIDCards {
             require(_from != _to, "cannot send to self");
             require(_to != address(0), "_to is zero");
             if (_from == EXPIRED) {
-                require(cards[_tokenId].state == State.PendingExpiry, "state must be PendingExpiry");
+                require(badges[_tokenId].state == State.PendingExpiry, "state must be PendingExpiry");
             } else {
-                require(cards[_tokenId].state == State.Active, "state must be Active");
+                require(badges[_tokenId].state == State.Active, "state must be Active");
             }
             --balances[_from];
             minStogSum[_from] -= _min;
@@ -962,8 +946,8 @@ contract EmployeeIDCards {
         toSum = minStogSum[_to];
         toSum += _min;
         minStogSum[_to] = toSum;
-        cards[_tokenId].owner = _to;                            // set new owner
-        cards[_tokenId].transferAt = uint64(block.number);
+        badges[_tokenId].owner = _to;                            // set new owner
+        badges[_tokenId].transferAt = uint64(block.number);
         addEnumeration(_to, _tokenId);
         emit Transfer(_from, _to, _tokenId);
     }
@@ -975,9 +959,9 @@ contract EmployeeIDCards {
     */
     function approve(address _to, uint256 _tokenId) external {
         require(_tokenId < employeeHeight, "index out of range");
-        address o = cards[_tokenId].owner;
+        address o = badges[_tokenId].owner;
         require(o == msg.sender || isApprovedForAll(o, msg.sender), "action on token not permitted");
-        cards[_tokenId].approval = _to;
+        badges[_tokenId].approval = _to;
         emit Approval(msg.sender, _to, _tokenId);
     }
     /**
@@ -997,7 +981,7 @@ contract EmployeeIDCards {
     * @return Will always return address(this)
     */
     function getApproved(uint256 _tokenId) public view returns (address) {
-        return cards[_tokenId].approval;
+        return badges[_tokenId].approval;
     }
 
     /**
@@ -1116,7 +1100,7 @@ contract EmployeeIDCards {
     }
 
     function setPrimaryId(uint256 _tokenId) external {
-        Card storage c = cards[_tokenId];
+        Badge storage c = badges[_tokenId];
         require(msg.sender == c.owner, "must be owner");
         pID[msg.sender] = _tokenId;
     }

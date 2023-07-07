@@ -11,12 +11,12 @@ const unlimited = BigNumber.from("2").pow(BigNumber.from("256")).sub(BigNumber.f
 
 
 
-describe("ID Cards", function () {
+describe("ID Badges", function () {
     let owner, simp, elizabeth, tycoon, degen, employee1, employee2, impersonatedSigner; // accounts
-    let pool, Stogie, stogie, cig, cigeth, IDCards, blocks; // contracts
+    let pool, Stogie, stogie, cig, cigeth, IDBadges, blocks; // contracts
     let feth = utils.formatEther;
     let peth = utils.parseEther;
-    let cards, EmployeeIDCards;
+    let badges, EmployeeIDBadges;
     const EXPIRED_ADDRESS = "0x0000000000000000000000000000000000000E0F";
     const EOA = "0xc43473fA66237e9AF3B2d886Ee1205b81B14b2C8"; // EOA that has ETH and CIG to impersonate
     const CIG_ADDRESS = "0xcb56b52316041a62b6b5d0583dce4a8ae7a3c629"; // cig on mainnet
@@ -53,8 +53,8 @@ describe("ID Cards", function () {
         //[owner, simp, elizabeth] = await ethers.getSigners();
         cigeth = await hre.ethers.getContractAt(SLP_ABI, CIGETH_SLP_ADDRESS);
 
-        EmployeeIDCards = await ethers.getContractFactory("EmployeeIDCards");
-        cards = await EmployeeIDCards.deploy(
+        EmployeeIDBadges = await ethers.getContractFactory("EmployeeIDBadges");
+        badges = await EmployeeIDBadges.deploy(
             CIG_ADDRESS,
             3, // epoch (blocks)
             1, // duration (number of epochs to wait)
@@ -64,7 +64,7 @@ describe("ID Cards", function () {
             "0x4872BC4a6B29E8141868C3Fe0d4aeE70E9eA6735",  // barcode
             0 // layer order id
         );
-        await cards.deployed();
+        await badges.deployed();
 
         // deploy stogie
         Stogie = await ethers.getContractFactory("Stogie");
@@ -75,7 +75,7 @@ describe("ID Cards", function () {
             "0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac", // sushi factory
             "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D", // uniswap router
             "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // weth
-            cards.address
+            badges.address
         );
         await stogie.deployed();
 
@@ -90,11 +90,11 @@ describe("ID Cards", function () {
             value: ethers.utils.parseEther("10.0")
         });
 
-        await cards.setStogie(stogie.address); // set the stogie address
+        await badges.setStogie(stogie.address); // set the stogie address
 
     });
 
-    it("init the id cards", async function () {
+    it("init the id badges", async function () {
         /*
                 await tycoon.sendTransaction({
                     to: "0x0000000000000000000000000000000000000000",
@@ -131,32 +131,32 @@ describe("ID Cards", function () {
             true,
             false, // do not mint id
             {value : peth("1")})).to.emit(stogie, 'Transfer');
-        expect(await cards.balanceOf(simp.address)).to.equal("0"); // nothing minted for simp
-        expect(await stogie.connect(tycoon).wrapAndDeposit(slpBal, true)).to.emit(stogie, 'Transfer'); // deposit stogies and mint card for tycoon
+        expect(await badges.balanceOf(simp.address)).to.equal("0"); // nothing minted for simp
+        expect(await stogie.connect(tycoon).wrapAndDeposit(slpBal, true)).to.emit(stogie, 'Transfer'); // deposit stogies and mint badge for tycoon
         console.log("pending reward: " +  feth(await stogie.connect(tycoon).pendingCig(EOA)));
-        expect(await cards.balanceOf(EOA)).to.equal("1"); // MINT 1 for tycoon
+        expect(await badges.balanceOf(EOA)).to.equal("1"); // MINT 1 for tycoon
         // generate the badge url
-        let badge = await cards.tokenURI(0);
+        let badge = await badges.tokenURI(0);
         console.log(badge);
 
         /**
-         * reduce the minStog to 15.5 then mint a card using the simp account
-         * then transfer the card to tycoon.
+         * reduce the minStog to 15.5 then mint a badge using the simp account
+         * then transfer the badge to tycoon.
          * Tycoon's average should change to 17.75, because (20 + 15.5) / 2 = 17.75
          * meanwhile, simp's should be 0
          */
-        await cards.connect(owner).setMin(peth("15.5"));
-        await expect(await cards.connect(simp).issueMeID()).to.emit(cards, "Transfer").withArgs("0x0000000000000000000000000000000000000000",  simp.address, 1); // MINT 1 for simp
-        expect(await cards.balanceOf(simp.address)).to.equal("1");
-        expect(await cards.totalSupply()).to.equal("2");
-        console.log("tycoonA:"+await cards.connect(degen).balanceOf(EOA), " add  :"+EOA, " avgMinSTOG:", await cards.avgMinSTOG(EOA));
-        await cards.connect(simp).transferFrom(simp.address, EOA, 1); // simp gave ID to tycoon
-        expect(await cards.balanceOf(simp.address)).to.equal("0");
-        expect(await cards.balanceOf(EOA)).to.equal("2"); // tycoon has 2
-        let [a,b, c] = await cards.connect(tycoon).getStats(EOA);
+        await badges.connect(owner).setMin(peth("15.5"));
+        await expect(await badges.connect(simp).issueMeID()).to.emit(badges, "Transfer").withArgs("0x0000000000000000000000000000000000000000",  simp.address, 1); // MINT 1 for simp
+        expect(await badges.balanceOf(simp.address)).to.equal("1");
+        expect(await badges.totalSupply()).to.equal("2");
+        console.log("tycoonA:"+await badges.connect(degen).balanceOf(EOA), " add  :"+EOA, " avgMinSTOG:", await badges.avgMinSTOG(EOA));
+        await badges.connect(simp).transferFrom(simp.address, EOA, 1); // simp gave ID to tycoon
+        expect(await badges.balanceOf(simp.address)).to.equal("0");
+        expect(await badges.balanceOf(EOA)).to.equal("2"); // tycoon has 2
+        let [a,b, c] = await badges.connect(tycoon).getStats(EOA);
         await expect(a[2]).to.equal(BigNumber.from("35500000000000000000")); // the sum
         //console.log(b);
-        [a,b, c] = await cards.connect(tycoon).getStats(simp.address);
+        [a,b, c] = await badges.connect(tycoon).getStats(simp.address);
        // console.log(a); // todo average should be 0
         await expect(a[2]).to.equal(BigNumber.from("00000000000000000000"));
 
@@ -164,24 +164,24 @@ describe("ID Cards", function () {
 
     it("test expiry", async function () {
         // tycoon withdraws stogies.
-        let [a,b, c] = await cards.connect(tycoon).getStats(EOA);
+        let [a,b, c] = await badges.connect(tycoon).getStats(EOA);
         await stogie.connect(tycoon).withdraw(a[6]); // tycoon rugs his own stogies
 
         // tycoon was sent some NFTs but doesn't have any stogies deposited. Oh no!
 
-        await expect(cards.expire(1)).to.be.revertedWith("during grace period"); // cannot be expired just after transfer
-        console.log("tycoon Befor expired:"+await cards.connect(degen).balanceOf(EOA), " add  :"+EOA, " avgMinSTOG:", await cards.avgMinSTOG(EOA));
-        let cdata = await cards.cards( await cards.tokenOfOwnerByIndex(EOA, 0))
+        await expect(badges.expire(1)).to.be.revertedWith("during grace period"); // cannot be expired just after transfer
+        console.log("tycoon Befor expired:"+await badges.connect(degen).balanceOf(EOA), " add  :"+EOA, " avgMinSTOG:", await badges.avgMinSTOG(EOA));
+        let cdata = await badges.badges( await badges.tokenOfOwnerByIndex(EOA, 0))
         console.log(cdata);
-        cdata = await cards.cards( await cards.tokenOfOwnerByIndex(EOA, 1));
+        cdata = await badges.badges( await badges.tokenOfOwnerByIndex(EOA, 1));
         console.log(cdata);
-        await expect(await cards.expire(1)).to.emit(cards, "StateChanged");
-        console.log("tycoon After expired:"+await cards.connect(degen).balanceOf(EOA), " add  :"+EOA, " avgMinSTOG:", await cards.avgMinSTOG(EOA));
-        expect(await cards.balanceOf(simp.address)).to.equal("0"); // simp's token got yoinked
-        expect(await cards.balanceOf(EXPIRED_ADDRESS)).to.equal("1");
-        await expect(cards.reactivate(1)).to.be.revertedWith("not your token");
+        await expect(await badges.expire(1)).to.emit(badges, "StateChanged");
+        console.log("tycoon After expired:"+await badges.connect(degen).balanceOf(EOA), " add  :"+EOA, " avgMinSTOG:", await badges.avgMinSTOG(EOA));
+        expect(await badges.balanceOf(simp.address)).to.equal("0"); // simp's token got yoinked
+        expect(await badges.balanceOf(EXPIRED_ADDRESS)).to.equal("1");
+        await expect(badges.reactivate(1)).to.be.revertedWith("not your token");
 
-        await expect(cards.connect(tycoon).reactivate(1)).to.be.revertedWith("insert more STOG"); // cannot reactivate since no stogies
+        await expect(badges.connect(tycoon).reactivate(1)).to.be.revertedWith("insert more STOG"); // cannot reactivate since no stogies
        // expect(await stogie.connect(elizabeth).wrapAndDeposit(slpBal, false)).to.emit(stogie, 'Transfer'); // load stogies
         let tx = {
             to: stogie.address,
@@ -191,46 +191,46 @@ describe("ID Cards", function () {
 
         // test the sending on ETH to get stogies
         expect(await elizabeth.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(elizabeth.address, ethers.utils.parseEther("1")); // MINT 1 for elizabeth
-        expect(await cards.totalSupply()).to.equal("3");
-        [a,b, c] = await cards.connect(tycoon).getStats(elizabeth.address);
+        expect(await badges.totalSupply()).to.equal("3");
+        [a,b, c] = await badges.connect(tycoon).getStats(elizabeth.address);
         expect(a[6]).to.be.equal(peth("1122.049524234448419428")); // 1122 stogies deposited
-        expect(await cards.balanceOf(elizabeth.address)).to.equal("1");
-        expect(await cards.balanceOf(EOA)).to.equal("1");
+        expect(await badges.balanceOf(elizabeth.address)).to.equal("1");
+        expect(await badges.balanceOf(EOA)).to.equal("1");
 
-        await expect(cards.connect(degen).reclaim(1)).to.be.revertedWith("insert more STOG"); // fails because degen has no stog
+        await expect(badges.connect(degen).reclaim(1)).to.be.revertedWith("insert more STOG"); // fails because degen has no stog
         await expect(await stogie.connect(elizabeth).withdraw(peth("20"))); // withdraw 20 stog
         await expect(await stogie.connect(elizabeth).transfer(degen.address, peth("20")));//.to.emit(stogie, "Transfer");
         await expect(await stogie.connect(degen).deposit(peth("20"), false)).to.emit(stogie, "Deposit"); // deposit to the factory, do not mint
-        await expect(cards.connect(degen).expire(1)).to.be.revertedWith("invalid state"); // already expired
-        await expect(await cards.connect(degen).reclaim(1)).to.be.emit(cards, "StateChanged").withArgs(1, degen.address, 3, 1); // 3=Expired, 1=Active
-        expect(await cards.balanceOf(degen.address)).to.equal("1");
-        expect(await cards.balanceOf(EXPIRED_ADDRESS)).to.equal("0");
+        await expect(badges.connect(degen).expire(1)).to.be.revertedWith("invalid state"); // already expired
+        await expect(await badges.connect(degen).reclaim(1)).to.be.emit(badges, "StateChanged").withArgs(1, degen.address, 3, 1); // 3=Expired, 1=Active
+        expect(await badges.balanceOf(degen.address)).to.equal("1");
+        expect(await badges.balanceOf(EXPIRED_ADDRESS)).to.equal("0");
        // test reactivation. Degen withdraws, expiry is called, degen deposits and reactivates.
         await expect(await stogie.connect(degen).withdraw(peth("20"))).to.emit(stogie, "Withdraw");
-        await expect(cards.expire(1)).to.be.revertedWith("during grace period");// under a grace period because recently reclaimed
+        await expect(badges.expire(1)).to.be.revertedWith("during grace period");// under a grace period because recently reclaimed
 
-        [a,b, c] = await cards.connect(tycoon).getStats(simp.address); // burn some time
-        [a,b, c] = await cards.connect(tycoon).getStats(EXPIRED_ADDRESS); // burn some time
+        [a,b, c] = await badges.connect(tycoon).getStats(simp.address); // burn some time
+        [a,b, c] = await badges.connect(tycoon).getStats(EXPIRED_ADDRESS); // burn some time
         //console.log(a);
 
-        await expect(await cards.expire(1)).to.emit(cards, "StateChanged").withArgs(1, owner.address, 1, 2 ); // will go in State.PendingExpiry
+        await expect(await badges.expire(1)).to.emit(badges, "StateChanged").withArgs(1, owner.address, 1, 2 ); // will go in State.PendingExpiry
         await expect(await stogie.connect(degen).deposit(peth("20"), false)).to.emit(stogie, "Deposit");
 
-        await expect(await cards.connect(degen).reactivate(1)).to.be.emit(cards, "StateChanged").withArgs(1, degen.address, 2, 1);
+        await expect(await badges.connect(degen).reactivate(1)).to.be.emit(badges, "StateChanged").withArgs(1, degen.address, 2, 1);
 
-        expect(await cards.balanceOf(degen.address)).to.equal("1");
-        expect(await cards.balanceOf(EXPIRED_ADDRESS)).to.equal("0");
-        //[a,b, c] = await cards.connect(degen).getStats(tycoon.address);
+        expect(await badges.balanceOf(degen.address)).to.equal("1");
+        expect(await badges.balanceOf(EXPIRED_ADDRESS)).to.equal("0");
+        //[a,b, c] = await badges.connect(degen).getStats(tycoon.address);
         //console.log(b);
 
-        console.log("tycoon: "+await cards.connect(degen).balanceOf(EOA));
-        console.log("liz: "+await cards.connect(degen).balanceOf(elizabeth.address));
-        console.log("simp: "+await cards.connect(degen).balanceOf(simp.address));
-        console.log("degen: "+await cards.connect(degen).balanceOf(degen.address));
-        await expect(cards.connect(simp).issueMeID()).to.be.revertedWith("_to has already minted this pic");
+        console.log("tycoon: "+await badges.connect(degen).balanceOf(EOA));
+        console.log("liz: "+await badges.connect(degen).balanceOf(elizabeth.address));
+        console.log("simp: "+await badges.connect(degen).balanceOf(simp.address));
+        console.log("degen: "+await badges.connect(degen).balanceOf(degen.address));
+        await expect(badges.connect(simp).issueMeID()).to.be.revertedWith("_to has already minted this pic");
     });
 
-    it("test getCards", async function () {
+    it("test getBadges", async function () {
         let tx = {
             to: stogie.address,
             // Convert currency unit from ether to wei
@@ -241,39 +241,39 @@ describe("ID Cards", function () {
         expect(await employee1.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(employee1.address, ethers.utils.parseEther("1"));
         expect(await employee2.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(employee2.address, ethers.utils.parseEther("1"));
 
-        expect(await cards.totalSupply()).to.equal("5");
-        console.log("************** balanceA "+await cards.balanceOf(EOA) +" ********** avgMinSTOG:", await cards.avgMinSTOG(EOA));
+        expect(await badges.totalSupply()).to.equal("5");
+        console.log("************** balanceA "+await badges.balanceOf(EOA) +" ********** avgMinSTOG:", await badges.avgMinSTOG(EOA));
 
-// first transfer all cards to 1 address
-        await cards.connect(degen)["safeTransferFrom(address,address,uint256)"](degen.address, EOA, await cards.connect(degen).tokenOfOwnerByIndex(degen.address, 0));
-        console.log("************** balanceA "+await cards.balanceOf(EOA) +" ********** avgMinSTOG:", await cards.avgMinSTOG(EOA));
-        await cards.connect(elizabeth)["safeTransferFrom(address,address,uint256)"](elizabeth.address, EOA, await cards.connect(elizabeth).tokenOfOwnerByIndex(elizabeth.address, 0));
-        console.log("************** balanceB "+await cards.balanceOf(EOA) +" ********** avgMinSTOG:", await cards.avgMinSTOG(EOA));
-        await cards.connect(employee1)["safeTransferFrom(address,address,uint256)"](employee1.address, EOA, await cards.connect(employee1).tokenOfOwnerByIndex(employee1.address, 0));
-        console.log("************** balanceC "+await cards.balanceOf(EOA) +" ********** avgMinSTOG:", await cards.avgMinSTOG(EOA));
-        await cards.connect(employee2)["safeTransferFrom(address,address,uint256)"](employee2.address, EOA, await cards.connect(employee2).tokenOfOwnerByIndex(employee2.address, 0));
-        console.log("************** balanceD "+await cards.balanceOf(EOA) +" ********** avgMinSTOG:", await cards.avgMinSTOG(EOA));
+// first transfer all badges to 1 address
+        await badges.connect(degen)["safeTransferFrom(address,address,uint256)"](degen.address, EOA, await badges.connect(degen).tokenOfOwnerByIndex(degen.address, 0));
+        console.log("************** balanceA "+await badges.balanceOf(EOA) +" ********** avgMinSTOG:", await badges.avgMinSTOG(EOA));
+        await badges.connect(elizabeth)["safeTransferFrom(address,address,uint256)"](elizabeth.address, EOA, await badges.connect(elizabeth).tokenOfOwnerByIndex(elizabeth.address, 0));
+        console.log("************** balanceB "+await badges.balanceOf(EOA) +" ********** avgMinSTOG:", await badges.avgMinSTOG(EOA));
+        await badges.connect(employee1)["safeTransferFrom(address,address,uint256)"](employee1.address, EOA, await badges.connect(employee1).tokenOfOwnerByIndex(employee1.address, 0));
+        console.log("************** balanceC "+await badges.balanceOf(EOA) +" ********** avgMinSTOG:", await badges.avgMinSTOG(EOA));
+        await badges.connect(employee2)["safeTransferFrom(address,address,uint256)"](employee2.address, EOA, await badges.connect(employee2).tokenOfOwnerByIndex(employee2.address, 0));
+        console.log("************** balanceD "+await badges.balanceOf(EOA) +" ********** avgMinSTOG:", await badges.avgMinSTOG(EOA));
 
-        console.log("tycoon: "+await cards.connect(degen).balanceOf(EOA));
+        console.log("tycoon: "+await badges.connect(degen).balanceOf(EOA));
 
 
 
-        console.log("tycoon: "+await cards.connect(degen).balanceOf(EOA), " add  :"+EOA, " avgMinSTOG:", await cards.avgMinSTOG(EOA));
-        console.log("liz: "+await cards.connect(degen).balanceOf(elizabeth.address)+" add      :"+ elizabeth.address);
-        console.log("simp: "+await cards.connect(degen).balanceOf(simp.address)+" add     :"+ simp.address);
-        console.log("degen: "+await cards.connect(degen).balanceOf(degen.address)+" add    :"+ degen.address);
-        console.log("employee1: "+await cards.connect(degen).balanceOf(employee1.address) +" add:"+ employee1.address);
-        console.log("employee2: "+await cards.connect(degen).balanceOf(employee2.address)+" add:"+ employee2.address);
+        console.log("tycoon: "+await badges.connect(degen).balanceOf(EOA), " add  :"+EOA, " avgMinSTOG:", await badges.avgMinSTOG(EOA));
+        console.log("liz: "+await badges.connect(degen).balanceOf(elizabeth.address)+" add      :"+ elizabeth.address);
+        console.log("simp: "+await badges.connect(degen).balanceOf(simp.address)+" add     :"+ simp.address);
+        console.log("degen: "+await badges.connect(degen).balanceOf(degen.address)+" add    :"+ degen.address);
+        console.log("employee1: "+await badges.connect(degen).balanceOf(employee1.address) +" add:"+ employee1.address);
+        console.log("employee2: "+await badges.connect(degen).balanceOf(employee2.address)+" add:"+ employee2.address);
 
-        //let [list, bal] = await cards.connect(tycoon).getCards(EOA, 0, 30);
+        //let [list, bal] = await badges.connect(tycoon).getBadges(EOA, 0, 30);
         //console.log("***********************"+bal);
         //console.log(list);
 
         // manually calc average
-        let bal = await cards.balanceOf(EOA);
+        let bal = await badges.balanceOf(EOA);
         let sum = BigNumber.from(0);
         for (let i = 0; i < bal; i++) {
-            let c = await cards.cards( await cards.tokenOfOwnerByIndex(EOA, i));
+            let c = await badges.badges( await badges.tokenOfOwnerByIndex(EOA, i));
             sum = sum.add(c.minStog);
             console.log(c.minStog);
         }
@@ -284,7 +284,7 @@ describe("ID Cards", function () {
 
     it("test CEO governance", async function () {
 
-        await expect ( cards.connect(tycoon).minSTOGChange(true)).to.be.revertedWith("need to be CEO");
+        await expect ( badges.connect(tycoon).minSTOGChange(true)).to.be.revertedWith("need to be CEO");
         let max_spend = peth("10000000").add(peth('5000')); //stats[4].add(insufficient);
         let graff32 = new Uint8Array(32);
         let graffiti = "hello world";
@@ -297,21 +297,21 @@ describe("ID Cards", function () {
             peth('5000'),
             4513, graff32)
         ).to.emit(cig, "NewCEO");
-        await expect ( cards.connect(tycoon).minSTOGChange(true)).to.emit(cards, "MinSTOGChanged").withArgs(peth("15.887500000000000000"), peth("0.387500000000000000"));
-        await expect ( cards.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
-        await expect ( cards.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
-        await expect ( cards.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
-        await expect ( cards.connect(tycoon).minSTOGChange(false)).to.to.emit(cards, "MinSTOGChanged").withArgs(peth("15.490312500000000000"), peth("0.397187500000000000"));
-        //await expect ( cards.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
-        //await expect ( cards.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
+        await expect ( badges.connect(tycoon).minSTOGChange(true)).to.emit(badges, "MinSTOGChanged").withArgs(peth("15.887500000000000000"), peth("0.387500000000000000"));
+        await expect ( badges.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
+        await expect ( badges.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
+        await expect ( badges.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
+        await expect ( badges.connect(tycoon).minSTOGChange(false)).to.to.emit(badges, "MinSTOGChanged").withArgs(peth("15.490312500000000000"), peth("0.397187500000000000"));
+        //await expect ( badges.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
+        //await expect ( badges.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
     });
 
     it("test everything else", async function () {
         // snapshots
-        await expect(cards.connect(tycoon).snapshot(0)).to.be.revertedWith("id with this pic already minted");
+        await expect(badges.connect(tycoon).snapshot(0)).to.be.revertedWith("id with this pic already minted");
         console.log("Trrrrrrrrransfer");
-        console.log("ownerOf", await cards.ownerOf(1));
-        await cards.connect(tycoon)["safeTransferFrom(address,address,uint256)"](EOA, elizabeth.address, 1);
+        console.log("ownerOf", await badges.ownerOf(1));
+        await badges.connect(tycoon)["safeTransferFrom(address,address,uint256)"](EOA, elizabeth.address, 1);
 
         // burning curator
 

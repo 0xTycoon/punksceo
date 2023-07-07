@@ -38,7 +38,13 @@ contract Stogie {
     // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
     bytes32 public constant PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
     mapping(address => uint) public nonces;    // EIP-2612 permit functionality
-    IIDCards private immutable idCards;        // id cards erc721
+    IIDBadges private immutable badges;        // id badges erc721
+    modifier notReentrant() { // notReentrant is a reentrancy guard
+        require(locked == 1, "already entered");
+        locked = 2; // enter
+        _;
+        locked = 1; // exit
+    }
     constructor(
         address _cig,
         address _CigEthSLP,
@@ -46,7 +52,7 @@ contract Stogie {
         address _sushiFactory,
         address _uniswapRouter,
         address _weth,
-        address _idCards
+        address _badges
     ) {
         cig = ICigToken(_cig);
         cigEthSLP = ILiquidityPool(_CigEthSLP);
@@ -54,7 +60,7 @@ contract Stogie {
         sushiFactory = _sushiFactory;
         uniswapRouter = IV2Router(_uniswapRouter);
         weth = _weth;
-        idCards = IIDCards(_idCards);
+        badges = IIDBadges(_badges);
         uint chainId;
         assembly {
             chainId := chainid()
@@ -77,14 +83,6 @@ contract Stogie {
         cigEthSLP.approve(address(cig), type(uint256).max);         // approve CIG to use all of our CIG/ETH SLP
     }
 
-
-    modifier notReentrant() { // notReentrant is a reentrancy guard
-        require(locked == 1, "already entered");
-        locked = 2; // enter
-        _;
-        locked = 1; // exit
-    }
-
     /** todo test
     * @dev permit is eip-2612 compliant
     */
@@ -102,7 +100,7 @@ contract Stogie {
         _approve(owner, spender, value);
     }
 
-    /** todo test
+    /**
     * Sending ETH to this contract will automatically issue Stogies and stake them
     *    it will also issue a badge to the user. Can only be used by addresses that
     *    have not minted. Limited yp 1 ETH or less.
@@ -117,7 +115,7 @@ contract Stogie {
             0,                                  // no min
             uint64(block.timestamp),            // same block
             false,                              // no surplus
-            (idCards.minters(msg.sender) == 0)  // mint an id?
+            (badges.minters(msg.sender) == 0)   // mint an id?
         );
     }
 
@@ -215,7 +213,6 @@ contract Stogie {
     ) external payable notReentrant returns(
         uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
     ) {
-
         require(
             (_token != weth) && (_token != address(cig)),
             "must not be WETH or CIG"
@@ -250,7 +247,6 @@ contract Stogie {
         address _token,
         uint64 _deadline
     ) internal returns (uint[] memory swpAmt) {
-
         IV2Router r;
         if (_router == address(uniswapRouter)) {
             r = IV2Router(uniswapRouter);                   // use Uniswap for intermediate swap
@@ -408,8 +404,8 @@ contract Stogie {
             weth,
             _amountCIG,                                  // CIG
             _amountWETH,                                 // WETH amount
-            _amountCIGMin,                               //
-            _amountWETHMin,                              //
+            _amountCIGMin,                               // minimum CIG to get
+            _amountWETHMin,                              // minimum WETH to get
             address(this),
             _deadline
         );
@@ -698,7 +694,7 @@ contract Stogie {
             _amountSTOG,
             _amountCIGMin,
             _amountWETHMin,
-            msg.sender,                                              // return CIG/ETH to user
+            msg.sender,                                               // return CIG/ETH to user
             _deadline
         );
         _burn(_amountSTOG);                                           // Burn the STOG
@@ -717,7 +713,7 @@ contract Stogie {
         uint harvested = _harvest(
             user,
             address(this)
-        );                                  // harvest CIG first
+        );                                      // harvest CIG first
         /* swap harvested CIG to STOG */
         address[] memory path;
         path = new address[](2);
@@ -726,7 +722,7 @@ contract Stogie {
         uint[] memory swpAmt;
         swpAmt = sushiRouter.swapExactTokensForTokens(
             harvested,
-            _amountSTOGMin,                 // min amount that must be received
+            _amountSTOGMin,                     // min amount that must be received
             path,
             address(this),
             _deadline
@@ -1007,7 +1003,7 @@ contract Stogie {
         cig.deposit(_amount);                 // forward the SLP to the factory
         emit Deposit(_user, _amount);
         if (_mintId) {
-            idCards.issueID(_user);           // mint nft
+            badges.issueID(_user);           // mint nft
         }
     }
 
@@ -1027,8 +1023,8 @@ contract Stogie {
         userTo.rewardDebt = userFrom.rewardDebt;
         userFrom.deposit = 0;
         userFrom.rewardDebt = 0;
-        if (idCards.ownerOf(_tokenID) == msg.sender) {
-            idCards.transferFrom(msg.sender, _to, _tokenID);
+        if (badges.ownerOf(_tokenID) == msg.sender) {
+            badges.transferFrom(msg.sender, _to, _tokenID);
         }
     }
 
@@ -1130,7 +1126,7 @@ contract Stogie {
     uint112[] memory reserves = new uint112[](2);
         (cigdata, theCEO, graffiti, reserves) = cig.getStats(_user); //  new uint[](27);
         UserInfo memory info = farmers[_user];
-        uint256 t = uint256(idCards.minters(_user));   // timestamp of id card mint
+        uint256 t = uint256(badges.minters(_user));   // timestamp of id card mint
         ret[0] = info.deposit;                         // how much STOG staked by user
         ret[1] = info.rewardDebt;                      // amount of rewards paid out for user
         (ret[2],) = cig.farmers(address(this));        // contract's STOGE balance
@@ -1281,7 +1277,7 @@ interface ICigToken is IERC20 {
     //function withdraw(uint256 _amount) external // bugged, use emergencyWithdraw() instead.
 }
 
-interface IIDCards {
+interface IIDBadges {
     function balanceOf(address _holder) external view returns (uint256);
     function transferFrom(address,address,uint256) external;
     function issueID(address _to) external;
