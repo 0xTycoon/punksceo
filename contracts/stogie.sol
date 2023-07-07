@@ -13,13 +13,19 @@ Cigarette Factory.
 
 What are Stogies?
 
-In short, Stogies are tokens that are deposited to the Cigarette Factory to
- produce Cigarettes.
+An ERC20 token that wraps the CIG/ETH SushiSwap Liquidity Pool (SLP)
+token, for meme-ability and ease of use. Each Stogie represents a share of the
+ETH & CIG reserves stored at 0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed.
 
-Technically, stogies are wrapped Sushi Liquidity Provider (SLP) tokens, which
-are used to stake in the official Cigarette Token Pool on SushiSwap.
-These tokens are deposited into "The Cigarette Factory" and then $CIG token
-rewards are distributed based on how much has been deposited.
+To work out how much is a Stogie worth, add the values of ETH and CIG in the
+pool, and divide them by the total supply of the SLP token.
+For example, if there are $100 worth of CIG and $100 worth of ETH in the pool,
+and the total supple of the SLP token is 1000, then each token would be worth
+(100+100)/1000 = 0.2, or 20 cents. Note that the SLP tokens do not have a capped
+supply and new tokens can be minted by anyone, by adding more CIG & ETH to the
+pool. This means that Stogies are not capped, only limited by the amount of ETH
+and CIG can practically be added to the pool. For the Solidity devs, you can
+read stogies.sol for the implementation of Stogies.
 
 
 */
@@ -897,7 +903,7 @@ contract Stogie {
     event Deposit(address indexed user, uint256 amount);            // when depositing LP tokens to stake
     event Harvest(address indexed user, address to, uint256 amount);// when withdrawing LP tokens form staking
     event Withdraw(address indexed user, uint256 amount);           // when withdrawing LP tokens, no rewards claimed
-
+    event TransferStake(address indexed from, address indexed to, uint256 amount); // when a stake is transferred
 
     /**
     * @dev update updates the accCigPerShare value and harvests CIG from the Cigarette Token contract to
@@ -1015,12 +1021,14 @@ contract Stogie {
     function transferStake(address _to, uint256 _tokenID) external {
         UserInfo storage userFrom = farmers[msg.sender];
         require (userFrom.deposit > 0, "from deposit must not be empty");
+        console.log("userFrom.deposit:", userFrom.deposit);
         UserInfo storage userTo = farmers[_to];
         require (userTo.deposit == 0, "userTo.deposit must be empty");
         // harvest, move stake, remove old index, assign new index
         _harvest(userFrom, msg.sender);
         userTo.deposit = userFrom.deposit;
         userTo.rewardDebt = userFrom.rewardDebt;
+        emit TransferStake(msg.sender, _to, userFrom.deposit);
         userFrom.deposit = 0;
         userFrom.rewardDebt = 0;
         if (badges.ownerOf(_tokenID) == msg.sender) {
@@ -1028,7 +1036,7 @@ contract Stogie {
         }
     }
 
-    /** todo test
+    /**
     * @dev withdraw takes out the LP tokens. This will also harvest.
     * @param _amount the amount to withdraw
     * @return harvested amount of CIG harvested
@@ -1084,7 +1092,7 @@ contract Stogie {
         _user.rewardDebt -= _rewardAmount;
     }
 
-    /** todo test
+    /**
     * @dev harvest redeems pending rewards & updates state
     * @return received is the amount that was harvested
     */

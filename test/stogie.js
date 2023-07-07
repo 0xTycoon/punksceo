@@ -588,10 +588,25 @@ describe("Stogie", function () {
         // owner 8544233573299167701782 + tycoon 3230888790697738610911
         // owner has about 72.5% more staked than tycoon
         [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
-        console.log("EDA deposit:"+deposit);
-        [deposit, ] = await stogie.connect(tycoon).farmers(owner.address);
+        console.log("Tycoon deposit:"+deposit);
+        //await stogie.connect(tycoon).withdraw(deposit);
+        [deposit, ] = await stogie.connect(owner).farmers(owner.address);
         console.log("OWN deposit:"+deposit);
-    })
+    });
+
+    it("transfer stake", async function () {
+        [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
+        console.log("EDA deposit:"+deposit);
+
+        await expect(stogie.connect(tycoon).transferStake(owner.address, 0)).to.be.revertedWith("userTo.deposit must be empty");
+        [deposit, ] = await stogie.connect(owner).farmers(owner.address);
+        await stogie.withdraw(deposit);
+        [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
+        await expect(await stogie.connect(tycoon).transferStake(owner.address, 0)).to.emit(stogie, "TransferStake").withArgs(EOA, owner.address, deposit);
+
+        await expect(await stogie.harvest()).to.emit(stogie, "Harvest").withArgs(owner.address, owner.address, peth("0.995505032123067231"));
+
+    });
 
 });
 

@@ -309,8 +309,8 @@ describe("ID Badges", function () {
     it("test everything else", async function () {
         // snapshots
         await expect(badges.connect(tycoon).snapshot(0)).to.be.revertedWith("id with this pic already minted");
-        console.log("Trrrrrrrrransfer");
-        console.log("ownerOf", await badges.ownerOf(1));
+        //console.log("Trrrrrrrrransfer");
+        //console.log("ownerOf", await badges.ownerOf(1));
         await badges.connect(tycoon)["safeTransferFrom(address,address,uint256)"](EOA, elizabeth.address, 1);
 
         // burning curator
