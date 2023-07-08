@@ -24,6 +24,33 @@ Employee ID badges are NFTs that are issued for those who have deposited
 Stogies into the Cigarette Factory. Each NFT has a unique Employee ID that
 you can put on to your Twitter / Discord profile.
 
+Badges are 100% onchain, and combine the following contracts to generate and
+render their metadata:
+
+- 0xe91eb909203c8c8cad61f86fc44edee9023bda4d "Punk Blocks". A contract for
+storing PNG files of individual punk traits onchain, categorized in layers,
+and rendering the layers according to a configuration. 
+
+- 0xc55C7913BE9E9748FF10a4A7af86A5Af25C46047  "Punk Identicons". A contract
+that contains a "punk picking function". it picks the traits from  a pool of
+"Punk Blocks" based on an Ethereum address, and configurable probabilities.
+
+- 0x4872BC4a6B29E8141868C3Fe0d4aeE70E9eA6735 "Barcode in Solidity". A contract
+that can generate Code-128C barcodes from a number and output as SVG.
+
+The "Punk Blocks" and "Punk Identicons" contracts are used to draw a custom
+punk picture based on an Ethereum address. The "Barcode in Solidity" contract
+is used to draw a barcode at the bottom of the picture, and this is a real
+barcode that stores the Employee ID. The badge artwork was designed and drawn
+piv.eth. Additional "Factory Employee" punk attributes were drawn by
+Mr.1/Employee 20, a community member of the Cig Token project.
+
+In all, there are 51 new attributes, which includes 34 new types. The
+probabilities of the new types are more evenly distributed, which ensures that
+punks will be picked with a higher count of traits on average. Therefore, there
+might be be some very weird punk pictures generated, and it was impossible to
+check all the possible combinations before deploying this contract.
+
 TERMINOLOGY
 
 Stogies: An ERC20 token that wraps the CIG/ETH SushiSwap Liquidity Pool (SLP)
@@ -39,10 +66,9 @@ pool. This means that Stogies are not capped, only limited by the amount of ETH
 and CIG can practically be added to the pool. For the Solidity devs, you can
 read stogies.sol for the implementation of Stogies.
 
-
 Minimum Stogie Deposit: The minimum amount of Stogies required to be deposited
 in the Cig Factory to mint a badge. The value can can change, and is recorded
-for each bade. The recorded value is used to calculate the "Total Minimum Stogie
+for each badge. The recorded value is used to calculate the "Total Minimum Stogie
  Deposit" for an account.
 
 Total Minimum Stogie Deposit: The amount of Stogies the account is required to
@@ -51,7 +77,7 @@ For all badges owned by an account, a sum is calculated using the
 Minimum Stogie Deposit value of each badge. This sum is the Total Minimum Stogie
  Deposit.
 
-Primary Bade: In case the address holds multiple badges, a primary badge can be
+Primary Badge: In case the address holds multiple badges, a primary badge can be
 chosen. The primary badge will be the one that the holder chooses to be always
 associated with their account. If the address has no primary badge set, then the
 first badge held by the address will be chosen as the primary.
@@ -63,7 +89,7 @@ RULES
    (b) The badge gets transferred to a fresh account and the "snapshot" function
    is executed from the fresh account to change the picture.
 
-2. To mint a bade, a minimum amount of stogie deposit in the Cigarette Factory
+2. To mint a badge, a minimum amount of stogie deposit in the Cigarette Factory
    is required.
 
 3. Badges can expire! If you have not deposited a minimum amount of Stogies
@@ -76,7 +102,7 @@ RULES
    is met. If an expiry initiation transaction is successful, the token will be
    placed in the `PendingExpiry` state, and moved to the "Expired" account.
    Your "Total Minimum Stogie Deposit" will also decrease by the "Minimum
-   Stogie Deposit" value of that bade.
+   Stogie Deposit" value of that badge.
 
 5. Expiration grace period: After transferring a badge, it cannot be expired for
    72 hours. The new owner will have 72 hours to put up a Minimum Stogie
@@ -91,7 +117,7 @@ RULES
     days, then it can be reclaimed by anyone, simply by calling the `reclaim`
    function. The caller must hold a minimum amount of Stogies to reclaim. Also,
    the address reclaiming must not have minted a badge before. Note that the
-   picture on the bade will change, however, the ID won't change.
+   picture on the badge will change, however, the ID won't change.
 
 8. The supply of the NFT is unlimited. However, since Stogies are required
    for minting and holding the NFT, there is an economic scarcity to the NFT.
@@ -659,7 +685,7 @@ contract EmployeeIDBadges {
 
     /**
     * @notice allows the holder of the NFT to change the identiconSeed used to
-    *    generate the picture on the bade. Holder must not be on the minters
+    *    generate the picture on the badge. Holder must not be on the minters
     *    list. Can only be called once per address. See the rules for more details.
     *
     * @param _tokenId the token id to change the picture for
