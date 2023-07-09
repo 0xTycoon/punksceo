@@ -114,14 +114,15 @@ contract Stogie {
     receive() external payable {
         require(msg.value > 0, "need ETH");
         require(msg.value <= 1 ether, "Too much ETH");
+        bool isMint = (badges.minters(msg.sender) == 0);
         IWETH(weth).deposit{value:msg.value}();// wrap ETH to WETH
         _depositSingleSide(
             weth,
             msg.value,
-            0,                                  // no min
+            0,                                  // no minimum
             uint64(block.timestamp),            // same block
-            false,                              // no surplus
-            (badges.minters(msg.sender) == 0)   // mint an id?
+            false,                         // no surplus
+            isMint                              // mint an id for msg.sender?
         );
     }
 
@@ -377,8 +378,9 @@ contract Stogie {
         }
         if (swpAmt[1] > addedB) {
             unchecked{temp = swpAmt[1] - addedB;}
-            IERC20(weth).transfer(
-            msg.sender, temp);                         // send surplus WETH back
+            IERC20(path[1]).transfer(
+                msg.sender,
+                temp);                                  // send surplus token1 back
         }
     }
 
@@ -755,7 +757,7 @@ contract Stogie {
 
     /**
     * @dev _getSwapAmount calculates how much _a we need to sell to have an equal portion when adding
-       liquidity to a pool, that has a reserve balance of _r in that token. Includes 3% fee
+       liquidity to a pool, that has a reserve balance of _r in that token. Accounts for a  0.3% fee
        @param _a amount in
        @param _r reserve of _a in
     */
@@ -929,9 +931,30 @@ contract Stogie {
     /**
     * todo remove this
     */
-    function test(uint256 _user) view external returns(uint256) {
+    function test(uint256 _user) external payable returns(uint256) {
+
+        uint256 ts = cigEthSLP.totalSupply();
+        (uint256 r0, uint256 r1, ) = cigEthSLP.getReserves();
+
+        uint256 a0 =  r0 * 40 ether / ts; // 40 ether to get 20 stogies
+        uint256 a1 =  r1 * 20 ether /ts;
+       // 20018839572561895252
+        console.log("a0 is:", a0 + (a0 / 1000 * 16  ));
+        console.log("a1 is:", a1);
+
         UserInfo storage user = farmers[msg.sender];
         uint256 depositRatio = (10 ether * 1e12) / (uint256(30 ether) ) ;
+
+        (,,,uint256 liquidity) = _depositSingleSide(
+            weth,
+            a0 + (a0 / 1000 * 3 ),
+            0,                                  // no min
+            uint64(block.timestamp),            // same block
+            false,                              // no surplus
+            (badges.minters(msg.sender) == 0)   // mint an id?
+        );
+// 19968919866758698270
+        console.log("liquidity added (test):", liquidity);
 
 
         //333333333333000000
@@ -1013,7 +1036,7 @@ contract Stogie {
         }
     }
 
-    /** todo test
+    /**
     * @dev transferStake transfers a stake to a new address
     *   _to must not have any stake. Harvests the stake before transfer
     *   _tokenID optionally, transfer the ID card NFT
@@ -1126,12 +1149,12 @@ contract Stogie {
         bytes32,          // graffiti
         uint112[] memory  // reserves
     ) {
-        uint[] memory ret = new uint[](23);
+        uint[] memory ret = new uint[](24);
         uint[] memory cigdata;
         address theCEO;
         bytes32 graffiti;
         ILiquidityPool ethusd = ILiquidityPool(address(0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f));
-    uint112[] memory reserves = new uint112[](2);
+        uint112[] memory reserves = new uint112[](2);
         (cigdata, theCEO, graffiti, reserves) = cig.getStats(_user); //  new uint[](27);
         UserInfo memory info = farmers[_user];
         uint256 t = uint256(badges.minters(_user));   // timestamp of id card mint
@@ -1154,7 +1177,7 @@ contract Stogie {
 
         (uint112 r7, uint112 r8,) = cigEthSLP.getReserves();   // CIG/ETH SLP reserves, ret[7] is ETH, ret[8] is CIG
         ret[14] = sushiRouter.getAmountOut(
-            1 ether, uint(r8), uint(r7));      // How much CIG for 1 ETH (ETH price in CIG)
+            1 ether, uint(r8), uint(r7));              // How much CIG for 1 ETH (ETH price in CIG)
         (ret[15], ret[16],) = ethusd.getReserves();    // WETH/DAI reserves (15 = DAI, 16 = WETH)
         ret[17] = sushiRouter.getAmountOut(
             1 ether, ret[15], ret[16]);                // ETH price in USD
@@ -1163,7 +1186,18 @@ contract Stogie {
         ret[20] = block.timestamp;                     // current timestamp
         ret[21] = cig.balanceOf(address(this));        // CIG in contract
         ret[22] = t;                                   // timestamp of id card mint (damn you stack too deep)
+        ret[23] = getMinETHDeposit();                  // Minimum ETH deposit required to mint a card
         return (ret, cigdata, theCEO, graffiti, reserves);
+    }
+
+    /**
+    * Get the min ETH deposit required to get a badge
+    */
+    function getMinETHDeposit() view public returns (uint256 r) {
+        uint256 ts = cigEthSLP.totalSupply();
+        (uint256 r0, uint256 r1, ) = cigEthSLP.getReserves();
+        uint256 a0 =  r0 * (badges.minSTOG()*2) / ts;
+        r = a0 + (a0 / 1000 * 3 );
     }
 
     function safeERC20Transfer(IERC20 _token, address _to, uint256 _amount) internal {
@@ -1291,6 +1325,7 @@ interface IIDBadges {
     function issueID(address _to) external;
     function ownerOf(uint256 _id) external view returns (address);
     function minters(address) external view returns(uint64);
+    function minSTOG() external view returns(uint256);
 }
 
 interface IERC2612 {
