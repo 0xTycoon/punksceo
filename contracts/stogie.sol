@@ -112,18 +112,9 @@ contract Stogie {
     *    have not minted. Limited yp 1 ETH or less.
     */
     receive() external payable {
-        require(msg.value > 0, "need ETH");
         require(msg.value <= 1 ether, "Too much ETH");
-        bool isMint = (badges.minters(msg.sender) == 0);
-        IWETH(weth).deposit{value:msg.value}();// wrap ETH to WETH
-        _depositSingleSide(
-            weth,
-            msg.value,
-            0,                                  // no minimum
-            uint64(block.timestamp),            // same block
-            false,                         // no surplus
-            isMint                              // mint an id for msg.sender?
-        );
+        bool mintID = (badges.minters(msg.sender) == 0);
+        onboard(msg.sender, 1, true, mintID);
     }
 
     /**
@@ -145,14 +136,16 @@ contract Stogie {
     ) {
         require(msg.value > 0, "no ETH sent");
         IWETH(weth).deposit{value:msg.value}(); // wrap ETH to WETH
-        return _depositSingleSide(
+        (swpAmt, cigAdded, ethAdded, liquidity) = _depositSingleSide(
             weth,
             msg.value,
             _amountCigMin,
             _deadline,
-            _transferSurplus,
-            _mintId
+            _transferSurplus
         );
+        if (_mintId) {
+            badges.issueID(msg.sender);           // mint nft
+        }
     }
 
     /**
@@ -175,20 +168,22 @@ contract Stogie {
         uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
     ) {
         require(_amount > 0, "no WETH sent");
-        safeERC20TransferFrom(
+        _ERC20TransferFrom(
             IERC20(weth),
             msg.sender,
             address(this),
             _amount
         ); // take their WETH
-        return _depositSingleSide(
+        (swpAmt, cigAdded, ethAdded, liquidity) = _depositSingleSide(
             weth,
             _amount,
             _amountCigMin,
             _deadline,
-            _transferSurplus,
-            _mintId
+            _transferSurplus
         );
+        if (_mintId) {
+            badges.issueID(msg.sender);           // mint nft
+        }
     }
 
     /**
@@ -225,7 +220,7 @@ contract Stogie {
             "must not be WETH or CIG"
         );
         require(_amount > 0, "no token sent");
-        safeERC20TransferFrom(
+        _ERC20TransferFrom(
             IERC20(_token),
             msg.sender,
             address(this),
@@ -233,14 +228,16 @@ contract Stogie {
         ); // take their token
         swpAmt = _swapTokenToWETH(_amount, _amountWethMin, _router, _token, _deadline);
         // now we have WETH
-        return _depositSingleSide(
+        (swpAmt, cigAdded, ethAdded, liquidity) = _depositSingleSide(
             weth,
             swpAmt[1],
             _amountCigMin,
             _deadline,
-            _transferSurplus,
-            _mintId
+            _transferSurplus
         );
+        if (_mintId) {
+            badges.issueID(msg.sender);           // mint nft
+        }
     }
 
     /**
@@ -298,14 +295,16 @@ contract Stogie {
         uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
     ) {
         cig.transferFrom(msg.sender, address(this), _amount); // tage their CIG
-        return _depositSingleSide(
+        (swpAmt, cigAdded, ethAdded, liquidity) = _depositSingleSide(
             address(cig),
             _amount,
             _amountWethMin,
             _deadline,
-            _transferSurplus,
-            _mintId
+            _transferSurplus
         );
+        if (_mintId) {
+            badges.issueID(msg.sender);                  // mint nft
+        }
     }
 
     /**
@@ -321,8 +320,7 @@ contract Stogie {
         uint256 _amount,
         uint256 _amountOutMin,
         uint64 _deadline,
-        bool _transferSurplus,
-        bool _mintId
+        bool _transferSurplus
     ) internal returns(
         uint[] memory swpAmt, uint addedA, uint addedB, uint liquidity
     ) {
@@ -364,14 +362,14 @@ contract Stogie {
         );
         _wrap(address(this), address(this), liquidity);// wrap our liquidity to Stogie
         /* update user's account of STOG, so they can withdraw it later */
-        _addStake(msg.sender, liquidity, _mintId);     // update the user's account
+        _addStake(msg.sender, liquidity);              // update the user's account
         if (!_transferSurplus) {
             return (swpAmt, addedA, addedB, liquidity);
         }
         uint temp;
         if (token0Amt > addedA) {
             unchecked{temp = token0Amt - addedA;}
-            safeERC20Transfer(
+            _ERC20Transfer(
                 IERC20(_fromToken),
                 msg.sender,
                 temp);                                 // send surplus token back
@@ -418,7 +416,10 @@ contract Stogie {
             _deadline
         );
         _wrap(address(this), address(this), liquidity);  // wrap our liquidity to Stogie
-        _addStake(msg.sender, liquidity, _mintId);       // update the user's account
+        _addStake(msg.sender, liquidity);                // update the user's account
+        if (_mintId) {
+            badges.issueID(msg.sender);                  // mint nft
+        }
         if (!_transferSurplus) {
             return(cigAdded, ethAdded, liquidity);
         }
@@ -553,7 +554,7 @@ contract Stogie {
             _deadline
         );
         out = swpAmt[1];
-        safeERC20Transfer(
+        _ERC20Transfer(
             IERC20(_token),
             msg.sender,
             out
@@ -736,7 +737,67 @@ contract Stogie {
             _deadline
         );
         // stake the STOG for the user
-        _addStake(msg.sender, swpAmt[1], false);// update the user's account
+        _addStake(msg.sender, swpAmt[1]);      // update the user's account
+    }
+
+    /**
+    * This is just like _depositSingleSide, but does not return surplus.
+    * It's useful for entering the CIG Factory with ETH and getting an NFT in
+    * a single tx.
+    * Additionally, it can be used to just mint and return Stogies without
+    * depositing to the CIG Factory.
+    */
+    function onboard(
+        address _to,
+        uint256 _amountOutMin,
+        bool _depositIt,
+        bool _mintID
+    ) public payable returns(
+        uint[] memory swpAmt, uint addedA, uint addedB, uint liquidity
+    ) {
+        require(msg.value > 0, "need ETH");
+        IWETH(weth).deposit{value:msg.value}();          // wrap ETH to WETH
+        uint112 r; // reserve
+        (r,,) = cigEthSLP.getReserves();
+        uint256 a = _getSwapAmount(msg.value, r);        // amount to swap to get equal amounts
+        /*
+        Swap "a" amount of path[0] for path[1] to get equal portions.
+        */
+        address[] memory path;
+        path = new address[](2);
+        path[0] = weth;
+        path[1] = address(cig);
+        swpAmt = sushiRouter.swapExactTokensForTokens(
+            a,
+            _amountOutMin,                             // min amount that must be received
+            path,
+            address(this),
+            block.timestamp
+        );
+        uint256 token0Amt = msg.value - swpAmt[0];     // how much of IERC20(path[0]) we have left
+        (addedA, addedB, liquidity) = sushiRouter.addLiquidity(
+            path[0],
+            path[1],
+            token0Amt,                                 // Amt of the single-side token
+            swpAmt[1],                                 // Amt received from the swap
+            1,                                         // we've already checked slippage
+            1,                                         // ditto
+            address(this),
+            block.timestamp
+        );
+        if (_depositIt) {
+            _wrap(
+                address(this),
+                address(this),
+                liquidity);                             // wrap our liquidity to Stogie, keep holding here
+            /* update user's account of STOG, so they can withdraw it later */
+            _addStake(_to, liquidity);
+            if (_mintID) {
+                badges.issueID(_to);                    // mint nft
+            }
+        } else {
+            _wrap(address(this), address(this), liquidity);// wrap our liquidity and send to _to
+        }
     }
 
     /**
@@ -931,6 +992,8 @@ contract Stogie {
     /**
     * todo remove this
     */
+    /*
+
     function test(uint256 _user) external payable returns(uint256) {
 
         uint256 ts = cigEthSLP.totalSupply();
@@ -969,7 +1032,7 @@ contract Stogie {
         return out *  depositRatio / 1e12;
     }
 
-
+*/
     /** todo test
     * Fill the contract with additional CIG for rewards
     */
@@ -1002,9 +1065,12 @@ contract Stogie {
     * @dev deposit STOG tokens to stake
     */
     function deposit(uint256 _amount, bool _mintId) public {
-        require(_amount != 0, "You cannot deposit only 0 tokens");           // Has enough?
-        require(_transfer(address(msg.sender), address(this), _amount));     // transfer STOG to this contract
-        _addStake(msg.sender, _amount, _mintId);                             // update the user's account
+        require(_amount != 0, "You cannot deposit only 0 tokens");       // Has enough?
+        require(_transfer(address(msg.sender), address(this), _amount)); // transfer STOG to this contract
+        _addStake(msg.sender, _amount);                                  // update the user's account
+        if (_mintId) {
+            badges.issueID(msg.sender);                                  // mint nft
+        }
     }
 
     /**
@@ -1014,7 +1080,10 @@ contract Stogie {
     function wrapAndDeposit(uint256 _amount, bool _mintId) external {
         require(_amount != 0, "You cannot deposit only 0 tokens"); // Has enough?
         _wrap(msg.sender, address(this), _amount);
-        _addStake(msg.sender, _amount, _mintId);                   // update the user's account
+        _addStake(msg.sender, _amount);                           // update the user's account
+        if (_mintId) {
+            badges.issueID(msg.sender);                                // mint nft
+        }
     }
 
     /**
@@ -1023,17 +1092,13 @@ contract Stogie {
     */
     function _addStake(
         address _user,
-        uint256 _amount,
-        bool _mintId
+        uint256 _amount
     ) internal {
         UserInfo storage user = farmers[_user];
         user.deposit += _amount;
         user.rewardDebt += _amount * accCigPerShare / 1e12;
         cig.deposit(_amount);                 // forward the SLP to the factory
         emit Deposit(_user, _amount);
-        if (_mintId) {
-            badges.issueID(_user);           // mint nft
-        }
     }
 
     /**
@@ -1195,26 +1260,26 @@ contract Stogie {
     */
     function getMinETHDeposit() view public returns (uint256 r) {
         uint256 ts = cigEthSLP.totalSupply();
-        (uint256 r0, uint256 r1, ) = cigEthSLP.getReserves();
+        (uint256 r0, /*uint256 r1*/, ) = cigEthSLP.getReserves();
         uint256 a0 =  r0 * (badges.minSTOG()*2) / ts;
         r = a0 + (a0 / 1000 * 3 );
     }
 
-    function safeERC20Transfer(IERC20 _token, address _to, uint256 _amount) internal {
+    function _ERC20Transfer(IERC20 _token, address _to, uint256 _amount) internal {
         bytes memory payload = abi.encodeWithSelector(_token.transfer.selector, _to, _amount);
         (bool success, bytes memory returndata) = address(_token).call(payload);
-        require(success, "safeERC20Transfer failed");
+        require(success, "_ERC20Transfer failed");
         if (returndata.length > 0) { // check return value if it was returned
-            require(abi.decode(returndata, (bool)), "safeERC20Transfer failed did not succeed");
+            require(abi.decode(returndata, (bool)), "_ERC20Transfer failed did not succeed");
         }
     }
 
-    function safeERC20TransferFrom(IERC20 _token, address _from, address _to, uint256 _amount) internal {
+    function _ERC20TransferFrom(IERC20 _token, address _from, address _to, uint256 _amount) internal {
         bytes memory payload = abi.encodeWithSelector(_token.transferFrom.selector, _from, _to, _amount);
         (bool success, bytes memory returndata) = address(_token).call(payload);
-        require(success, "safeERC20TransferFrom failed");
+        require(success, "_ERC20TransferFrom failed");
         if (returndata.length > 0) { // check return value if it was returned
-            require(abi.decode(returndata, (bool)), "safeERC20TransferFrom did not succeed");
+            require(abi.decode(returndata, (bool)), "_ERC20TransferFrom did not succeed");
         }
     }
 

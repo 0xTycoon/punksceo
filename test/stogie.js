@@ -606,6 +606,20 @@ describe("Stogie", function () {
 
         await expect(await stogie.harvest()).to.emit(stogie, "Harvest").withArgs(owner.address, owner.address, peth("0.995505032123067231"));
 
+        //await stogie.test(peth("5"), {value: peth("1")});
+
+    });
+
+    it("test receive()", async function () {
+
+        let tx = {
+            to: stogie.address,
+            // Convert currency unit from ether to wei
+            value: ethers.utils.parseEther("1")
+        }
+        expect(await elizabeth.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(elizabeth.address, ethers.utils.parseEther("1")); // MINT 1 for elizabeth
+
+
     });
 
 });
