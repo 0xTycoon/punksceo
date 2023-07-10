@@ -408,6 +408,23 @@ contract EmployeeIDBadges {
     }
 
     /**
+    * Sending ETH to this contract will automatically issue Stogies and stake them
+    *    it will also issue a badge to the user. Can only be used by addresses that
+    *    have not minted. Limited yp 1 ETH or less.
+    */
+    receive() external payable {
+        bool mintID = (minters[msg.sender] == 0);
+        require(mintID == true, "id already minted");
+        uint256 minAmount = stogie.getMinETHDeposit();
+        require(msg.value >= minAmount, "not enough ETH");
+        stogie.onboard{value:minAmount}(msg.sender, 1, true, mintID);
+        if (msg.value > minAmount) {
+            (bool sent, ) = msg.sender.call{value: msg.value - minAmount}("");
+            require(sent, "failed to send change");
+        }
+    }
+
+    /**
     * getStats gets the information about the current user
     * todo return doc
     */
@@ -422,7 +439,7 @@ contract EmployeeIDBadges {
         string[] memory expUris,    // uris of expired tokens
         uint256[] memory expIds     // expired ids
     ) {
-        uint[] memory ret = new uint[](12);
+        uint[] memory ret = new uint[](13);
         ret[0] = minSTOG;                           // Minimum stogies required
         ret[1] = minters[_holder];                  // timestamp of when account minted an id
         ret[2] = minStogSum[_holder];               // minimum STOG required for that _holder
@@ -439,8 +456,10 @@ contract EmployeeIDBadges {
             uris,
             ids) = getBadges(_holder, 0, 10);
         (expInventory,, expUris, expIds) = getBadges(EXPIRED, 0, uint16(20));
+        ret[12] = stogie.getMinETHDeposit();
         return (ret, inventory, uris, ids, expInventory, expUris, expIds);
     }
+
 
     /**
     * avgMinSTOG is the public getter, to get the average minSTOG
@@ -544,10 +563,10 @@ contract EmployeeIDBadges {
 
     /**
     * @dev issueID mints a new ID badge. The account must be an active stogie
-    *   staker would be called from the Stogies contract. Stogies would ensure
-    *   not called form a contract
+    *   staker. Can only be called by the Stogies contract.
     */
     function issueID(address _to) external {
+        require(msg.sender == address(stogie), "you need to be stogie");
         uint256 min = minSTOG;
         uint256 id = _issueID(_to, min);
         (uint256 deposit,) = stogie.farmers(_to);
@@ -1426,6 +1445,15 @@ library Base64 {
 interface IStogie {
     function farmers(address _user) external view returns (uint256 deposit, uint256 rewardDept);
     function balanceOf(address account) external view returns (uint256);
+    function getMinETHDeposit() view external returns (uint256 r);
+    function onboard(
+        address _to,
+        uint256 _amountOutMin,
+        bool _depositIt,
+        bool _mintID
+    ) external payable returns(
+        uint[] memory swpAmt, uint addedA, uint addedB, uint liquidity
+    );
 }
 
 /**
@@ -1533,4 +1561,10 @@ interface IBarcode {
         string memory _color,
         uint16 _height,
         uint8 _barWidth) view external returns (string memory);
+}
+
+interface ILiquidityPool  {
+    function getReserves() external view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast);
+    //function token0() external view returns (address);
+    function totalSupply() external view returns (uint256);
 }

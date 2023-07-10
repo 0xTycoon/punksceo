@@ -798,8 +798,9 @@ contract Stogie {
         } else {
             _wrap(
                 address(this),
-                address(this),
-                liquidity);                             // wrap our liquidity and send to _to
+                _to,
+                liquidity)
+            ;                                           // wrap our liquidity and send to _to
         }
     }
 

@@ -598,6 +598,15 @@ describe("Stogie", function () {
  */
 
     it("transfer stake", async function () {
+        await expect( stogie.connect(owner)
+            .depositWithETH(
+                1, // peth("1"),
+                Math.floor(Date.now() / 1000) + 1200,
+                true,
+                true, // mint ud
+                {value: peth("10")})
+        ).to.emit(stogie, "Deposit").withArgs(owner.address, peth("10971.768074063004035697"));
+
         [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
         console.log("EDA deposit:"+deposit);
 
@@ -607,7 +616,7 @@ describe("Stogie", function () {
         [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
         await expect(await stogie.connect(tycoon).transferStake(owner.address, 0)).to.emit(stogie, "TransferStake").withArgs(EOA, owner.address, deposit);
 
-        await expect(await stogie.harvest()).to.emit(stogie, "Harvest").withArgs(owner.address, owner.address, peth("0.995505032123067231"));
+        await expect(await stogie.harvest()).to.emit(stogie, "Harvest").withArgs(owner.address, owner.address, peth("0.327808783357831735"));
 
         //await stogie.test(peth("5"), {value: peth("1")});
 
@@ -620,7 +629,7 @@ describe("Stogie", function () {
             // Convert currency unit from ether to wei
             value: ethers.utils.parseEther("1")
         }
-        expect(await elizabeth.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(elizabeth.address, ethers.utils.parseEther("1")); // MINT 1 for elizabeth
+        expect(await elizabeth.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(elizabeth.address, ethers.utils.parseEther("1")).to.emit(badges, "Transfer"); // MINT 1 for elizabeth
 
 
     });
