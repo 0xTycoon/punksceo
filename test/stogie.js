@@ -565,7 +565,7 @@ describe("Stogie", function () {
         await expect( stogie.connect(tycoon).wrap(deposit)).to.be.revertedWith("ds-math-sub-underflow");
 
     });
-
+/*
     it("test fill", async function () {
         await stogie.connect(tycoon).deposit(await stogie.balanceOf(EOA), false);
         await expect(await stogie.connect(tycoon).harvest()).to.emit(stogie, "Harvest").withArgs(EOA, EOA, peth("0.989465690472307743"));
@@ -593,6 +593,9 @@ describe("Stogie", function () {
         [deposit, ] = await stogie.connect(owner).farmers(owner.address);
         console.log("OWN deposit:"+deposit);
     });
+
+
+ */
 
     it("transfer stake", async function () {
         [deposit, ] = await stogie.connect(tycoon).farmers(EOA);
