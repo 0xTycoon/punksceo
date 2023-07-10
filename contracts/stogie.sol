@@ -137,7 +137,6 @@ contract Stogie {
         require(msg.value > 0, "no ETH sent");
         IWETH(weth).deposit{value:msg.value}(); // wrap ETH to WETH
         (swpAmt, cigAdded, ethAdded, liquidity) = _depositSingleSide(
-            msg.sender,
             weth,
             msg.value,
             _amountCigMin,
@@ -176,7 +175,6 @@ contract Stogie {
             _amount
         ); // take their WETH
         (swpAmt, cigAdded, ethAdded, liquidity) = _depositSingleSide(
-            msg.sender,
             weth,
             _amount,
             _amountCigMin,
@@ -231,7 +229,6 @@ contract Stogie {
         swpAmt = _swapTokenToWETH(_amount, _amountWethMin, _router, _token, _deadline);
         // now we have WETH
         (swpAmt, cigAdded, ethAdded, liquidity) = _depositSingleSide(
-            msg.sender,
             weth,
             swpAmt[1],
             _amountCigMin,
@@ -299,7 +296,6 @@ contract Stogie {
     ) {
         cig.transferFrom(msg.sender, address(this), _amount); // tage their CIG
         (swpAmt, cigAdded, ethAdded, liquidity) = _depositSingleSide(
-            msg.sender,
             address(cig),
             _amount,
             _amountWethMin,
@@ -320,7 +316,6 @@ contract Stogie {
     *   swapping the token to WETH.
     */
     function _depositSingleSide(
-        address _to,
         address _fromToken,
         uint256 _amount,
         uint256 _amountOutMin,
@@ -331,25 +326,24 @@ contract Stogie {
     ) {
         address[] memory path;
         path = new address[](2);
-        uint112 x; // reserve
+        uint112 r; // reserve
         if (_fromToken == address(cig)) {
-            (, x,) = cigEthSLP.getReserves();           // _reserve1 is CIG
+            (,r,) = cigEthSLP.getReserves();           // _reserve1 is CIG
             path[0] = _fromToken;
             path[1] = weth;
         } else if (_fromToken == weth) {
-            (x,,) = cigEthSLP.getReserves();           // _reserve0 is ETH
+            (r,,) = cigEthSLP.getReserves();           // _reserve0 is ETH
             path[0] = weth;
             path[1] = address(cig);                    // swapping a portion to CIG
         } else {
             revert("invalid token");
         }
-        // we reuse r instead of declaring a new variable, because of stack too deep
-        x =  uint112(_getSwapAmount(_amount, x));        // amount to swap to get equal amounts
+        uint256 a = _getSwapAmount(_amount, r);        // amount to swap to get equal amounts
         /*
         Swap "a" amount of path[0] for path[1] to get equal portions.
         */
         swpAmt = sushiRouter.swapExactTokensForTokens(
-            x,
+            a,
             _amountOutMin,                             // min amount that must be received
             path,
             address(this),
@@ -368,7 +362,7 @@ contract Stogie {
         );
         _wrap(address(this), address(this), liquidity);// wrap our liquidity to Stogie
         /* update user's account of STOG, so they can withdraw it later */
-        _addStake(_to, liquidity);              // update the user's account
+        _addStake(msg.sender, liquidity);              // update the user's account
         if (!_transferSurplus) {
             return (swpAmt, addedA, addedB, liquidity);
         }
@@ -377,14 +371,14 @@ contract Stogie {
             unchecked{temp = token0Amt - addedA;}
             _ERC20Transfer(
                 IERC20(_fromToken),
-                _to,
+                msg.sender,
                 temp);                                 // send surplus token back
         }
         if (swpAmt[1] > addedB) {
             unchecked{temp = swpAmt[1] - addedB;}
             IERC20(path[1]).transfer(
-                _to,
-                temp);                                  // send surplus token1 back
+                msg.sender,
+                temp);                                 // send surplus token1 back
         }
     }
 
@@ -430,12 +424,12 @@ contract Stogie {
             return(cigAdded, ethAdded, liquidity);
         }
         if (_amountCIG > cigAdded) {
-        unchecked{cig.transfer(
-            msg.sender, _amountCIG- cigAdded);}          // send surplus CIG back
+            unchecked{cig.transfer(
+            msg.sender, _amountCIG - cigAdded);}          // send surplus CIG back
         }
         if (_amountWETH > ethAdded) {
-        unchecked{IERC20(weth).transfer(
-            msg.sender, _amountWETH-ethAdded
+            unchecked{IERC20(weth).transfer(
+            msg.sender, _amountWETH - ethAdded
         );}                                              // send surplus WETH back
         }
         return(cigAdded, ethAdded, liquidity);
@@ -747,7 +741,6 @@ contract Stogie {
     }
 
     /**
-    // todo we can use _depositSingleSide?
     * This is just like _depositSingleSide, but does not return surplus.
     * It's useful for entering the CIG Factory with ETH and getting an NFT in
     * a single tx.
@@ -763,10 +756,10 @@ contract Stogie {
         uint[] memory swpAmt, uint addedA, uint addedB, uint liquidity
     ) {
         require(msg.value > 0, "need ETH");
-        IWETH(weth).deposit{value:msg.value}();          // wrap ETH to WETH
+        IWETH(weth).deposit{value:msg.value}();        // wrap ETH to WETH
         uint112 r; // reserve
         (r,,) = cigEthSLP.getReserves();
-        uint256 a = _getSwapAmount(msg.value, r);        // amount to swap to get equal amounts
+        uint256 a = _getSwapAmount(msg.value, r);      // amount to swap to get equal amounts
         /*
         Swap "a" amount of path[0] for path[1] to get equal portions.
         */
@@ -803,7 +796,10 @@ contract Stogie {
                 badges.issueID(_to);                    // mint nft
             }
         } else {
-            _wrap(address(this), address(this), liquidity);// wrap our liquidity and send to _to
+            _wrap(
+                address(this),
+                address(this),
+                liquidity);                             // wrap our liquidity and send to _to
         }
     }
 
@@ -913,7 +909,7 @@ contract Stogie {
         if (_from != address(this)) {
             cigEthSLP.transferFrom(_from, address(this), _amount);// take SLP
         }
-        _mint(_to, _amount);                                      // give newly minted STOG
+        _mint(_to, _amount);                              // give newly minted STOG
     }
 
     /**
@@ -1086,11 +1082,11 @@ contract Stogie {
     * Stogies & deposit in staking
     */
     function wrapAndDeposit(uint256 _amount, bool _mintId) external {
-        require(_amount != 0, "You cannot deposit only 0 tokens"); // Has enough?
+        require(_amount != 0, "You cannot deposit only 0 tokens");// Has enough?
         _wrap(msg.sender, address(this), _amount);
         _addStake(msg.sender, _amount);                           // update the user's account
         if (_mintId) {
-            badges.issueID(msg.sender);                                // mint nft
+            badges.issueID(msg.sender);                           // mint nft
         }
     }
 
@@ -1245,7 +1241,7 @@ contract Stogie {
         ret[11] = cigEthSLP.allowance(
             _user, address(this));                     // user's approval for Stogies to spend CIG/ETH SLP
         ret[12] = IERC20(weth)
-        .allowance(_user, address(this));              // user's approval to spend WETH
+            .allowance(_user, address(this));          // user's approval to spend WETH
         ret[13] = totalSupply;                         // total supply of STOG
 
         (uint112 r7, uint112 r8,) = cigEthSLP.getReserves();   // CIG/ETH SLP reserves, ret[7] is ETH, ret[8] is CIG
