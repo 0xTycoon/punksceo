@@ -42,7 +42,6 @@ describe("Stogie", function () {
 
         //[owner, simp, elizabeth] = await ethers.getSigners();
         cigeth = await hre.ethers.getContractAt(SLP_ABI,  CIGETH_SLP_ADDRESS);
-
         EmployeeIDBadges = await ethers.getContractFactory("EmployeeIDBadges");
         badges = await EmployeeIDBadges.deploy(CIG_ADDRESS,
             3, // epoch (blocks)
@@ -622,7 +621,7 @@ describe("Stogie", function () {
 
     });
 
-    it("test receive()", async function () {
+    it("test receive() and onboard, packSTOG", async function () {
 
         let tx = {
             to: stogie.address,
@@ -631,7 +630,38 @@ describe("Stogie", function () {
         }
         expect(await elizabeth.sendTransaction(tx)).to.emit(stogie.address, "Transfer").withArgs(elizabeth.address, ethers.utils.parseEther("1")).to.emit(badges, "Transfer"); // MINT 1 for elizabeth
 
+        // onboard without depositing it
+        await expect(await stogie.onboard(elizabeth.address, 1, false, false, {value: peth("10")})).to.emit(stogie, "Transfer");
+        await expect(await stogie.connect(elizabeth).balanceOf(elizabeth.address)).to.equal(peth("10324.486644381790011032"));
 
+        await expect(await stogie.connect(elizabeth).unwrap(peth("10324.486644381790011032"))).to.emit(cigeth, "Transfer").withArgs(stogie.address, elizabeth.address, peth("10324.486644381790011032")); // elizabeth should be able to get the SLP back
+        await expect(await stogie.connect(elizabeth).balanceOf(elizabeth.address)).to.equal(peth("0"));
+        await expect(stogie.connect(elizabeth).wrap(peth("10324.486644381790011032"))).to.be.revertedWith("ds-math-sub-underflow"); // need approval
+        await cigeth.connect(elizabeth).approve(stogie.address, unlimited);
+        await expect(await stogie.connect(elizabeth).wrap(peth("10324.486644381790011032"))).to.emit(stogie, "Transfer");
+        await expect(await stogie.connect(elizabeth).balanceOf(elizabeth.address)).to.equal(peth("10324.486644381790011032"));
+
+
+        tx = {
+            to: "0x3d6A70DC23bdC3047536F00815a8AFC4c5A0E7B5", // getcig.eth
+            // Convert currency unit from ether to wei
+            value: ethers.utils.parseEther("1")
+
+        }
+        await expect(await elizabeth.sendTransaction(tx)).to.emit(cig, "Transfer").withArgs(cigeth.address, elizabeth.address, peth("4171964.600622745322387438"));
+
+
+        await stogie.connect(elizabeth).approve(router.address, unlimited);
+        await cig.connect(elizabeth).approve(router.address, unlimited);
+
+        // to test packSTOG, we need to create a CIG/STOG pool
+        await router.connect(elizabeth).addLiquidity(CIG_ADDRESS, stogie.address, peth("1000000"), peth("824"), 1, 1, elizabeth.address, Math.floor(Date.now() / 1000)+5 );
+
+// 1562892689591694935537
+        await expect(await stogie.connect(elizabeth).deposit(peth("500"), false)).to.emit(stogie, "Deposit");
+        //await expect(await stogie.connect(elizabeth).harvest()).to.emit(stogie, "Harvest").withArgs(elizabeth.address, elizabeth.address, peth("2.148474746880758747"));
+        console.log("Pending Cig: " + feth(await stogie.connect(elizabeth).pendingCig(elizabeth.address)));
+        await expect(await stogie.connect(elizabeth).packSTOG(1, Math.floor(Date.now() / 1000) + 1200)).to.emit(stogie, "Transfer");
     });
 
 });

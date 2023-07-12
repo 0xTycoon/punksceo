@@ -688,7 +688,7 @@ contract Stogie {
     }
 
 
-    /** todo test
+    /**
     * @dev unwrap STOG to CIG and ETH tokens
     */
     function unwrapToCIGETH(
@@ -719,6 +719,9 @@ contract Stogie {
         uint64 _deadline
     ) external {
         UserInfo storage user = farmers[msg.sender];
+        console.log("deposit:" , user.deposit);
+        console.log("pendddinggggggg:", pendingCig(msg.sender));
+        fetchCigarettes();                     // harvest CIG from factory v1
         uint harvested = _harvest(
             user,
             address(this)
@@ -729,6 +732,7 @@ contract Stogie {
         path[0] = address(cig);
         path[1] = address(this);
         uint[] memory swpAmt;
+        console.log("harvested:", harvested);
         swpAmt = sushiRouter.swapExactTokensForTokens(
             harvested,
             _amountSTOGMin,                     // min amount that must be received
@@ -750,8 +754,8 @@ contract Stogie {
     function onboard(
         address _to,
         uint256 _amountOutMin,
-        bool _depositIt,
-        bool _mintID
+        bool _isDeposit,
+        bool _isMint
     ) public payable returns(
         uint[] memory swpAmt, uint addedA, uint addedB, uint liquidity
     ) {
@@ -785,14 +789,14 @@ contract Stogie {
             address(this),
             block.timestamp
         );
-        if (_depositIt) {
+        if (_isDeposit) {
             _wrap(
                 address(this),
                 address(this),
                 liquidity);                             // wrap our liquidity to Stogie, keep holding here
             /* update user's account of STOG, so they can withdraw it later */
             _addStake(_to, liquidity);
-            if (_mintID) {
+            if (_isMint) {
                 badges.issueID(_to);                    // mint nft
             }
         } else {
@@ -977,7 +981,7 @@ contract Stogie {
     *  be distributed to STOG stakers
     * @return cigReward - the amount of CIG that was credited to this contract
     */
-    function fetchCigarettes() public returns (uint256 cigReward){
+    function fetchCigarettes() public returns (uint256 cigReward) {
         (uint256 supply,) = cig.farmers(address(this));       // how much is staked in total
         if (supply == 0) {
             return 0;
@@ -1037,6 +1041,7 @@ contract Stogie {
     }
 
 */
+
     /** todo test
     * Fill the contract with additional CIG for rewards
     */
@@ -1201,7 +1206,11 @@ contract Stogie {
     */
     function _harvest(UserInfo storage _user, address _to) internal returns(uint256 delta) {
         uint256 potentialValue = _user.deposit * accCigPerShare / 1e12;
+        console.log("HARVEST _user.deposit:", _user.deposit);
+        console.log("HARVEST _user:rewardDebt", _user.rewardDebt);
+
         delta = potentialValue - _user.rewardDebt;
+        console.log("HARVEST _user:delta", delta);
         cig.transfer(_to, delta);                                 // give them their rewards
         _user.rewardDebt = _user.deposit * accCigPerShare / 1e12; // Recalculate their reward debt
         emit Harvest(msg.sender, _to, delta);
