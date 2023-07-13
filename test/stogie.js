@@ -662,6 +662,131 @@ describe("Stogie", function () {
         //await expect(await stogie.connect(elizabeth).harvest()).to.emit(stogie, "Harvest").withArgs(elizabeth.address, elizabeth.address, peth("2.148474746880758747"));
         console.log("Pending Cig: " + feth(await stogie.connect(elizabeth).pendingCig(elizabeth.address)));
         await expect(await stogie.connect(elizabeth).packSTOG(1, Math.floor(Date.now() / 1000) + 1200)).to.emit(stogie, "Transfer");
+
+        // approve & transferFrom
+        await expect(stogie.connect(simp).transferFrom(elizabeth.address, simp.address, peth("1"))).to.be.revertedWith("not approved");
+        await stogie.connect(elizabeth).approve(simp.address, unlimited);
+        await expect(await stogie.connect(simp).transferFrom(elizabeth.address, simp.address, peth("1"))).to.emit(stogie, "Transfer");
+    });
+
+    //
+    it("test eip-2612", async function () {
+
+        const chainId = await hre.network.config.chainId;
+
+        const domain = {
+            name: await stogie.name(),
+            version: "1",
+            chainId: chainId,
+            verifyingContract: stogie.address
+        };
+
+        // set the Permit type parameters
+        const types = {
+            Permit: [{
+                name: "owner",
+                type: "address"
+            },
+                {
+                    name: "spender",
+                    type: "address"
+                },
+                {
+                    name: "value",
+                    type: "uint256"
+                },
+                {
+                    name: "nonce",
+                    type: "uint256"
+                },
+                {
+                    name: "deadline",
+                    type: "uint256"
+                },
+            ],
+        };
+        const deadline = Math.floor(Date.now() / 1000) + 4200;
+        // set the Permit type values
+        const values = {
+            owner: owner.address,
+            spender: EOA,
+            value: unlimited,
+            nonce: await stogie.nonces(owner.address),
+            deadline: deadline,
+        };
+        const signature = await owner._signTypedData(domain, types, values);
+        const sig = ethers.utils.splitSignature(signature);
+        // verify the Permit type data with the signature
+        /*
+        const recovered = ethers.utils.verifyTypedData(
+            domain,
+            types,
+            values,
+            sig
+        );*/
+        await expect(await stogie.permit(owner.address, EOA, unlimited, deadline, sig.v, sig.r, sig.s)).to.emit(stogie, "Approval"); // make sure the sig passed
+        await expect(stogie.permit(owner.address, EOA, unlimited, deadline, sig.v, sig.r, sig.s)).to.be.revertedWith("Stogie: INVALID_SIGNATURE"); // cannot reuse a sig
+
+    });
+
+    it("test eip-2612 wrapWithPermit", async function () {
+
+        let result = await stogie.farmers(owner.address);
+
+        await stogie.withdraw(result.deposit);
+        await stogie.unwrap(result.deposit);
+
+        const chainId = await hre.network.config.chainId;
+
+        const domain = {
+            name: await cigeth.name(),
+            version: "1",
+            chainId: 1,
+            verifyingContract: cigeth.address
+        };
+console.log(domain);
+        // set the Permit type parameters
+        const types = {
+            Permit: [{
+                name: "owner",
+                type: "address"
+            },
+                {
+                    name: "spender",
+                    type: "address"
+                },
+                {
+                    name: "value",
+                    type: "uint256"
+                },
+                {
+                    name: "nonce",
+                    type: "uint256"
+                },
+                {
+                    name: "deadline",
+                    type: "uint256"
+                },
+            ],
+        };
+        const deadline = Math.floor(Date.now() / 1000) + 4200;
+        // set the Permit type values
+        const values = {
+            owner: owner.address,
+            spender: stogie.address,
+            value: result.deposit,
+            nonce: await cigeth.nonces(owner.address),
+            deadline: deadline,
+        };
+        const signature = await owner._signTypedData(domain, types, values);
+        const sig = ethers.utils.splitSignature(signature);
+
+        await expect(await stogie.wrapWithPermit(
+            result.deposit, // todo: support unlimited? shall we remove transfer stake?
+            deadline,
+            sig.v,
+            sig.r,
+            sig.s)).to.emit(cigeth, "Approval");
     });
 
 });

@@ -27,7 +27,6 @@ pool. This means that Stogies are not capped, only limited by the amount of ETH
 and CIG can practically be added to the pool. For the Solidity devs, you can
 read stogies.sol for the implementation of Stogies.
 
-
 */
 
 
@@ -89,16 +88,23 @@ contract Stogie {
         cigEthSLP.approve(address(cig), type(uint256).max);         // approve CIG to use all of our CIG/ETH SLP
     }
 
-    /** todo test
+    /**
     * @dev permit is eip-2612 compliant
     */
     function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external {
-        require(deadline >= block.timestamp, 'Stogie: EXPIRED');
+        require(deadline >= block.timestamp, 'Stogie: permit expired');
         bytes32 digest = keccak256(
             abi.encodePacked(
                 '\x19\x01',
                 DOMAIN_SEPARATOR,
-                keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonces[owner]++, deadline))
+                keccak256(abi.encode(
+                    PERMIT_TYPEHASH,
+                    owner,
+                    spender,
+                    value,
+                    nonces[owner]++,
+                    deadline)
+                )
             )
         );
         address recoveredAddress = ecrecover(digest, v, r, s);
@@ -672,12 +678,35 @@ contract Stogie {
     }
 
 
-    /** todo test
+    /**
     * @dev wrap LP tokens to STOG
+    * @param _amount number os CIG/ETH Sushi SLP tokens
     */
-    function wrap(uint256 _amountLP) external {
-        require(_amountLP != 0, "_amountLP cannot be 0"); // Has enough?
-        _wrap(msg.sender, msg.sender, _amountLP);
+    function wrap(uint256 _amount) external {
+        require(_amount != 0, "_amountLP cannot be 0"); // Has enough?
+        _wrap(msg.sender, msg.sender, _amount);
+    }
+
+    /**
+    * @dev like wrap, but with a EIP-2612 permit
+    */
+    function wrapWithPermit(
+        uint256 _amount,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s) external {
+        require(_amount != 0, "_amountLP cannot be 0"); // Has enough?
+        cigEthSLP.permit(
+            msg.sender,
+            address(this),
+            _amount,
+            deadline,
+            v,
+            r,
+            s
+        );
+        _wrap(msg.sender, msg.sender, _amount);
     }
 
     /**
@@ -709,7 +738,7 @@ contract Stogie {
         _burn(_amountSTOG);                                           // Burn the STOG
     }
 
-    /** todo test
+    /**
     * @dev Harvest CIG, then use our CIG holdings to buy STOG, then stake the STOG.
     * @param _amountSTOGMin min amount of STOG we should get after swapping the
     *   harvested CIG.
@@ -719,8 +748,6 @@ contract Stogie {
         uint64 _deadline
     ) external {
         UserInfo storage user = farmers[msg.sender];
-        console.log("deposit:" , user.deposit);
-        console.log("pendddinggggggg:", pendingCig(msg.sender));
         fetchCigarettes();                     // harvest CIG from factory v1
         uint harvested = _harvest(
             user,
@@ -732,16 +759,20 @@ contract Stogie {
         path[0] = address(cig);
         path[1] = address(this);
         uint[] memory swpAmt;
-        console.log("harvested:", harvested);
         swpAmt = sushiRouter.swapExactTokensForTokens(
             harvested,
             _amountSTOGMin,                     // min amount that must be received
             path,
-            address(this),
+            msg.sender,                         // we cannot use address(this), so use msg.sender temporary
             _deadline
         );
+        _transfer(
+            msg.sender,
+            address(this),
+            swpAmt[1]
+        );                                      // hop the STOG to over here
         // stake the STOG for the user
-        _addStake(msg.sender, swpAmt[1]);      // update the user's account
+        _addStake(msg.sender, swpAmt[1]);       // update the user's account
     }
 
     /**
@@ -803,8 +834,7 @@ contract Stogie {
             _wrap(
                 address(this),
                 _to,
-                liquidity)
-            ;                                           // wrap our liquidity and send to _to
+                liquidity);                             // wrap our liquidity and send to _to
         }
     }
 
@@ -845,7 +875,8 @@ contract Stogie {
     mapping(address => mapping(address => uint256)) public allowance;
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
-    /** todo test
+
+    /**
     * @dev transfer transfers tokens for a specified address
     * @param _to The address to transfer to.
     * @param _value The amount to be transferred.
@@ -854,7 +885,7 @@ contract Stogie {
         _transfer(msg.sender, _to, _value);
         return true;
     }
-    /** todo test
+    /**
     * @dev transferFrom transfers tokens from one address to another
     * @param _from address The address which you want to send tokens from
     * @param _to address The address which you want to transfer to
@@ -864,7 +895,7 @@ contract Stogie {
         address _from,
         address _to,
         uint256 _value
-    ) external returns (bool){
+    ) external returns (bool) {
         uint256 a = allowance[_from][msg.sender]; // read allowance
         //require(_value <= balanceOf[_from], "value exceeds balance"); // SafeMath already checks this
         if (a != type(uint256).max) {             // not infinite approval
@@ -874,7 +905,7 @@ contract Stogie {
         _transfer(_from, _to, _value);
         return true;
     }
-    /** todo test
+    /**
     * @dev Approve tokens of mount _value to be spent by _spender
     * @param _spender address The spender
     * @param _value the stipend to spend
@@ -963,8 +994,8 @@ contract Stogie {
     /**
     * STOG staking
     */
-    uint256 accCigPerShare; // Accumulated cigarettes per share, times 1e12.
-    uint256 lastRewardBlock;
+    uint256 public accCigPerShare; // Accumulated cigarettes per share, times 1e12.
+    uint256 public lastRewardBlock;
     // UserInfo keeps track of user LP deposits and withdrawals
     struct UserInfo {
         uint256 deposit;    // How many LP tokens the user has deposited.
@@ -1042,18 +1073,7 @@ contract Stogie {
 
 */
 
-    /** todo test
-    * Fill the contract with additional CIG for rewards
-    */
-    /*
-    function fill(uint256 _amount) external {
-        require (_amount > 1 ether, "insert coin");
-        cig.transferFrom(msg.sender, address(this), _amount);
-        (uint256 supply,) = cig.farmers(address(this));            // how much is staked in total
-        require (supply > 0, "nothing staking");
-        accCigPerShare = accCigPerShare + (_amount * 1e12 / supply);
-    }
-*/
+
     /**
     * @dev pendingCig returns the amount of cig to be claimed
     * @param _user the address to report
@@ -1071,7 +1091,7 @@ contract Stogie {
         return (user.deposit * _acps / 1e12) - user.rewardDebt;
     }
 
-    /** todo test
+    /**
     * @dev deposit STOG tokens to stake
     */
     function deposit(uint256 _amount, bool _mintId) public {
@@ -1089,6 +1109,34 @@ contract Stogie {
     */
     function wrapAndDeposit(uint256 _amount, bool _mintId) external {
         require(_amount != 0, "You cannot deposit only 0 tokens");// Has enough?
+        _wrap(msg.sender, address(this), _amount);
+        _addStake(msg.sender, _amount);                           // update the user's account
+        if (_mintId) {
+            badges.issueID(msg.sender);                           // mint nft
+        }
+    }
+
+    /**
+    * Like wrapAndDeposit, but carries an eip-2612 permit to aprove cigEthSLP
+    */
+    function wrapAndDepositWithPermit(
+        uint256 _amount,
+        bool _mintId,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        require(_amount != 0, "You cannot deposit only 0 tokens");// Has enough?
+        cigEthSLP.permit(
+            msg.sender,
+            address(this),
+            _amount,
+            deadline,
+            v,
+            r,
+            s
+        );                                                        // CIG/ETH SLP verifies sig & approves
         _wrap(msg.sender, address(this), _amount);
         _addStake(msg.sender, _amount);                           // update the user's account
         if (_mintId) {
@@ -1116,10 +1164,10 @@ contract Stogie {
     *   _to must not have any stake. Harvests the stake before transfer
     *   _tokenID optionally, transfer the ID card NFT
     */
+
     function transferStake(address _to, uint256 _tokenID) external {
         UserInfo storage userFrom = farmers[msg.sender];
         require (userFrom.deposit > 0, "from deposit must not be empty");
-        console.log("userFrom.deposit:", userFrom.deposit);
         UserInfo storage userTo = farmers[_to];
         require (userTo.deposit == 0, "userTo.deposit must be empty");
         // harvest, move stake, remove old index, assign new index
@@ -1133,6 +1181,7 @@ contract Stogie {
             badges.transferFrom(msg.sender, _to, _tokenID);
         }
     }
+
 
     /**
     * @dev withdraw takes out the LP tokens. This will also harvest.
@@ -1206,11 +1255,7 @@ contract Stogie {
     */
     function _harvest(UserInfo storage _user, address _to) internal returns(uint256 delta) {
         uint256 potentialValue = _user.deposit * accCigPerShare / 1e12;
-        console.log("HARVEST _user.deposit:", _user.deposit);
-        console.log("HARVEST _user:rewardDebt", _user.rewardDebt);
-
         delta = potentialValue - _user.rewardDebt;
-        console.log("HARVEST _user:delta", delta);
         cig.transfer(_to, delta);                                 // give them their rewards
         _user.rewardDebt = _user.deposit * accCigPerShare / 1e12; // Recalculate their reward debt
         emit Harvest(msg.sender, _to, delta);
@@ -1228,10 +1273,11 @@ contract Stogie {
         bytes32,          // graffiti
         uint112[] memory  // reserves
     ) {
-        uint[] memory ret = new uint[](24);
+        uint[] memory ret = new uint[](25);
         uint[] memory cigdata;
         address theCEO;
         bytes32 graffiti;
+        ret[24] = nonces[_user];                       // eip-2612 nonces for _user (placing here avoids stack too deep)
         ILiquidityPool ethusd = ILiquidityPool(address(0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f));
         uint112[] memory reserves = new uint112[](2);
         (cigdata, theCEO, graffiti, reserves) = cig.getStats(_user); //  new uint[](27);
@@ -1379,6 +1425,7 @@ interface IERC20 {
 interface ILiquidityPool is IERC20 {
     function getReserves() external view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast);
     function token0() external view returns (address);
+    function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external;
 }
 
 interface ICigToken is IERC20 {
