@@ -553,15 +553,15 @@ describe("Stogie", function () {
         await expect(await stogie.connect(tycoon).unwrap(deposit)).to.emit(cigeth, "Transfer").withArgs(stogie.address, EOA, deposit);
         supply2 = await stogie.totalSupply();
         expect(supply2).eq(supply);
-         await expect(await stogie.connect(tycoon).wrapAndDeposit(deposit, false)).to.emit(stogie, "Deposit").withArgs(EOA, deposit);
+         await expect(await stogie.connect(tycoon).wrapAndDeposit(deposit, false, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.emit(stogie, "Deposit").withArgs(EOA, deposit);
         await expect(await stogie.connect(tycoon).withdraw(deposit)).to.emit(stogie, "Withdraw").withArgs(EOA, deposit).to.emit(stogie, "Harvest");
         await expect(await stogie.connect(tycoon).unwrap(deposit)).to.emit(cigeth, "Transfer").withArgs(stogie.address, EOA, deposit);
-        await expect(await stogie.connect(tycoon).wrap(deposit)).to.emit(stogie, "Transfer").withArgs("0x0000000000000000000000000000000000000000", EOA, deposit);
+        await expect(await stogie.connect(tycoon).wrap(deposit, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.emit(stogie, "Transfer").withArgs("0x0000000000000000000000000000000000000000", EOA, deposit);
         expect(await stogie.connect(tycoon).balanceOf(EOA)).eq(deposit);
         await expect(await stogie.connect(tycoon).deposit(deposit, false)).to.emit(stogie, "Transfer").withArgs(EOA, stogie.address, deposit);
         let bal = await cigeth.balanceOf(EOA);
-        await expect(await stogie.connect(tycoon).wrap(bal)).to.emit(stogie, "Transfer").withArgs("0x0000000000000000000000000000000000000000", EOA, bal);
-        await expect( stogie.connect(tycoon).wrap(deposit)).to.be.revertedWith("ds-math-sub-underflow");
+        await expect(await stogie.connect(tycoon).wrap(bal, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.emit(stogie, "Transfer").withArgs("0x0000000000000000000000000000000000000000", EOA, bal);
+        await expect( stogie.connect(tycoon).wrap(deposit, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.be.revertedWith("ds-math-sub-underflow");
 
     });
 /*
@@ -595,7 +595,7 @@ describe("Stogie", function () {
 
 
  */
-
+/*
     it("transfer stake", async function () {
         await expect( stogie.connect(owner)
             .depositWithETH(
@@ -620,7 +620,7 @@ describe("Stogie", function () {
         //await stogie.test(peth("5"), {value: peth("1")});
 
     });
-
+*/
     it("test receive() and onboard, packSTOG", async function () {
 
         let tx = {
@@ -632,13 +632,21 @@ describe("Stogie", function () {
 
         // onboard without depositing it
         await expect(await stogie.onboard(elizabeth.address, 1, false, false, {value: peth("10")})).to.emit(stogie, "Transfer");
-        await expect(await stogie.connect(elizabeth).balanceOf(elizabeth.address)).to.equal(peth("10324.486644381790011032"));
+        await expect(await stogie.connect(elizabeth).balanceOf(elizabeth.address)).to.equal(peth("10907.834830850940984302"));
 
-        await expect(await stogie.connect(elizabeth).unwrap(peth("10324.486644381790011032"))).to.emit(cigeth, "Transfer").withArgs(stogie.address, elizabeth.address, peth("10324.486644381790011032")); // elizabeth should be able to get the SLP back
+        await expect(await stogie.connect(elizabeth).unwrap(peth("10907.834830850940984302"))).to.emit(cigeth, "Transfer").withArgs(stogie.address, elizabeth.address, peth("10907.834830850940984302")); // elizabeth should be able to get the SLP back
         await expect(await stogie.connect(elizabeth).balanceOf(elizabeth.address)).to.equal(peth("0"));
-        await expect(stogie.connect(elizabeth).wrap(peth("10324.486644381790011032"))).to.be.revertedWith("ds-math-sub-underflow"); // need approval
+        await expect(stogie.connect(elizabeth).wrap(
+            peth("10324.486644381790011032"),
+            false,
+            0,
+            0,
+            ethers.utils.formatBytes32String(""),
+            ethers.utils.formatBytes32String("")
+        )).to.be.revertedWith("ds-math-sub-underflow"); // need approval
         await cigeth.connect(elizabeth).approve(stogie.address, unlimited);
-        await expect(await stogie.connect(elizabeth).wrap(peth("10324.486644381790011032"))).to.emit(stogie, "Transfer");
+
+        await expect(await stogie.connect(elizabeth).wrap(peth("10324.486644381790011032"),false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.emit(stogie, "Transfer");
         await expect(await stogie.connect(elizabeth).balanceOf(elizabeth.address)).to.equal(peth("10324.486644381790011032"));
 
 
@@ -648,7 +656,7 @@ describe("Stogie", function () {
             value: ethers.utils.parseEther("1")
 
         }
-        await expect(await elizabeth.sendTransaction(tx)).to.emit(cig, "Transfer").withArgs(cigeth.address, elizabeth.address, peth("4171964.600622745322387438"));
+        await expect(await elizabeth.sendTransaction(tx)).to.emit(cig, "Transfer").withArgs(cigeth.address, elizabeth.address, peth("4623889.144474397531755285"));
 
 
         await stogie.connect(elizabeth).approve(router.address, unlimited);
@@ -731,10 +739,13 @@ describe("Stogie", function () {
 
     it("test eip-2612 wrapWithPermit", async function () {
 
+        await stogie.onboard(owner.address, 1, false, false, {value: peth("10")});
+
         let result = await stogie.farmers(owner.address);
 
-        await stogie.withdraw(result.deposit);
-        await stogie.unwrap(result.deposit);
+        //await stogie.withdraw(result.deposit);
+        let bal = await stogie.balanceOf(owner.address);
+        await stogie.unwrap(bal);
 
         const chainId = await hre.network.config.chainId;
 
@@ -744,6 +755,7 @@ describe("Stogie", function () {
             chainId: 1,
             verifyingContract: cigeth.address
         };
+        console.log("bal is: "+bal);
 console.log(domain);
         // set the Permit type parameters
         const types = {
@@ -774,15 +786,17 @@ console.log(domain);
         const values = {
             owner: owner.address,
             spender: stogie.address,
-            value: result.deposit,
+            value: unlimited,
             nonce: await cigeth.nonces(owner.address),
             deadline: deadline,
         };
+        console.log("nonce is:", await cigeth.nonces(owner.address));
         const signature = await owner._signTypedData(domain, types, values);
         const sig = ethers.utils.splitSignature(signature);
 
-        await expect(await stogie.wrapWithPermit(
-            result.deposit, // todo: support unlimited? shall we remove transfer stake?
+        await expect(await stogie.wrap(
+            bal, // todo: support unlimited? shall we remove transfer stake?
+            true, // unlimited
             deadline,
             sig.v,
             sig.r,

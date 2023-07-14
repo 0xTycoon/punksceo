@@ -4,7 +4,7 @@
 // 🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔🍔
 pragma solidity ^0.8.19;
 
-import "hardhat/console.sol";
+//import "hardhat/console.sol";
 
 /**
 
@@ -26,6 +26,7 @@ supply and new tokens can be minted by anyone, by adding more CIG & ETH to the
 pool. This means that Stogies are not capped, only limited by the amount of ETH
 and CIG can practically be added to the pool. For the Solidity devs, you can
 read stogies.sol for the implementation of Stogies.
+
 
 */
 
@@ -682,30 +683,25 @@ contract Stogie {
     * @dev wrap LP tokens to STOG
     * @param _amount number os CIG/ETH Sushi SLP tokens
     */
-    function wrap(uint256 _amount) external {
-        require(_amount != 0, "_amountLP cannot be 0"); // Has enough?
-        _wrap(msg.sender, msg.sender, _amount);
-    }
-
-    /**
-    * @dev like wrap, but with a EIP-2612 permit
-    */
-    function wrapWithPermit(
+    function wrap(
         uint256 _amount,
-        uint deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s) external {
-        require(_amount != 0, "_amountLP cannot be 0"); // Has enough?
-        cigEthSLP.permit(
-            msg.sender,
-            address(this),
-            _amount,
-            deadline,
-            v,
-            r,
-            s
-        );
+        bool _maxApproval,
+        uint _deadline,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s) external {
+        require(_amount != 0, "_amountLP cannot be 0");      // Has enough?
+        if (_r != 0x0) {                                     // contains eip2612 sig
+            cigEthSLP.permit(
+                msg.sender,
+                address(this),
+                _maxApproval ? type(uint256).max : _amount,  // approve for max amount, or _amount
+                _deadline,
+                _v,
+                _r,
+                _s
+            );
+        }
         _wrap(msg.sender, msg.sender, _amount);
     }
 
@@ -1005,7 +1001,7 @@ contract Stogie {
     event Deposit(address indexed user, uint256 amount);            // when depositing LP tokens to stake
     event Harvest(address indexed user, address to, uint256 amount);// when withdrawing LP tokens form staking
     event Withdraw(address indexed user, uint256 amount);           // when withdrawing LP tokens, no rewards claimed
-    event TransferStake(address indexed from, address indexed to, uint256 amount); // when a stake is transferred
+    //event TransferStake(address indexed from, address indexed to, uint256 amount); // when a stake is transferred
 
     /**
     * @dev update updates the accCigPerShare value and harvests CIG from the Cigarette Token contract to
@@ -1027,51 +1023,6 @@ contract Stogie {
         accCigPerShare = accCigPerShare + (cigReward * 1e12 / supply);
         return cigReward;
     }
-
-    /**
-    * todo remove this
-    */
-    /*
-
-    function test(uint256 _user) external payable returns(uint256) {
-
-        uint256 ts = cigEthSLP.totalSupply();
-        (uint256 r0, uint256 r1, ) = cigEthSLP.getReserves();
-
-        uint256 a0 =  r0 * 40 ether / ts; // 40 ether to get 20 stogies
-        uint256 a1 =  r1 * 20 ether /ts;
-       // 20018839572561895252
-        console.log("a0 is:", a0 + (a0 / 1000 * 16  ));
-        console.log("a1 is:", a1);
-
-        UserInfo storage user = farmers[msg.sender];
-        uint256 depositRatio = (10 ether * 1e12) / (uint256(30 ether) ) ;
-
-        (,,,uint256 liquidity) = _depositSingleSide(
-            weth,
-            a0 + (a0 / 1000 * 3 ),
-            0,                                  // no min
-            uint64(block.timestamp),            // same block
-            false,                              // no surplus
-            (badges.minters(msg.sender) == 0)   // mint an id?
-        );
-// 19968919866758698270
-        console.log("liquidity added (test):", liquidity);
-
-
-        //333333333333000000
-
-        // 1460706847345
-
-        console.log("tycoon has        :", user.deposit);
-        console.log("total             :", balanceOf[address(this)]);
-        //console.log("tycoon should have:",  balanceOf[address(this)] * 1e12 / depositRatio);
-        // return depositRatio;
-        uint256 out = 1 ether;
-        return out *  depositRatio / 1e12;
-    }
-
-*/
 
 
     /**
@@ -1107,8 +1058,26 @@ contract Stogie {
     * @dev wrapAndDeposit is used for migration, it will wrap old SLP tokens to
     * Stogies & deposit in staking
     */
-    function wrapAndDeposit(uint256 _amount, bool _mintId) external {
+    function wrapAndDeposit(
+        uint256 _amount,
+        bool _mintId,
+        bool _maxApproval,
+        uint _deadline,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s) external {
         require(_amount != 0, "You cannot deposit only 0 tokens");// Has enough?
+        if (_r != 0x0) {                                          // contains eip2612 sig
+            cigEthSLP.permit(
+                msg.sender,
+                address(this),
+                _maxApproval ? type(uint256).max : _amount,
+                _deadline,
+                _v,
+                _r,
+                _s
+            );
+        }
         _wrap(msg.sender, address(this), _amount);
         _addStake(msg.sender, _amount);                           // update the user's account
         if (_mintId) {
@@ -1116,33 +1085,6 @@ contract Stogie {
         }
     }
 
-    /**
-    * Like wrapAndDeposit, but carries an eip-2612 permit to aprove cigEthSLP
-    */
-    function wrapAndDepositWithPermit(
-        uint256 _amount,
-        bool _mintId,
-        uint deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external {
-        require(_amount != 0, "You cannot deposit only 0 tokens");// Has enough?
-        cigEthSLP.permit(
-            msg.sender,
-            address(this),
-            _amount,
-            deadline,
-            v,
-            r,
-            s
-        );                                                        // CIG/ETH SLP verifies sig & approves
-        _wrap(msg.sender, address(this), _amount);
-        _addStake(msg.sender, _amount);                           // update the user's account
-        if (_mintId) {
-            badges.issueID(msg.sender);                           // mint nft
-        }
-    }
 
     /**
     * @dev _addStake updates how many STOG has been deposited for the user
@@ -1164,7 +1106,7 @@ contract Stogie {
     *   _to must not have any stake. Harvests the stake before transfer
     *   _tokenID optionally, transfer the ID card NFT
     */
-
+/*
     function transferStake(address _to, uint256 _tokenID) external {
         UserInfo storage userFrom = farmers[msg.sender];
         require (userFrom.deposit > 0, "from deposit must not be empty");
@@ -1181,7 +1123,7 @@ contract Stogie {
             badges.transferFrom(msg.sender, _to, _tokenID);
         }
     }
-
+*/
 
     /**
     * @dev withdraw takes out the LP tokens. This will also harvest.
@@ -1273,11 +1215,12 @@ contract Stogie {
         bytes32,          // graffiti
         uint112[] memory  // reserves
     ) {
-        uint[] memory ret = new uint[](25);
+        uint[] memory ret = new uint[](26);
         uint[] memory cigdata;
         address theCEO;
         bytes32 graffiti;
         ret[24] = nonces[_user];                       // eip-2612 nonces for _user (placing here avoids stack too deep)
+        ret[25] = cigEthSLP.nonces(_user);
         ILiquidityPool ethusd = ILiquidityPool(address(0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f));
         uint112[] memory reserves = new uint112[](2);
         (cigdata, theCEO, graffiti, reserves) = cig.getStats(_user); //  new uint[](27);
@@ -1426,6 +1369,7 @@ interface ILiquidityPool is IERC20 {
     function getReserves() external view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast);
     function token0() external view returns (address);
     function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external;
+    function nonces(address owner) external view returns (uint);
 }
 
 interface ICigToken is IERC20 {
