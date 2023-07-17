@@ -38,7 +38,6 @@ contract Stogie2 {
     IV2Router private immutable sushiRouter;   // 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F
     address private immutable sushiFactory;    // 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac
     IV2Router private immutable uniswapRouter; // 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
-    address public stogiePool;                 // will be created with init()
     uint8 internal locked = 1;                 // reentrancy guard. 2 = entered, 1 not
     bytes32 public DOMAIN_SEPARATOR;           // EIP-2612 permit functionality
     // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
@@ -1003,6 +1002,8 @@ contract Stogie2 {
     event Withdraw(address indexed user, uint256 amount);           // when withdrawing LP tokens, no rewards claimed
     //event TransferStake(address indexed from, address indexed to, uint256 amount); // when a stake is transferred
 
+    uint256 internal accumulated; // How much
+
     /**
     * @dev update updates the accCigPerShare value and harvests CIG from the Cigarette Token contract to
     *  be distributed to STOG stakers
@@ -1013,17 +1014,56 @@ contract Stogie2 {
         if (supply == 0) {
             return 0;
         }
+        /*
         uint256 b0 = cig.balanceOf(address(this));
         cig.harvest();                                        // harvest rewards
         uint256 b1 = cig.balanceOf(address(this));
         cigReward = b1 - b0;                                  // this is how much new CIG we received
-        if (cigReward == 0) {
+        */
+        uint256 acc = accumulated;
+        uint256 cigReward = cig.pendingCig(address(this));
+        if (acc > cigReward) {
             return 0;
         }
+        cigReward -= acc;                                      // CEO may lower rewards casing accumulated to be temporarily
+        if (cigReward == 0) {                                  // so this may fail
+            return 0;
+        }
+        accumulated += cigReward;
         accCigPerShare = accCigPerShare + (cigReward * 1e12 / supply);
         return cigReward;
     }
 
+    function reallyFetchCigarettes() public returns (uint256 cigReward) {
+        (uint256 supply,) = cig.farmers(address(this));       // how much is staked in total
+        if (supply == 0) {
+            return 0;
+        }
+        uint256 b0 = cig.balanceOf(address(this));
+        cig.harvest();                                        // harvest rewards
+        uint256 b1 = cig.balanceOf(address(this));
+        cigReward = b1 - b0;
+        if (cigReward == 0) { // nothing fetched
+            accumulated = 0;
+            return cigReward;
+        }
+        uint256 acc = accumulated;          // tracks rewards already distributed
+        if (cigReward > acc) {
+            cigReward = cigReward - acc;    // additional CIG we received since calling fetchCigarettes()
+            accCigPerShare = accCigPerShare +
+                (cigReward * 1e12 / supply);// add the additional CIG to the distribution
+        }
+        /* sometimes the reward could be less than accumulated. This is could
+        * happen if the CEO change the rate on cig, but cig.update() wasn't called
+        * recently. In that case, some CIG may be
+        **/
+        accumulated = 0;                    // clear the accumulator
+    }
+
+    function _pendingCig(UserInfo storage _user) view internal returns (uint256 delta) {
+        uint256 potentialValue = _user.deposit * accCigPerShare / 1e12;
+        delta = potentialValue - _user.rewardDebt;
+    }
 
     /**
     * @dev pendingCig returns the amount of cig to be claimed
@@ -1031,60 +1071,55 @@ contract Stogie2 {
     * @return the amount of CIG they can claim
     */
     function pendingCig(address _user) view public returns (uint256) {
-        uint256 _acps = accCigPerShare;                       // accumulated cig per share
+        // simulate really Fetching Cigarettes()
+        uint256 _acps = accCigPerShare;                    // accumulated cig per share
         UserInfo storage user = farmers[_user];
-        (uint256 supply,) = cig.farmers(address(this));       // how much is staked in total
-        uint256 cigReward = cig.pendingCig(address(this));    // get our pending reward
-        if (cigReward == 0 || supply == 0) {
-            return 0;
+        (uint256 supply,) = cig.farmers(address(this));    // how much is staked in total
+        uint256 cigReward = cig.pendingCig(address(this)); // get our pending reward
+        uint256 acc = accumulated;                         // tracks rewards already distributed
+        if (cigReward > acc) {
+            cigReward = cigReward - acc;                   // additional CIG we received since calling fetchCigarettes()
+            _acps = _acps +
+                (cigReward * 1e12 / supply);               // add the additional CIG to the distribution
         }
-        _acps = _acps + (cigReward * 1e12 / supply);
         return (user.deposit * _acps / 1e12) - user.rewardDebt;
     }
 
     /**
     * @dev deposit STOG tokens to stake
     */
-    function deposit(uint256 _amount, bool _mintId) public {
-        require(_amount != 0, "You cannot deposit only 0 tokens");       // Has enough?
-        require(_transfer(address(msg.sender), address(this), _amount)); // transfer STOG to this contract
-        _addStake(msg.sender, _amount);                                  // update the user's account
-        if (_mintId) {
-            badges.issueID(msg.sender);                                  // mint nft
-        }
-    }
-
-    /**
-    * @dev wrapAndDeposit is used for migration, it will wrap old SLP tokens to
-    * Stogies & deposit in staking
-    */
-    function wrapAndDeposit(
+    function deposit(
         uint256 _amount,
         bool _mintId,
+        bool _wrapIt,
         bool _maxApproval,
         uint _deadline,
         uint8 _v,
         bytes32 _r,
-        bytes32 _s) external {
-        require(_amount != 0, "You cannot deposit only 0 tokens");// Has enough?
-        if (_r != 0x0) {                                          // contains eip2612 sig
-            cigEthSLP.permit(
-                msg.sender,
-                address(this),
-                _maxApproval ? type(uint256).max : _amount,
-                _deadline,
-                _v,
-                _r,
-                _s
-            );
+        bytes32 _s
+    ) public {
+        require(_amount != 0, "You cannot deposit only 0 tokens");           // Has enough?
+        if (_wrapIt) {
+            if (_r != 0x0) {                                                 // contains eip2612 sig
+                cigEthSLP.permit(
+                    msg.sender,
+                    address(this),
+                    _maxApproval ? type(uint256).max : _amount,
+                    _deadline,
+                    _v,
+                    _r,
+                    _s
+                );
+            }
+            _wrap(msg.sender, address(this), _amount);
+        } else {
+            require(_transfer(address(msg.sender), address(this), _amount)); // transfer STOG to this contract
         }
-        _wrap(msg.sender, address(this), _amount);
-        _addStake(msg.sender, _amount);                           // update the user's account
+        _addStake(msg.sender, _amount);                                      // update the user's account
         if (_mintId) {
-            badges.issueID(msg.sender);                           // mint nft
+            badges.issueID(msg.sender);                                      // mint nft
         }
     }
-
 
     /**
     * @dev _addStake updates how many STOG has been deposited for the user
@@ -1146,7 +1181,7 @@ contract Stogie2 {
         UserInfo storage user = farmers[_farmer];
         require(user.deposit >= _amount, "no STOG deposited");
         /* update() will harvest CIG for everyone before emergencyWithdraw, this important. */
-        fetchCigarettes();                                                  // fetch CIG rewards for everyone
+        reallyFetchCigarettes();                                   // fetch CIG rewards for everyone
         /*
         Due to a bug in the Cig contract, we can only use emergencyWithdraw().
         This will take out the entire TVL first, subtract the _amount and
@@ -1181,6 +1216,7 @@ contract Stogie2 {
         _user.rewardDebt -= _rewardAmount;
     }
 
+
     /**
     * @dev harvest redeems pending rewards & updates state
     * @return received is the amount that was harvested
@@ -1198,6 +1234,11 @@ contract Stogie2 {
     function _harvest(UserInfo storage _user, address _to) internal returns(uint256 delta) {
         uint256 potentialValue = _user.deposit * accCigPerShare / 1e12;
         delta = potentialValue - _user.rewardDebt;
+        if (cig.balanceOf(address(this)) < delta) {
+            reallyFetchCigarettes();
+            potentialValue = _user.deposit * accCigPerShare / 1e12;
+            delta = potentialValue - _user.rewardDebt;
+        }
         cig.transfer(_to, delta);                                 // give them their rewards
         _user.rewardDebt = _user.deposit * accCigPerShare / 1e12; // Recalculate their reward debt
         emit Harvest(msg.sender, _to, delta);

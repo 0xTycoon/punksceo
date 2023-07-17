@@ -55,7 +55,7 @@ describe("Stogie", function () {
         await badges.deployed();
 
         // deploy stogie
-        Stogie = await ethers.getContractFactory("Stogie");
+        Stogie = await ethers.getContractFactory("Stogie2");
         stogie = await Stogie.deploy(
             CIG_ADDRESS, // cig on mainnet
             "0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed", // Sushi SLP
@@ -741,13 +741,13 @@ describe("Stogie", function () {
 
         await stogie.onboard(owner.address, 1, false, false, {value: peth("10")});
 
-        let result = await stogie.farmers(owner.address);
+        //let result = await stogie.farmers(owner.address);
 
         //await stogie.withdraw(result.deposit);
         let bal = await stogie.balanceOf(owner.address);
         await stogie.unwrap(bal);
 
-        const chainId = await hre.network.config.chainId;
+        //const chainId = await hre.network.config.chainId;
 
         const domain = {
             name: await cigeth.name(),
@@ -756,7 +756,7 @@ describe("Stogie", function () {
             verifyingContract: cigeth.address
         };
         console.log("bal is: "+bal);
-console.log(domain);
+
         // set the Permit type parameters
         const types = {
             Permit: [{
