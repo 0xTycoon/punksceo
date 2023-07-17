@@ -38,7 +38,6 @@ contract Stogie {
     IV2Router private immutable sushiRouter;   // 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F
     address private immutable sushiFactory;    // 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac
     IV2Router private immutable uniswapRouter; // 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
-    address public stogiePool;                 // will be created with init()
     uint8 internal locked = 1;                 // reentrancy guard. 2 = entered, 1 not
     bytes32 public DOMAIN_SEPARATOR;           // EIP-2612 permit functionality
     // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");

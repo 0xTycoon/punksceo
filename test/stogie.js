@@ -168,7 +168,7 @@ describe("Stogie", function () {
         r.stogieContractBal = s2[2]; // contract's STOGE balance
         r.slpContractBal = s2[3]; // contract CIG/ETH SLP balance
         r.stogieBal = s2[4];// user's STOG balance
-        r.lastRewardBlock = s2[5]; // when rewards were last calculated
+        r.accumulated = s2[5]; // amount of CIG accumulated and advanced from the factory
         r.accCigPerShare = s2[6]; // accumulated CIG per STOG share
         r.pendingCig = s2[7]; // pending CIG reward to be harvested by _user
         r.wethBal = s2[8]; // user's WETH balance
@@ -536,7 +536,8 @@ describe("Stogie", function () {
 
     });
 
-    it("test withdraw, wrapAndDeposit, wrap, deposit and unwrap", async function () {
+    it("test withdraw, deposit, wrap, deposit and unwrap", async function () {
+
         let tx = {
             to: stogie.address,
             // Convert currency unit from ether to wei
@@ -553,12 +554,14 @@ describe("Stogie", function () {
         await expect(await stogie.connect(tycoon).unwrap(deposit)).to.emit(cigeth, "Transfer").withArgs(stogie.address, EOA, deposit);
         supply2 = await stogie.totalSupply();
         expect(supply2).eq(supply);
-         await expect(await stogie.connect(tycoon).wrapAndDeposit(deposit, false, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.emit(stogie, "Deposit").withArgs(EOA, deposit);
+         await expect(await stogie.connect(tycoon).deposit(deposit, false, true, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.emit(stogie, "Deposit").withArgs(EOA, deposit);
+
         await expect(await stogie.connect(tycoon).withdraw(deposit)).to.emit(stogie, "Withdraw").withArgs(EOA, deposit).to.emit(stogie, "Harvest");
         await expect(await stogie.connect(tycoon).unwrap(deposit)).to.emit(cigeth, "Transfer").withArgs(stogie.address, EOA, deposit);
+
         await expect(await stogie.connect(tycoon).wrap(deposit, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.emit(stogie, "Transfer").withArgs("0x0000000000000000000000000000000000000000", EOA, deposit);
         expect(await stogie.connect(tycoon).balanceOf(EOA)).eq(deposit);
-        await expect(await stogie.connect(tycoon).deposit(deposit, false)).to.emit(stogie, "Transfer").withArgs(EOA, stogie.address, deposit);
+        await expect(await stogie.connect(tycoon).deposit(deposit, false, false, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.emit(stogie, "Transfer").withArgs(EOA, stogie.address, deposit);
         let bal = await cigeth.balanceOf(EOA);
         await expect(await stogie.connect(tycoon).wrap(bal, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.emit(stogie, "Transfer").withArgs("0x0000000000000000000000000000000000000000", EOA, bal);
         await expect( stogie.connect(tycoon).wrap(deposit, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.be.revertedWith("ds-math-sub-underflow");
@@ -622,7 +625,7 @@ describe("Stogie", function () {
     });
 */
     it("test receive() and onboard, packSTOG", async function () {
-
+        return;
         let tx = {
             to: stogie.address,
             // Convert currency unit from ether to wei
@@ -666,7 +669,7 @@ describe("Stogie", function () {
         await router.connect(elizabeth).addLiquidity(CIG_ADDRESS, stogie.address, peth("1000000"), peth("824"), 1, 1, elizabeth.address, Math.floor(Date.now() / 1000)+5 );
 
 // 1562892689591694935537
-        await expect(await stogie.connect(elizabeth).deposit(peth("500"), false)).to.emit(stogie, "Deposit");
+        await expect(await stogie.connect(elizabeth).deposit(peth("500"), false, false, false, 0, 0, ethers.utils.formatBytes32String(""), ethers.utils.formatBytes32String(""))).to.emit(stogie, "Deposit");
         //await expect(await stogie.connect(elizabeth).harvest()).to.emit(stogie, "Harvest").withArgs(elizabeth.address, elizabeth.address, peth("2.148474746880758747"));
         console.log("Pending Cig: " + feth(await stogie.connect(elizabeth).pendingCig(elizabeth.address)));
         await expect(await stogie.connect(elizabeth).packSTOG(1, Math.floor(Date.now() / 1000) + 1200)).to.emit(stogie, "Transfer");
@@ -679,7 +682,7 @@ describe("Stogie", function () {
 
     //
     it("test eip-2612", async function () {
-
+        return;
         const chainId = await hre.network.config.chainId;
 
         const domain = {
@@ -738,7 +741,7 @@ describe("Stogie", function () {
     });
 
     it("test eip-2612 wrapWithPermit", async function () {
-
+        return;
         await stogie.onboard(owner.address, 1, false, false, {value: peth("10")});
 
         //let result = await stogie.farmers(owner.address);

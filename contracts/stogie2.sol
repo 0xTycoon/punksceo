@@ -89,27 +89,31 @@ contract Stogie2 {
     }
 
     /**
-    * @dev permit is eip-2612 compliant
+    * @dev permit is eip-2612 compliant  24623
     */
     function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external {
         require(deadline >= block.timestamp, 'Stogie: permit expired');
-        bytes32 digest = keccak256(
-            abi.encodePacked(
-                '\x19\x01',
-                DOMAIN_SEPARATOR,
-                keccak256(abi.encode(
-                    PERMIT_TYPEHASH,
-                    owner,
-                    spender,
-                    value,
-                    nonces[owner]++,
-                    deadline)
+        unchecked {
+            bytes32 digest = keccak256(
+                abi.encodePacked(
+                    '\x19\x01',
+                    DOMAIN_SEPARATOR,
+                    keccak256(abi.encode(
+                        PERMIT_TYPEHASH,
+                        owner,
+                        spender,
+                        value,
+                        nonces[owner]++,
+                        deadline)
+                    )
                 )
-            )
-        );
-        address recoveredAddress = ecrecover(digest, v, r, s);
-        require(recoveredAddress != address(0) && recoveredAddress == owner, 'Stogie: INVALID_SIGNATURE');
-        _approve(owner, spender, value);
+            );
+            address recoveredAddress = ecrecover(digest, v, r, s);
+            require(recoveredAddress != address(0) && recoveredAddress == owner, 'Stogie: INVALID_SIGNATURE');
+            _approve(owner, spender, value);
+        }
+
+
     }
 
     /**
@@ -990,7 +994,7 @@ contract Stogie2 {
     * STOG staking
     */
     uint256 public accCigPerShare; // Accumulated cigarettes per share, times 1e12.
-    uint256 public lastRewardBlock;
+    uint256 internal accumulated; // How much
     // UserInfo keeps track of user LP deposits and withdrawals
     struct UserInfo {
         uint256 deposit;    // How many LP tokens the user has deposited.
@@ -1002,7 +1006,7 @@ contract Stogie2 {
     event Withdraw(address indexed user, uint256 amount);           // when withdrawing LP tokens, no rewards claimed
     //event TransferStake(address indexed from, address indexed to, uint256 amount); // when a stake is transferred
 
-    uint256 internal accumulated; // How much
+
 
     /**
     * @dev update updates the accCigPerShare value and harvests CIG from the Cigarette Token contract to
@@ -1021,16 +1025,18 @@ contract Stogie2 {
         cigReward = b1 - b0;                                  // this is how much new CIG we received
         */
         uint256 acc = accumulated;
-        uint256 cigReward = cig.pendingCig(address(this));
+        cigReward = cig.pendingCig(address(this));
         if (acc > cigReward) {
             return 0;
         }
-        cigReward -= acc;                                      // CEO may lower rewards casing accumulated to be temporarily
-        if (cigReward == 0) {                                  // so this may fail
-            return 0;
+        unchecked {
+            cigReward -= acc;                                      // CEO may lower rewards casing accumulated to be temporarily
+            if (cigReward == 0) {                                  // so this may fail
+                return 0;
+            }
+            accumulated += cigReward;
+            accCigPerShare = accCigPerShare + (cigReward * 1e12 / supply);
         }
-        accumulated += cigReward;
-        accCigPerShare = accCigPerShare + (cigReward * 1e12 / supply);
         return cigReward;
     }
 
@@ -1049,9 +1055,12 @@ contract Stogie2 {
         }
         uint256 acc = accumulated;          // tracks rewards already distributed
         if (cigReward > acc) {
-            cigReward = cigReward - acc;    // additional CIG we received since calling fetchCigarettes()
-            accCigPerShare = accCigPerShare +
-                (cigReward * 1e12 / supply);// add the additional CIG to the distribution
+            unchecked {
+                cigReward = cigReward - acc;    // additional CIG we received since calling fetchCigarettes()
+                accCigPerShare = accCigPerShare +
+                    (cigReward * 1e12 / supply);// add the additional CIG to the distribution
+            }
+
         }
         /* sometimes the reward could be less than accumulated. This is could
         * happen if the CEO change the rate on cig, but cig.update() wasn't called
@@ -1086,12 +1095,23 @@ contract Stogie2 {
     }
 
     /**
-    * @dev deposit STOG tokens to stake
+    * @dev deposit STOG or CIG/ETH SLP tokens to stake. Parameters after
+    *    _wrapIt are only needed if you are including an eip2612 sig
+    * @param _amount the amount of liquidity tokens
+    * @param _mintId set to true if you want to mint a badge
+    * @param _isCigEthSlp set to true if we are depositing CIG/ETH SLP, we need
+    *    to wrap these tokens to STOG
+    * @param _maxApproval optional eip2612 approval, set to true if the sig
+    *    has max approval.
+    * @param _deadline in seconds for the eip2612 sig
+    * @param _v the v part of the eip2612 sig
+    * @param _r the r part of the eip2612 sig
+    * @param _s the s part of the eip2612 sig
     */
     function deposit(
         uint256 _amount,
         bool _mintId,
-        bool _wrapIt,
+        bool _isCigEthSlp,
         bool _maxApproval,
         uint _deadline,
         uint8 _v,
@@ -1099,7 +1119,7 @@ contract Stogie2 {
         bytes32 _s
     ) public {
         require(_amount != 0, "You cannot deposit only 0 tokens");           // Has enough?
-        if (_wrapIt) {
+        if (_isCigEthSlp) {
             if (_r != 0x0) {                                                 // contains eip2612 sig
                 cigEthSLP.permit(
                     msg.sender,
@@ -1272,7 +1292,7 @@ contract Stogie2 {
         (ret[2],) = cig.farmers(address(this));        // contract's STOGE balance
         ret[3] = cigEthSLP.balanceOf(address(this));   // contract CIG/ETH SLP balance
         ret[4] = balanceOf[_user];                     // user's STOG balance
-        ret[5] = lastRewardBlock;                      // when rewards were last calculated
+        ret[5] = accumulated;                          // amount of CIG accumulated and advanced from the factory
         ret[6] = accCigPerShare;                       // accumulated CIG per STOG share
         ret[7] = pendingCig(_user);                    // pending CIG reward to be harvested
         ret[8] = IERC20(weth).balanceOf(_user);        // user's WETH balance
