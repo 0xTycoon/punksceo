@@ -55,7 +55,7 @@ describe("Stogie", function () {
         await badges.deployed();
 
         // deploy stogie
-        Stogie = await ethers.getContractFactory("Stogie2");
+        Stogie = await ethers.getContractFactory("Stogie");
         stogie = await Stogie.deploy(
             CIG_ADDRESS, // cig on mainnet
             "0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed", // Sushi SLP
@@ -625,7 +625,6 @@ describe("Stogie", function () {
     });
 */
     it("test receive() and onboard, packSTOG", async function () {
-        return;
         let tx = {
             to: stogie.address,
             // Convert currency unit from ether to wei
@@ -682,7 +681,7 @@ describe("Stogie", function () {
 
     //
     it("test eip-2612", async function () {
-        return;
+
         const chainId = await hre.network.config.chainId;
 
         const domain = {
@@ -741,7 +740,6 @@ describe("Stogie", function () {
     });
 
     it("test eip-2612 wrapWithPermit", async function () {
-        return;
         await stogie.onboard(owner.address, 1, false, false, {value: peth("10")});
 
         //let result = await stogie.farmers(owner.address);
