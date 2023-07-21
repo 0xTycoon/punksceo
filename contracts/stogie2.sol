@@ -112,8 +112,6 @@ contract Stogie2 {
             require(recoveredAddress != address(0) && recoveredAddress == owner, 'Stogie: INVALID_SIGNATURE');
             _approve(owner, spender, value);
         }
-
-
     }
 
     /**
@@ -446,7 +444,7 @@ contract Stogie2 {
     }
 
     /**
-    * @dev withdrawToETH unstake, remove liquidity & swap CIG portion to WETH.
+    * @dev withdrawToWETH unstake, remove liquidity & swap CIG portion to WETH.
     *    Also, CIG will be harvested and sold for WETH.
     *    Note: UI should check to see how much WETH is expected to be output
     *    by estimating the removal of liquidity and then simulating the swap.
@@ -994,7 +992,7 @@ contract Stogie2 {
     * STOG staking
     */
     uint256 public accCigPerShare; // Accumulated cigarettes per share, times 1e12.
-    uint256 internal accumulated; // How much
+    uint256 internal paidCigDebt; // How much CIG has been advanced without actually harvesting from parent
     // UserInfo keeps track of user LP deposits and withdrawals
     struct UserInfo {
         uint256 deposit;    // How many LP tokens the user has deposited.
@@ -1024,22 +1022,29 @@ contract Stogie2 {
         uint256 b1 = cig.balanceOf(address(this));
         cigReward = b1 - b0;                                  // this is how much new CIG we received
         */
-        uint256 acc = accumulated;
+        uint256 paid = paidCigDebt;
         cigReward = cig.pendingCig(address(this));
-        if (acc > cigReward) {
+        if (paid > cigReward) {
             return 0;
         }
         unchecked {
-            cigReward -= acc;                                      // CEO may lower rewards casing accumulated to be temporarily
-            if (cigReward == 0) {                                  // so this may fail
+            cigReward -= paid;                                // CEO may lower rewards causing paid to be temporarily over
+            if (cigReward == 0) {
                 return 0;
             }
-            accumulated += cigReward;
+            paidCigDebt += cigReward;
             accCigPerShare = accCigPerShare + (cigReward * 1e12 / supply);
         }
         return cigReward;
     }
 
+    /*
+    * @dev
+    * There's a very rare chance the reward harvested from upstream could be
+    * less than already paid out paid. This is could
+    * happen if the CEO changed the rate on cig, but cig.update() wasn't called
+    * recently. In that case, some CIG may be temporarily overdraft.
+    **/
     function reallyFetchCigarettes() public returns (uint256 cigReward) {
         (uint256 supply,) = cig.farmers(address(this));       // how much is staked in total
         if (supply == 0) {
@@ -1050,23 +1055,22 @@ contract Stogie2 {
         uint256 b1 = cig.balanceOf(address(this));
         cigReward = b1 - b0;
         if (cigReward == 0) { // nothing fetched
-            accumulated = 0;
+            paidCigDebt = 0;
             return cigReward;
         }
-        uint256 acc = accumulated;          // tracks rewards already distributed
+        uint256 acc = paidCigDebt;           // tracks rewards already distributed
         if (cigReward > acc) {
             unchecked {
-                cigReward = cigReward - acc;    // additional CIG we received since calling fetchCigarettes()
-                accCigPerShare = accCigPerShare +
-                    (cigReward * 1e12 / supply);// add the additional CIG to the distribution
+                cigReward = cigReward - acc; // additional CIG we received since calling fetchCigarettes()
             }
-
+            accCigPerShare = accCigPerShare +
+                (cigReward * 1e12 / supply); // add the additional CIG to the distribution
+            paidCigDebt = 0;                 // clear the debt
+        } else {
+            // we do nothing, since we already paid out paidCigDebt, so we absorb
+            // the cigReward instead
+            paidCigDebt = acc - cigReward;
         }
-        /* sometimes the reward could be less than accumulated. This is could
-        * happen if the CEO change the rate on cig, but cig.update() wasn't called
-        * recently. In that case, some CIG may be
-        **/
-        accumulated = 0;                    // clear the accumulator
     }
 
     function _pendingCig(UserInfo storage _user) view internal returns (uint256 delta) {
@@ -1085,7 +1089,7 @@ contract Stogie2 {
         UserInfo storage user = farmers[_user];
         (uint256 supply,) = cig.farmers(address(this));    // how much is staked in total
         uint256 cigReward = cig.pendingCig(address(this)); // get our pending reward
-        uint256 acc = accumulated;                         // tracks rewards already distributed
+        uint256 acc = paidCigDebt;                         // tracks rewards already distributed
         if (cigReward > acc) {
             cigReward = cigReward - acc;                   // additional CIG we received since calling fetchCigarettes()
             _acps = _acps +
@@ -1292,7 +1296,7 @@ contract Stogie2 {
         (ret[2],) = cig.farmers(address(this));        // contract's STOGE balance
         ret[3] = cigEthSLP.balanceOf(address(this));   // contract CIG/ETH SLP balance
         ret[4] = balanceOf[_user];                     // user's STOG balance
-        ret[5] = accumulated;                          // amount of CIG accumulated and advanced from the factory
+        ret[5] = paidCigDebt;                          // amount of CIG accumulated and advanced from the factory
         ret[6] = accCigPerShare;                       // accumulated CIG per STOG share
         ret[7] = pendingCig(_user);                    // pending CIG reward to be harvested
         ret[8] = IERC20(weth).balanceOf(_user);        // user's WETH balance
@@ -1303,7 +1307,6 @@ contract Stogie2 {
         ret[12] = IERC20(weth)
             .allowance(_user, address(this));          // user's approval to spend WETH
         ret[13] = totalSupply;                         // total supply of STOG
-
         (uint112 r7, uint112 r8,) = cigEthSLP.getReserves();   // CIG/ETH SLP reserves, ret[7] is ETH, ret[8] is CIG
         ret[14] = sushiRouter.getAmountOut(
             1 ether, uint(r8), uint(r7));              // How much CIG for 1 ETH (ETH price in CIG)
