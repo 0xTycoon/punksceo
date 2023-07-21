@@ -22,6 +22,7 @@ describe("ID Badges", function () {
     const CIG_ADDRESS = "0xcb56b52316041a62b6b5d0583dce4a8ae7a3c629"; // cig on mainnet
     const CIGETH_SLP_ADDRESS = "0x22b15c7Ee1186A7C7CFfB2D942e20Fc228F6E4Ed";
     const ENS_ADDRESS = "0xc18360217d8f7ab5e7c516566761ea12ce7f9d72" // ENS token on mainnet
+    const ZERO32 = ethers.utils.formatBytes32String("");
     before(async function () {
         // assuming we are at block 14148801
 
@@ -95,6 +96,7 @@ describe("ID Badges", function () {
     });
 
     it("init the id badges", async function () {
+
         /*
                 await tycoon.sendTransaction({
                     to: "0x0000000000000000000000000000000000000000",
@@ -132,7 +134,7 @@ describe("ID Badges", function () {
             false, // do not mint id
             {value : peth("1")})).to.emit(stogie, 'Transfer');
         expect(await badges.balanceOf(simp.address)).to.equal("0"); // nothing minted for simp
-        expect(await stogie.connect(tycoon).wrapAndDeposit(slpBal, true)).to.emit(stogie, 'Transfer'); // deposit stogies and mint badge for tycoon
+        expect(await stogie.connect(tycoon).deposit(slpBal, true, true, false, 0, 0, ZERO32, ZERO32)).to.emit(stogie, 'Transfer'); // deposit stogies and mint badge for tycoon
         console.log("pending reward: " +  feth(await stogie.connect(tycoon).pendingCig(EOA)));
         expect(await badges.balanceOf(EOA)).to.equal("1"); // MINT 1 for tycoon
         // generate the badge url
@@ -200,7 +202,8 @@ describe("ID Badges", function () {
         await expect(badges.connect(degen).reclaim(1)).to.be.revertedWith("insert more STOG"); // fails because degen has no stog
         await expect(await stogie.connect(elizabeth).withdraw(peth("20"))); // withdraw 20 stog
         await expect(await stogie.connect(elizabeth).transfer(degen.address, peth("20")));//.to.emit(stogie, "Transfer");
-        await expect(await stogie.connect(degen).deposit(peth("20"), false)).to.emit(stogie, "Deposit"); // deposit to the factory, do not mint
+        await expect(await stogie.connect(degen).deposit(peth("20"), false, false, false, 0, 0, ZERO32, ZERO32)).to.emit(stogie, "Deposit"); // deposit to the factory, do not mint
+
         await expect(badges.connect(degen).expire(1)).to.be.revertedWith("invalid state"); // already expired
         await expect(await badges.connect(degen).reclaim(1)).to.be.emit(badges, "StateChanged").withArgs(1, degen.address, 3, 1); // 3=Expired, 1=Active
         expect(await badges.balanceOf(degen.address)).to.equal("1");
@@ -212,12 +215,9 @@ describe("ID Badges", function () {
         [a,b, c] = await badges.connect(tycoon).getStats(simp.address); // burn some time
         [a,b, c] = await badges.connect(tycoon).getStats(EXPIRED_ADDRESS); // burn some time
         //console.log(a);
-
         await expect(await badges.expire(1)).to.emit(badges, "StateChanged").withArgs(1, owner.address, 1, 2 ); // will go in State.PendingExpiry
-        await expect(await stogie.connect(degen).deposit(peth("20"), false)).to.emit(stogie, "Deposit");
-
+        await expect(await stogie.connect(degen).deposit(peth("20"), false, false, false, 0, 0, ZERO32, ZERO32)).to.emit(stogie, "Deposit");
         await expect(await badges.connect(degen).reactivate(1)).to.be.emit(badges, "StateChanged").withArgs(1, degen.address, 2, 1);
-
         expect(await badges.balanceOf(degen.address)).to.equal("1");
         expect(await badges.balanceOf(EXPIRED_ADDRESS)).to.equal("0");
         //[a,b, c] = await badges.connect(degen).getStats(tycoon.address);
@@ -253,10 +253,7 @@ describe("ID Badges", function () {
         console.log("************** balanceC "+await badges.balanceOf(EOA) +" ********** avgMinSTOG:", await badges.avgMinSTOG(EOA));
         await badges.connect(employee2)["safeTransferFrom(address,address,uint256)"](employee2.address, EOA, await badges.connect(employee2).tokenOfOwnerByIndex(employee2.address, 0));
         console.log("************** balanceD "+await badges.balanceOf(EOA) +" ********** avgMinSTOG:", await badges.avgMinSTOG(EOA));
-
         console.log("tycoon: "+await badges.connect(degen).balanceOf(EOA));
-
-
 
         console.log("tycoon: "+await badges.connect(degen).balanceOf(EOA), " add  :"+EOA, " avgMinSTOG:", await badges.avgMinSTOG(EOA));
         console.log("liz: "+await badges.connect(degen).balanceOf(elizabeth.address)+" add      :"+ elizabeth.address);
@@ -283,7 +280,6 @@ describe("ID Badges", function () {
     });
 
     it("test CEO governance", async function () {
-
         await expect ( badges.connect(tycoon).minSTOGChange(true)).to.be.revertedWith("need to be CEO");
         let max_spend = peth("10000000").add(peth('5000')); //stats[4].add(insufficient);
         let graff32 = new Uint8Array(32);

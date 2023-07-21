@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
+// 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
 // Author: tycoon.eth
 // Project: Cig Token
 // About: ERC721 for Employee ID badges
-// 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
+// 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
 pragma solidity ^0.8.19;
 
 //import "hardhat/console.sol";
@@ -28,7 +28,7 @@ Badges are 100% onchain, and combine the following contracts to generate and
 render their metadata:
 
 - 0xe91eb909203c8c8cad61f86fc44edee9023bda4d "Punk Blocks". A contract for
-storing PNG files of individual punk traits onchain, categorized in layers,
+storing PNG files of individual punk traits onchain. Categorized in layers,
 and rendering the layers according to a configuration. 
 
 - 0xc55C7913BE9E9748FF10a4A7af86A5Af25C46047  "Punk Identicons". A contract
@@ -46,7 +46,7 @@ piv.eth. Additional "Factory Employee" punk attributes were drawn by
 Mr.1/Employee 20, a community member of the Cig Token project.
 
 In all, there are 51 new attributes, which includes 34 new types. The
-probabilities of the new types are more evenly distributed, which ensures that
+probabilities of the new types are fairly evenly distributed, which ensures that
 punks will be picked with a higher count of traits on average. Therefore, there
 might be be some very weird punk pictures generated, and it was impossible to
 check all the possible combinations before deploying this contract.
@@ -59,17 +59,16 @@ ETH & CIG reserves stored at 0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed. To work
 out how much is a Stogie worth, add the values of ETH and CIG in the pool,
 and divide them by the total supply of the SLP token.
 For example, if there are $100 worth of CIG and $100 worth of ETH in the pool,
-and the total supple of the SLP token is 1000, then each token would be worth
+and the total supply of the SLP token is 1000, then each token would be worth
 (100+100)/1000 = 0.2, or 20 cents. Note that the SLP tokens do not have a capped
 supply and new tokens can be minted by anyone, by adding more CIG & ETH to the
 pool. This means that Stogies are not capped, only limited by the amount of ETH
-and CIG can practically be added to the pool. For the Solidity devs, you can
-read stogies.sol for the implementation of Stogies.
+and CIG that can practically be added to the pool.
 
 Minimum Stogie Deposit: The minimum amount of Stogies required to be deposited
-in the Cig Factory to mint a badge. The value can can change, and is recorded
-for each badge. The recorded value is used to calculate the "Total Minimum Stogie
- Deposit" for an account.
+in the Cig Factory to mint a badge. This value can be changed by the CEO of
+CryptoPunks, and is recorded for each badge. The recorded value is used to
+calculate the "Total Minimum Stogie Deposit" for an account.
 
 Total Minimum Stogie Deposit: The amount of Stogies the account is required to
 deposit in the Cigarette Factory, depending on the badges they own.
@@ -106,7 +105,7 @@ RULES
 
 5. Expiration grace period: After transferring a badge, it cannot be expired for
    72 hours. The new owner will have 72 hours to put up a Minimum Stogie
-   Deposit from the account holding the badges.
+   Deposit onto the account holding the badges.
 
 6. Reactivating: Badges that are in `PendingExpiry` state for less than 90 days
    can still be reactivated. Their owner would need to place a minimum
@@ -114,10 +113,11 @@ RULES
    method. Only the owner can reactivate.
 
 7. Reclaiming: If the NFT has been expired in `PendingExpiry` for more than 90
-    days, then it can be reclaimed by anyone, simply by calling the `reclaim`
-   function. The caller must hold a minimum amount of Stogies to reclaim. Also,
-   the address reclaiming must not have minted a badge before. Note that the
-   picture on the badge will change, however, the ID won't change.
+    days, then it can be reclaimed by a fresh account, by calling the
+    `reclaim` function. The caller must hold a minimum amount of Stogies to
+    reclaim. "Fresh account" here means that the address reclaiming must not
+    have minted a badge before. Note that the picture on the badge will change,
+    but the ID won't change.
 
 8. The supply of the NFT is unlimited. However, since Stogies are required
    for minting and holding the NFT, there is an economic scarcity to the NFT.
@@ -131,7 +131,8 @@ RULES
 
 10. CEO can change the Global Minimum Value. %2.5 up or down, every 30 days.
     With the limit that the result of the change must be not higher than 0.01%
-    of Stogies staked supply, and never less than 1 Stogie.
+    of Stogies staked supply, and never less than 1 Stogie. The change will not
+    affect existing badges, only new mints or reactivations.
 
 11. The punk picture is chosen randomly based on the address that minted it.
     There is also a special feature:
@@ -155,7 +156,7 @@ RULES
                 16 = Blue Ape
                 17 = Alienette 6
 
-     The more zeros, the harder it it is to get. It should be very difficult to
+     The more zeros, the harder it is to get. It should be very difficult to
      get the last few, but maybe impossible to get 16 and 17.
 
      Some "back of the napkin" estimations if you have a GPU:
@@ -234,7 +235,7 @@ contract EmployeeIDBadges {
     event StateChanged(uint256 indexed id, address indexed caller, State s0, State s1);
     event MinSTOGChanged(uint256 minSTOG, uint256 amt);
     event Snapshot(uint256 indexed id, address indexed caller);
-
+    event MetadataUpdate(uint256);    // ERC-4906
     constructor(
         address _cig,                 // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
         uint16 _duration_min_change,  // 216000
@@ -426,7 +427,6 @@ contract EmployeeIDBadges {
 
     /**
     * getStats gets the information about the current user
-    * todo return doc
     */
     function getStats(
         address _holder
@@ -592,8 +592,8 @@ contract EmployeeIDBadges {
         id = employeeHeight;
         Badge storage c = badges[id];
         c.state = State.Active;
-        c.minStog = min;                    // record the minSTOG
-        c.identiconSeed = _to;              // save seed, used for the identicon
+        c.minStog = min;                       // record the minSTOG
+        c.identiconSeed = _to;                 // save seed, used for the identicon
         emit StateChanged(
             id,
             msg.sender,
@@ -601,7 +601,7 @@ contract EmployeeIDBadges {
             State.Active
         );
         unchecked {employeeHeight = id + 1;}
-        minters[_to] = uint64(block.timestamp); // mark address as a minter
+        minters[_to] = uint64(block.timestamp);// mark address as a minter
     }
 
     /**
@@ -619,11 +619,12 @@ contract EmployeeIDBadges {
         address o = c.owner;
         uint256 bal = balanceOf(o);
         (uint256 deposit,) = stogie.farmers(o);
-        uint256 min = (minStogSum[c.owner] * 1e13 / bal) / 1e13 * bal;         // assuming owner has at least 1
-        require(deposit < min, "rule not satisfied");   // deposit below the min?
+        uint256 min = (minStogSum[c.owner] * 1e13 / bal)
+            / 1e13 * bal;                                // assuming owner has at least 1
+        require(deposit < min, "rule not satisfied");    // deposit below the min?
         expiredOwners[_tokenId] = o;
         _transfer(c.owner, EXPIRED, _tokenId, c.minStog);// transfer to the expired address
-        c.state = State.PendingExpiry; // change state after transfer
+        c.state = State.PendingExpiry;                   // change state after transfer
         emit StateChanged(
             _tokenId,
             msg.sender,
@@ -637,6 +638,8 @@ contract EmployeeIDBadges {
     * @dev reactivate a token. Must be in State.PendingExpiry state.
     *    At least a minimum of Stogies are needed to reactivate.
     *    Can be called by expired owner.
+    * @param _tokenId the token to reactivate
+    * @return State the State.Active state if successful
     */
     function reactivate(uint256 _tokenId) external returns (State) {
         Badge storage c = badges[_tokenId];
@@ -646,11 +649,11 @@ contract EmployeeIDBadges {
         require(o == msg.sender, "not your token");
         require(
             block.number - c.transferAt >= DURATION_STATE_CHANGE,
-            "time is up");                                     // expiration must be under the deadline
-        uint256 newSum = _transfer(EXPIRED, o, _tokenId, minSTOG); // return token to owner
+            "time is up");                                        // expiration must be under the deadline
+        uint256 newSum = _transfer(EXPIRED, o, _tokenId, minSTOG);// return token to owner
         (uint256 deposit,) = stogie.farmers(o);
         require(
-            deposit >= newSum, "insert more STOG");   // must have Stogies or staking Stogies
+            deposit >= newSum, "insert more STOG");               // must have Stogies or staking Stogies
         c.state = State.Active;
         emit StateChanged(
             _tokenId,
@@ -680,7 +683,7 @@ contract EmployeeIDBadges {
             "time is not up");                                  // must be over the deadline
         c.minStog = minSTOG;                                    // reset minStog
         uint256 newSum = _transfer(EXPIRED, msg.sender, _tokenId, minSTOG);
-        (uint256 deposit,) = stogie.farmers(msg.sender); // check caller's deposit
+        (uint256 deposit,) = stogie.farmers(msg.sender);        // check caller's deposit
         require(
             deposit >= newSum,
             "insert more STOG");                                // caller  must have Stogies or staking Stogies
@@ -696,9 +699,11 @@ contract EmployeeIDBadges {
             State.Expired,
             State.Active
         );
+        expiredOwners[_tokenId] = address(0);
         c.state = State.Active;
-        c.identiconSeed = msg.sender;                       // change the identicon to reclaiming address
-        minters[c.identiconSeed] = 0;                       // allow original owner to mint again
+        c.identiconSeed = msg.sender;                           // change the identicon to reclaiming address
+        emit MetadataUpdate(_tokenId);
+        minters[c.identiconSeed] = 0;                           // allow original owner to mint again
         minters[msg.sender] = uint64(block.timestamp);
     }
 
@@ -718,6 +723,7 @@ contract EmployeeIDBadges {
             "id with this pic already minted"); // must be a fresh address
         minters[c.identiconSeed] = 0;           // allow original minter user to mint again
         c.identiconSeed = msg.sender;           // change to a new picture, destroying the old
+        emit MetadataUpdate(_tokenId);
         minters[msg.sender] = uint64(block.number);
         emit Snapshot(_tokenId, msg.sender);
     }
@@ -749,15 +755,15 @@ contract EmployeeIDBadges {
     /**
     * @dev called after an erc721 token transfer, after the counts have been updated
     */
-    function addEnumeration(address _to, uint256 _tokenId) internal {
+    function _addEnumeration(address _to, uint256 _tokenId) internal {
         uint256 last = balances[_to] - 1; // the index of the last position
         ownedBadges[_to][last] = _tokenId; // add a new entry
         badges[_tokenId].index = uint64(last);
     }
 
-    function removeEnumeration(address _from, uint256 _tokenId) internal {
-        uint256 height = balances[_from];  // last index
-        uint256 i = badges[_tokenId].index; // index
+    function _removeEnumeration(address _from, uint256 _tokenId) internal {
+        uint256 height = balances[_from] - 1;      // last index
+        uint256 i = badges[_tokenId].index;        // index
         if (i != height) {
             // If not last, move the last token to the slot of the token to be deleted
             uint256 lastTokenId = ownedBadges[_from][height];
@@ -982,9 +988,9 @@ contract EmployeeIDBadges {
             } else {
                 require(badges[_tokenId].state == State.Active, "state must be Active");
             }
+            _removeEnumeration(_from, _tokenId);
             --balances[_from];
             minStogSum[_from] -= _min;
-            removeEnumeration(_from, _tokenId);
         }
         uint256 toBal;
         unchecked {toBal = ++balances[_to];}
@@ -993,7 +999,7 @@ contract EmployeeIDBadges {
         minStogSum[_to] = toSum;
         badges[_tokenId].owner = _to;                            // set new owner
         badges[_tokenId].transferAt = uint64(block.number);
-        addEnumeration(_to, _tokenId);
+        _addEnumeration(_to, _tokenId);
         emit Transfer(_from, _to, _tokenId);
     }
 
