@@ -52,7 +52,7 @@ contract Stogie {
     }
     constructor(
         address _cig,
-        address _CigEthSLP,
+        address _cigEthSLP,
         address _sushiRouter,
         address _sushiFactory,
         address _uniswapRouter,
@@ -60,7 +60,7 @@ contract Stogie {
         address _badges
     ) {
         cig = ICigToken(_cig);
-        cigEthSLP = ILiquidityPool(_CigEthSLP);
+        cigEthSLP = ILiquidityPool(_cigEthSLP);
         sushiRouter = IV2Router(_sushiRouter);
         sushiFactory = _sushiFactory;
         uniswapRouter = IV2Router(_uniswapRouter);
@@ -302,7 +302,7 @@ contract Stogie {
     ) external payable notReentrant returns(
         uint[] memory swpAmt, uint cigAdded, uint ethAdded, uint liquidity
     ) {
-        cig.transferFrom(msg.sender, address(this), _amount); // tage their CIG
+        cig.transferFrom(msg.sender, address(this), _amount); // take their CIG
         (swpAmt, cigAdded, ethAdded, liquidity) = _depositSingleSide(
             address(cig),
             _amount,
@@ -311,7 +311,7 @@ contract Stogie {
             _transferSurplus
         );
         if (_mintId) {
-            badges.issueID(msg.sender);                  // mint nft
+            badges.issueID(msg.sender);                       // mint nft
         }
     }
 
@@ -745,7 +745,7 @@ contract Stogie {
         uint64 _deadline
     ) external {
         UserInfo storage user = farmers[msg.sender];
-        fetchCigarettes();                     // harvest CIG from factory v1
+        creditCigarettes();                     // harvest CIG from factory v1
         uint harvested = _harvest(
             user,
             address(this)
@@ -991,7 +991,7 @@ contract Stogie {
     /**
     * STOG staking
     */
-    uint256 public accCigPerShare; // Accumulated cigarettes per share, times 1e12.
+    uint256 public accCigPerShare;// Accumulated cigarettes per share, times 1e12.
     uint256 internal paidCigDebt; // How much CIG has been advanced without actually harvesting from parent
     // UserInfo keeps track of user LP deposits and withdrawals
     struct UserInfo {
@@ -1007,75 +1007,65 @@ contract Stogie {
 
 
     /**
-    * @dev update updates the accCigPerShare value and harvests CIG from the Cigarette Token contract to
-    *  be distributed to STOG stakers
+    * @dev credits any CIG profit to STIG stakers, without actually fetching the
+    * CIG from the factory.
     * @return cigReward - the amount of CIG that was credited to this contract
     */
-    function fetchCigarettes() public returns (uint256 cigReward) {
-        (uint256 supply,) = cig.farmers(address(this));       // how much is staked in total
+    function creditCigarettes() public returns (uint256 cigReward) {
+        (uint256 supply,) = cig.farmers(address(this)); // how much is staked in total
         if (supply == 0) {
             return 0;
         }
-        /*
-        uint256 b0 = cig.balanceOf(address(this));
-        cig.harvest();                                        // harvest rewards
-        uint256 b1 = cig.balanceOf(address(this));
-        cigReward = b1 - b0;                                  // this is how much new CIG we received
-        */
         uint256 paid = paidCigDebt;
         cigReward = cig.pendingCig(address(this));
         if (paid > cigReward) {
-            return 0;
+            return 0;                                   // CEO may lower rewards causing paid to be temporarily over
         }
         unchecked {
-            cigReward -= paid;                                // CEO may lower rewards causing paid to be temporarily over
+            cigReward -= paid;
             if (cigReward == 0) {
                 return 0;
             }
             paidCigDebt += cigReward;
-            accCigPerShare = accCigPerShare + (cigReward * 1e12 / supply);
+            accCigPerShare = accCigPerShare +
+                (cigReward * 1e12 / supply);            // credit all stakers
         }
         return cigReward;
     }
 
     /*
-    * @dev
-    * There's a very rare chance the reward harvested from upstream could be
-    * less than already paid out paid. This is could
-    * happen if the CEO changed the rate on cig, but cig.update() wasn't called
-    * recently. In that case, some CIG may be temporarily overdraft.
+    * @dev Fetch the cigarettes from the CIG factory & cancel out any credit
+    * that was brought forward. Also credit any additional surplus CIG to be
+    * distributed amongst STOG stakers
     **/
-    function reallyFetchCigarettes() public returns (uint256 cigReward) {
-        (uint256 supply,) = cig.farmers(address(this));       // how much is staked in total
+    function fetchCigarettes() public returns (uint256 cigReward) {
+        (uint256 supply,) = cig.farmers(address(this));// how much is staked in total
         if (supply == 0) {
             return 0;
         }
         uint256 b0 = cig.balanceOf(address(this));
-        cig.harvest();                                        // harvest rewards
+        cig.harvest();                                 // harvest rewards
         uint256 b1 = cig.balanceOf(address(this));
         cigReward = b1 - b0;
-        if (cigReward == 0) { // nothing fetched
+        if (cigReward == 0) {                          // nothing fetched
             paidCigDebt = 0;
             return cigReward;
         }
-        uint256 acc = paidCigDebt;           // tracks rewards already distributed
-        if (cigReward > acc) {
+        uint256 paid = paidCigDebt;                     // tracks rewards already distributed
+        if (cigReward > paid) {
             unchecked {
-                cigReward = cigReward - acc; // additional CIG we received since calling fetchCigarettes()
+                cigReward = cigReward - paid;           // additional CIG we received since calling fetchCigarettes()
             }
             accCigPerShare = accCigPerShare +
-                (cigReward * 1e12 / supply); // add the additional CIG to the distribution
-            paidCigDebt = 0;                 // clear the debt
+                (cigReward * 1e12 / supply);            // add the additional CIG to the distribution
+            paidCigDebt = 0;                            // clear the debt
         } else {
-            // we do nothing, since we already paid out paidCigDebt, so we absorb
-            // the cigReward instead
-            paidCigDebt = acc - cigReward;
+            // we paid out (using creditCigarettes()) more than the actual CIG
+            // harvested. This can happen if rewards were decreased. In this
+            // case, cancel out the reward from the paid credit, and remainder
+            // will be debited next time fetchCigarettes() is called.
+            paidCigDebt = paid - cigReward;
         }
-    }
-
-    function _pendingCig(UserInfo storage _user) view internal returns (uint256 delta) {
-        uint256 potentialValue = _user.deposit * accCigPerShare / 1e12;
-        delta = potentialValue - _user.rewardDebt;
     }
 
     /**
@@ -1161,30 +1151,6 @@ contract Stogie {
     }
 
     /**
-    * @dev transferStake transfers a stake to a new address
-    *   _to must not have any stake. Harvests the stake before transfer
-    *   _tokenID optionally, transfer the ID card NFT
-    */
-/*
-    function transferStake(address _to, uint256 _tokenID) external {
-        UserInfo storage userFrom = farmers[msg.sender];
-        require (userFrom.deposit > 0, "from deposit must not be empty");
-        UserInfo storage userTo = farmers[_to];
-        require (userTo.deposit == 0, "userTo.deposit must be empty");
-        // harvest, move stake, remove old index, assign new index
-        _harvest(userFrom, msg.sender);
-        userTo.deposit = userFrom.deposit;
-        userTo.rewardDebt = userFrom.rewardDebt;
-        emit TransferStake(msg.sender, _to, userFrom.deposit);
-        userFrom.deposit = 0;
-        userFrom.rewardDebt = 0;
-        if (badges.ownerOf(_tokenID) == msg.sender) {
-            badges.transferFrom(msg.sender, _to, _tokenID);
-        }
-    }
-*/
-
-    /**
     * @dev withdraw takes out the LP tokens. This will also harvest.
     * @param _amount the amount to withdraw
     * @return harvested amount of CIG harvested
@@ -1205,7 +1171,7 @@ contract Stogie {
         UserInfo storage user = farmers[_farmer];
         require(user.deposit >= _amount, "no STOG deposited");
         /* update() will harvest CIG for everyone before emergencyWithdraw, this important. */
-        reallyFetchCigarettes();                                   // fetch CIG rewards for everyone
+        fetchCigarettes();                                   // fetch CIG rewards for everyone
         /*
         Due to a bug in the Cig contract, we can only use emergencyWithdraw().
         This will take out the entire TVL first, subtract the _amount and
@@ -1246,7 +1212,7 @@ contract Stogie {
     */
     function harvest() public returns (uint256 received) {
         UserInfo storage user = farmers[msg.sender];
-        fetchCigarettes();                          // harvest CIG from factory v1
+        creditCigarettes();                          // harvest CIG from factory v1
         return _harvest(user, msg.sender);
     }
 
@@ -1258,7 +1224,7 @@ contract Stogie {
         uint256 potentialValue = _user.deposit * accCigPerShare / 1e12;
         delta = potentialValue - _user.rewardDebt;
         if (cig.balanceOf(address(this)) < delta) {
-            reallyFetchCigarettes();
+            fetchCigarettes();
             potentialValue = _user.deposit * accCigPerShare / 1e12;
             delta = potentialValue - _user.rewardDebt;
         }
@@ -1279,17 +1245,19 @@ contract Stogie {
         bytes32,          // graffiti
         uint112[] memory  // reserves
     ) {
-        uint[] memory ret = new uint[](26);
+        uint[] memory ret = new uint[](29);
         uint[] memory cigdata;
         address theCEO;
         bytes32 graffiti;
         ret[24] = nonces[_user];                       // eip-2612 nonces for _user (placing here avoids stack too deep)
-        ret[25] = cigEthSLP.nonces(_user);
+        ret[25] = cigEthSLP.nonces(_user);             // eip-2612 nonces
+        //ret[26] = badges.balanceOf(_user);             // how many badges the user has
+        //ret[28] = badges.minSTOG();                  // Current min Stogie value to mint a badge (commented out because contract would be too long)
         ILiquidityPool ethusd = ILiquidityPool(address(0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f));
         uint112[] memory reserves = new uint112[](2);
         (cigdata, theCEO, graffiti, reserves) = cig.getStats(_user); //  new uint[](27);
         UserInfo memory info = farmers[_user];
-        uint256 t = uint256(badges.minters(_user));   // timestamp of id card mint
+        uint256 t = uint256(badges.minters(_user));    // timestamp of id card mint
         ret[0] = info.deposit;                         // how much STOG staked by user
         ret[1] = info.rewardDebt;                      // amount of rewards paid out for user
         (ret[2],) = cig.farmers(address(this));        // contract's STOGE balance
@@ -1318,6 +1286,7 @@ contract Stogie {
         ret[21] = cig.balanceOf(address(this));        // CIG in contract
         ret[22] = t;                                   // timestamp of id card mint (damn you stack too deep)
         ret[23] = getMinETHDeposit();                  // Minimum ETH deposit required to mint a card
+
         return (ret, cigdata, theCEO, graffiti, reserves);
     }
 

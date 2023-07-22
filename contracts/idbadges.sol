@@ -450,7 +450,7 @@ contract EmployeeIDBadges {
         ret[8] = GRACE_PERIOD;
         ret[9] = DURATION_STATE_CHANGE;
         ret[10] = DURATION_MIN_CHANGE;
-        ret[11] = primaryBadge(_holder);            // the primary id
+        ret[11] = primaryId(_holder);            // the primary id
         (inventory,
         , // don't need balance
             uris,
@@ -1139,7 +1139,7 @@ contract EmployeeIDBadges {
     *    token of owner with the index of 0.
     * @return uin256 id chosen by the user as the primary
     */
-    function primaryBadge(address _a) view public returns (uint256) {
+    function primaryId(address _a) view public returns (uint256) {
         uint256 id = pID[_a];
         if (id == 0) {
             if (balances[_a] == 0) {
@@ -1567,10 +1567,4 @@ interface IBarcode {
         string memory _color,
         uint16 _height,
         uint8 _barWidth) view external returns (string memory);
-}
-
-interface ILiquidityPool  {
-    function getReserves() external view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast);
-    //function token0() external view returns (address);
-    function totalSupply() external view returns (uint256);
 }
