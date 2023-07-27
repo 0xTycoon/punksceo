@@ -302,6 +302,8 @@ describe("ID Badges", function () {
         //await expect ( badges.connect(tycoon).minSTOGChange(false)).to.be.revertedWith("wait more blocks");
     });
 
+
+
     it("test everything else", async function () {
         // snapshots
         await expect(badges.connect(tycoon).snapshot(0)).to.be.revertedWith("id with this pic already minted");
@@ -309,7 +311,53 @@ describe("ID Badges", function () {
         //console.log("ownerOf", await badges.ownerOf(1));
         await badges.connect(tycoon)["safeTransferFrom(address,address,uint256)"](EOA, elizabeth.address, 1);
 
-        // burning curator
+        console.log("tycoon: "+await badges.connect(degen).balanceOf(EOA));
+        console.log("liz: "+await badges.connect(degen).balanceOf(elizabeth.address)+" add      :"+ elizabeth.address);
+        console.log("simp: "+await badges.connect(degen).balanceOf(simp.address)+" add     :"+ simp.address);
+        console.log("degen: "+await badges.connect(degen).balanceOf(degen.address)+" add    :"+ degen.address);
+        console.log("employee1: "+await badges.connect(degen).balanceOf(employee1.address) +" add:"+ employee1.address);
+        console.log("employee2: "+await badges.connect(degen).balanceOf(employee2.address)+" add:"+ employee2.address);
+
+
+
+    });
+
+    it("test enumeration", async function () {
+
+        /*
+
+        Initial config:
+
+        tid: BigNumber { value: "0" }
+        tid: BigNumber { value: "4" }
+        tid: BigNumber { value: "2" }
+        tid: BigNumber { value: "3" }
+
+        After moving out id 4, the order would be: 0, 3, 2
+
+        */
+        let list = async function (whom) {
+            let tokenId;
+            console.log("inventory for:" +whom);
+            for (let i = 0 ; i < await badges.balanceOf(whom); i++) {
+                tokenId = await badges.tokenOfOwnerByIndex(whom, i);
+                console.log("tid:", tokenId);
+            }
+        }
+        await list(EOA);
+        // this removes the 4, taking 2 from the end to fill the empty spot
+        await badges.connect(tycoon).transferFrom(EOA, await simp.getAddress(), 4);
+        expect(await badges.tokenOfOwnerByIndex(EOA, 0)).to.be.equal("0");
+        expect(await badges.tokenOfOwnerByIndex(EOA, 1)).to.be.equal("3");
+        expect(await badges.tokenOfOwnerByIndex(EOA, 2)).to.be.equal("2");
+
+        await list(EOA);
+        await badges.connect(tycoon).transferFrom(EOA, await simp.getAddress(), 2);
+
+        await list(EOA);
+        // this removes the last element
+        expect(await badges.tokenOfOwnerByIndex(EOA, 0)).to.be.equal("0");
+        expect(await badges.tokenOfOwnerByIndex(EOA, 1)).to.be.equal("3");
 
     });
 
