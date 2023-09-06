@@ -20,7 +20,7 @@ ETH & CIG reserves stored at 0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed.
 To work out how much is a Stogie worth, add the values of ETH and CIG in the
 pool, and divide them by the total supply of the SLP token.
 For example, if there are $100 worth of CIG and $100 worth of ETH in the pool,
-and the total supple of the SLP token is 1000, then each token would be worth
+and the total supply of the SLP token is 1000, then each token would be worth
 (100+100)/1000 = 0.2, or 20 cents. Note that the SLP tokens do not have a capped
 supply and new tokens can be minted by anyone, by adding more CIG & ETH to the
 pool. This means that Stogies are not capped, only limited by the amount of ETH
@@ -83,8 +83,6 @@ contract Stogie {
         cig.approve(r, type(uint256).max);                          // approve Sushi to use all of our CIG
         IERC20(weth).approve(r, type(uint256).max);                 // approve Sushi to use all of our WETH
         IERC20(cigEthSLP).approve(r, type(uint256).max);            // approve Sushi to use all of our CIG/ETH SLP
-        allowance[address(this)][r] = type(uint256).max;
-        emit Approval(address(this), r, type(uint256).max);
         cigEthSLP.approve(address(cig), type(uint256).max);         // approve CIG to use all of our CIG/ETH SLP
     }
 
@@ -152,7 +150,7 @@ contract Stogie {
             _transferSurplus
         );
         if (_mintId) {
-            badges.issueID(msg.sender);           // mint nft
+            badges.issueID(msg.sender);         // mint nft
         }
     }
 
@@ -277,7 +275,7 @@ contract Stogie {
         path[1] = weth;
         swpAmt = r.swapExactTokensForTokens(
             _amount,
-            _amountWethMin,                                // min ETH that must be received
+            _amountWethMin,                                 // min ETH that must be received
             path,
             address(this),
             _deadline
@@ -713,7 +711,6 @@ contract Stogie {
         _unwrap(msg.sender, _amountSTOG);
     }
 
-
     /**
     * @dev unwrap STOG to CIG and ETH tokens
     */
@@ -736,12 +733,13 @@ contract Stogie {
     }
 
     /**
-    * @dev Harvest CIG, then use our CIG holdings to buy STOG, then stake the STOG.
-    * @param _amountSTOGMin min amount of STOG we should get after swapping the
+    * @dev Harvest CIG, then use our CIG holdings to buy ETH, then stake the STOG.
+    * @param _amountWethMin min amount of STOG we should get after swapping the
     *   harvested CIG.
+    * @param _deadline future timestamp
     */
     function packSTOG(
-        uint _amountSTOGMin,
+        uint _amountWethMin,
         uint64 _deadline
     ) external {
         UserInfo storage user = farmers[msg.sender];
@@ -750,26 +748,13 @@ contract Stogie {
             user,
             address(this)
         );                                      // harvest CIG first
-        /* swap harvested CIG to STOG */
-        address[] memory path;
-        path = new address[](2);
-        path[0] = address(cig);
-        path[1] = address(this);
-        uint[] memory swpAmt;
-        swpAmt = sushiRouter.swapExactTokensForTokens(
+        _depositSingleSide(
+            address(cig),
             harvested,
-            _amountSTOGMin,                     // min amount that must be received
-            path,
-            msg.sender,                         // we cannot use address(this), so use msg.sender temporary
-            _deadline
+            _amountWethMin,
+            _deadline,
+            false
         );
-        _transfer(
-            msg.sender,
-            address(this),
-            swpAmt[1]
-        );                                      // hop the STOG to over here
-        // stake the STOG for the user
-        _addStake(msg.sender, swpAmt[1]);       // update the user's account
     }
 
     /**
@@ -812,8 +797,8 @@ contract Stogie {
             path[1],
             token0Amt,                                 // Amt of the single-side token
             swpAmt[1],                                 // Amt received from the swap
-            1,                                         // we've already checked slippage
-            1,                                         // ditto
+            1,                                         // Sandwich is possible, however we
+            1,                                         // do not allow swaps of more than 1 ETH
             address(this),
             block.timestamp
         );
@@ -825,8 +810,8 @@ contract Stogie {
             /* update user's account of STOG, so they can withdraw it later */
             _addStake(_to, liquidity);
             if (_isMint) {
-                badges.issueID(_to);                    // mint nft
-            }
+                badges.issueID(_to);                    // mint nft. We can only do here since
+            }                                           // we need to have a deposit to hold the nft
         } else {
             _wrap(
                 address(this),
@@ -1008,7 +993,11 @@ contract Stogie {
 
     /**
     * @dev credits any CIG profit to STIG stakers, without actually fetching the
-    * CIG from the factory.
+    *   CIG from the factory.
+    *   All deposited Stogies are farmed by this contract as CIG/ETH in the old
+    *   Cigarette Factory.
+    *   This function reads the amount it has farmed since it was last called,
+    *   this amount (cigReward) is added to the payout by updating accCigPerShare
     * @return cigReward - the amount of CIG that was credited to this contract
     */
     function creditCigarettes() public returns (uint256 cigReward) {
@@ -1051,14 +1040,14 @@ contract Stogie {
             paidCigDebt = 0;
             return cigReward;
         }
-        uint256 paid = paidCigDebt;                     // tracks rewards already distributed
+        uint256 paid = paidCigDebt;                    // tracks rewards already distributed
         if (cigReward > paid) {
             unchecked {
-                cigReward = cigReward - paid;           // additional CIG we received since calling fetchCigarettes()
+                cigReward = cigReward - paid;          // additional CIG we received since calling fetchCigarettes()
             }
             accCigPerShare = accCigPerShare +
-                (cigReward * 1e12 / supply);            // add the additional CIG to the distribution
-            paidCigDebt = 0;                            // clear the debt
+                (cigReward * 1e12 / supply);           // add the additional CIG to the distribution
+            paidCigDebt = 0;                           // clear the debt
         } else {
             // we paid out (using creditCigarettes()) more than the actual CIG
             // harvested. This can happen if rewards were decreased. In this

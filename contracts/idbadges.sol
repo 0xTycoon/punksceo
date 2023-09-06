@@ -217,13 +217,13 @@ contract EmployeeIDBadges {
     mapping(address => uint256) private balances;   // counts of ownership
     mapping(address => mapping(uint256 => uint256)) private ownedBadges;// track enumeration
     mapping(address => uint256) public minStogSum;                      // sum of min Stogies required per account
-    mapping(uint256 => address) public expiredOwners;
+    mapping(uint256 => address) public expiredOwners;                   // keep track of last owner of expired token
     mapping(uint256 => Badge) public badges;                            // all of the badges
     uint256 public employeeHeight;                                      // the next available employee id
     mapping(address => mapping(address => bool)) private approvalAll;   // operator approvals
     bytes4 private constant RECEIVED = 0x150b7a02;  // bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))
     mapping(address => uint64) public minters;      // ensures each badge has a unique identiconSeed value, address => timestamp
-    mapping(address => uint256) private pID; // store the primary id for the address
+    mapping(address => uint256) private pID;        // store the primary id for the address
     address private curator;
     uint256 public minSTOG = 20 ether;              // minimum STOG required to mint
     uint64 public minSTOGUpdatedAt;                 // block number of last change
@@ -406,6 +406,46 @@ contract EmployeeIDBadges {
         atts[0x6528e7d7c1f35ff1569dd65b8801909e5792c388e4c77a81c2861b7dba7d3800] = Attribute(true, "Apexus 2"); // 0
         atts[0xbfaced9f8b3c58cbea8869f267e8c39500da9c86b500a8207a4f31667d37e9a4] = Attribute(true, "Apexus 3"); // 0
         atts[0xb9c52250f5eef12475dec466c74c2d2eab10a1010f3a86073b1d92086882fb9a] = Attribute(true, "Apexus 4"); // 0
+        // initial badges
+        uint chainId;
+        assembly {
+            chainId := chainid()
+        }
+        if (chainId == 1) {                                 // only in production
+            address[27] memory list = [
+                address(0xc43473fA66237e9AF3B2d886Ee1205b81B14b2C8),
+                0xa80be8CAC8333330106585ee210C3F245D4f98Df,
+                0x713282ECe7b1e34Bcb88c8f1922561A4EE369772,
+                0x21077c224B7178b1Bb46af8dcd73F1EBAd869B0B,
+                0xC088B1eEf1C08CE01A2aBF73531a61270481Fb0B,
+                0x53B182152c57E37dde0E67675946169d44F3c005,
+                0x614A61a3b7F2fd8750AcAAD63b2a0CFe8B8524F1,
+                0xf20dC15A36D4E1Fdb3A767C6aB4A7e972574573d,
+                0x0000000704dd12B781af73e9D7ac1f6BE3B46423,
+                0x910E4220e1EDd15D4f5A6450521d0Cd06D275c00,
+                0x64CB2f44AE5c5D4592920D49e57e9b3F005Da5dc,
+                0x8C48b40dBa656187896147089545439E4fF4A01c,
+                0xaf016eC2AfD326126d7f43498645A33a4aCf51F2,
+                0x7539Eb7d68e49D4Ad65067577c47DfC92f5Fc1Ce,
+                0xc50A0b4F31Cd5580c7a629178ff78CFF5973edB6,
+                0xEE8dBE16568254450d890C1CB98180A770e82724,
+                0x3E5a90F582d45Cf83e0446D53B3069E86162003b,
+                0xB9CDEB51bD53fAF41Ea92c94526f40f15460c088,
+                0x1CBa69a71c1D17a69Fc0cb9eD0945F9E7DeD702a,
+                0x96aCe5Dc0404f2613ebCc5b04cD455b35b6Bf7c7,
+                0x5B5b487aEd7D18ac677C73859270b0F6CF5bB69C,
+                0xeb26E394da8d8AD5bEDDE97a281a9a9b63b3Eef3,
+                0xACe239D889b5aceffC6F4ea7fF6DdCAFD3900936,
+                0x17476d0Ed31f81d95b5ba8960b2D0b4dE4675e64,
+                0x81c247e7923eb96Aeb908228A50eDec0dB8Ba09e,
+                0x2A8bE03A5D65dE287648Ec176B74745ee9c164D2,
+                0x1E0591255AdC9Cfb2cFbBfFF5AE48b7BeE6E253d
+            ];
+            uint256 min = minSTOG;
+            for (uint256 i = 0; i < list.length; i++) {
+                _issueID(list[i], min);
+            }
+        }
     }
 
     /**
@@ -450,7 +490,7 @@ contract EmployeeIDBadges {
         ret[8] = GRACE_PERIOD;
         ret[9] = DURATION_STATE_CHANGE;
         ret[10] = DURATION_MIN_CHANGE;
-        ret[11] = primaryId(_holder);            // the primary id
+        ret[11] = primaryId(_holder);               // the primary id
         (inventory,
         , // don't need balance
             uris,
@@ -536,20 +576,6 @@ contract EmployeeIDBadges {
     function setMin(uint256 _m) external {
         require(msg.sender == curator, "only curator");
         minSTOG = _m;
-    }
-
-    /**
-    * @notice Mint the previously issued ids
-    * @param _employees list of addresses to mint for
-    */
-    function reserve(address[] calldata _employees) external {
-        require(msg.sender == curator, "only curator");
-        uint256 min = minSTOG;
-        uint256 id;
-        for (uint256 i = 0; i < _employees.length; i++) {
-            id = _issueID(_employees[i], min);
-            _transfer(address(0), _employees[i], id, min);
-        }
     }
 
     /**
@@ -756,7 +782,7 @@ contract EmployeeIDBadges {
     * @dev called after an erc721 token transfer, after the counts have been updated
     */
     function _addEnumeration(address _to, uint256 _tokenId) internal {
-        uint256 last = balances[_to] - 1; // the index of the last position
+        uint256 last = balances[_to] - 1;  // the index of the last position
         ownedBadges[_to][last] = _tokenId; // add a new entry
         badges[_tokenId].index = uint64(last);
     }
