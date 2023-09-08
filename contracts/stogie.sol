@@ -8,8 +8,7 @@ pragma solidity ^0.8.19;
 
 /**
 
-This contract introduces the "Stogies", and improves the UX for the
-Cigarette Factory.
+The Stogies token
 
 What are Stogies?
 

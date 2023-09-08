@@ -322,6 +322,129 @@ describe("ID Badges", function () {
 
     });
 
+    it("test init", async function() {
+
+        let atts = {};
+        let Attribute = function(a, b) {
+            return [a, b];
+        }
+        atts["0x398534927262d4f6993396751323ddd3e8326784a8e9a4808f17b99e6693835e"] = Attribute(false, "Stogie"); // 11
+        atts["0x27dfd5e48f41fe8c82fecc41af933800fe5a5af6d9315a88932b9fb36d94a138"] = Attribute(false, "Headset"); // 7
+        atts["0x550aa6da33a6eca427f83a70c2510cbc3c8bdb8a1ce5e5c3a32b2262f97c4aa1"] = Attribute(false, "Employee Cap"); // 9
+        atts["0xd3ce42d23c6ec3bb95bfdee3de4e8d42889817871544fc9a07f05e4a2d21123e"] = Attribute(false, "Earbuds"); // 9
+        atts["0x975e45b489dc6726c2a27eb784068ec791a22cf46fb780ced5e6b2083f32ebc3"] = Attribute(false, "Headphones Red"); // 9
+        atts["0x421c9c08478a3dfb8a098fbef56342e7e0b53239aaa40dd2d56951cc6c178d35"] = Attribute(false, "Headphones Yellow"); // 9
+        atts["0xaffb8a29fc5ed315e2a1103abc528d4f689c8365b54b17538f96e6bcae365633"] = Attribute(false, "Gas Mask"); // 11
+        atts["0x314ff09b8866e566e22c7bf1fe4227185bc37e1167a84aaf299f5e016ca2ea7b"] = Attribute(false, "Goggles"); // 10
+        atts["0xe5fd4286f4fc4347131889d24238df4b5ba8d8d4985cbd9cb30d447ec14cbb2f"] = Attribute(false, "Pen"); // 7
+        atts["0xaeae7be74009ff61e63109240ea8e00b3bd6d166bf8a7f6584f64ff75e783f09"] = Attribute(false, "Pencil"); // 10
+        atts["0x1cc630fd6d4fff8ca66aacb5acdba26a0a14ce5fd8f9cb60b002a153d1582b4e"] = Attribute(false, "Red Hat"); // 8
+        atts["0xbbb91da98e74857ed34286d7efaf04751ac3f4d7081d62a0aa3b09278b5ee55a"] = Attribute(false, "Yellow Hat"); // 8
+        atts["0x3fbda43b0bda236b4f6f6dba8b7052381641b3d92ce4b49b4a2e9be390980019"] = Attribute(false, "White Hat"); // 8
+        atts["0x10214dd24c8822f95b3061229664e567e7da89d1f8a408179e12bf38be2c1430"] = Attribute(false, "Suit"); // 5
+        atts["0xb52fd5c8112bb81b2c05dd854ac28867bf72fd52124cb27aee3de68a19c87812"] = Attribute(false, "Suit Black"); // 5
+        atts["0xd7a861eff7c9242c2fc79148cdb44128460adae80afe1ba79c2d1eae290fb883"] = Attribute(true, "Bot"); // 0
+        atts["0x7d3615eb6acf9ca19e31084888916f38df240bce4009857da690e4681bf8d4b0"] = Attribute(true, "Botina"); // 0
+        atts["0x18a26173165d296055f2dfd8a12afc0a3e85434dd9d3f9c3ddd1eabc37ff56bc"] = Attribute(true, "Killer Bot"); // 0
+        atts["0xb93c33f3b6e2e6aef9bd03b9ed7a064ed00f8306c06dfc93c76ae30db7a3f2b4"] = Attribute(true, "Killer Botina"); // 0
+        atts["0x9242f3766d6363a612c9e88734e9c5667f4c82e07d00b794481f5b41b97047e8"] = Attribute(true, "Green Alien"); // 0
+        atts["0x0c924a70f72135432a52769f20962602647a5b6528675c14bb318eaf4cbb2753"] = Attribute(true, "Green Alienette"); // 0
+        atts["0xcd6f6379578617fc2da9c1d778e731bebaa21e9be1ed7265963ec43076d17a10"] = Attribute(true, "Blue Ape"); // 0
+        atts["0x53f8bd0b36b2d3d9abc80e02d6fe9ed6a07068216cd737604c0c36ac60f458dc"] = Attribute(true, "Alien 2"); // 0
+        atts["0xeca5ecd41019c8240974e9473044bf1a01598e7c650939425f53f561e959ec46"] = Attribute(true, "Alien 3"); // 0
+        atts["0x061c5772160bfea6296a0317f6eff655398285ab18dbe89497436563445eeddc"] = Attribute(true, "Alien 4"); // 0
+        atts["0x224b0f8059a7c50a19036c71e7500fd115adfd3af915c8d6d6639248c6e41283"] = Attribute(true, "Alien 5"); // 0
+        atts["0xfb3556140e6f92df2d04796b8d8c5f6732abf43c07eb7034a90672cd4f9af372"] = Attribute(true, "Alien 6"); // 0
+        atts["0xe9986a150e097f2cadc995279f34846ae9786b8ce35070b152f819d7a18d7760"] = Attribute(true, "Alienette 2"); // 0
+        atts["0x0a215113c1e36c8cf69812b89dd912e3e2f1d70ab8c7691e0439a002d772f56d"] = Attribute(true, "Alienette 3"); // 0
+        atts["0xac4fc861f4029388de1fa709cb865f504fb3198a6bf4dad71ff705a436c406c2"] = Attribute(true, "Alienette 4"); // 0
+        atts["0xbefcd0e4ecf58c1d5e2a435bef572fca90d5fcedf6e2e3c1eb2f12b664d555a4"] = Attribute(true, "Alienette 5"); // 0
+        atts["0x54526cc56c302d9d091979753406975ad06ca6a58c7bea1395ae25350268ab36"] = Attribute(true, "Alienette 6"); // 0
+        atts["0xffa2b3215eb937dd3ebe2fc73a7dd3baa1f18b9906d0f69acb3ae76b99130ff7"] = Attribute(true, "Pink Ape"); // 0
+        atts["0x46151bb75270ac0d6c45f21c75823f7da7a0c0281ddede44d207e1242e0a83f6"] = Attribute(true, "Male 5"); // 0
+        atts["0xef8998f2252b6977b3cc239953db2f5fbcd066a5d454652f5107c59239265884"] = Attribute(true, "Male 6"); // 0
+        atts["0x606da1a8306113f266975d1d05f6deed98d3b6bf84674cc69c7b1963cdc3ea86"] = Attribute(true, "Male 7"); // 0
+        atts["0x804b2e3828825fc709d6d2db6078f393eafdcdedceae3bdb9b36e3c81630dd5e"] = Attribute(true, "Apette"); // 0
+        atts["0x54354de4503fcf83c4214caefd1d4814c0eaf0ce462d1783be54ff9f952ec542"] = Attribute(true, "Female 5"); // 0
+        atts["0x8a643536421eae5a22ba595625c8ba151b3cc48f2a4f86f9671f5c186b027ceb"] = Attribute(true, "Female 6"); // 0
+        atts["0x4426d573f2858ebb8043f7fa39e34d1441d9b4fa4a8a8aa2c0ec0c78e755df0e"] = Attribute(true, "Female 7"); // 0
+        atts["0x1908d72c46a0440b2cc449de243a20ac8ab3ab9a11c096f9c5abcb6de42c99e7"] = Attribute(true, "Alientina"); // 0
+        atts["0xcedf32c147815fdc0d5f7e785f41a33dfc773e45bbd1a9a3b5d86c264e1b8ac5"] = Attribute(true, "Zombina"); // 0
+        atts["0x691d9c552cd5457793c084f8bfce824df33aa7bcff69bb398b1c50c5283700ab"] = Attribute(true, "ZombieApe"); // 0
+        atts["0x44cc2bd937a1ba84d91aa4ad1c68a4019d7441276f158686ca21113d9b58c736"] = Attribute(true, "Cigarina"); // 0
+        atts["0x6ad96c1daca4b1c9f05d375a8cc7561b56dc9f8e0c47de6294d0b56e99baba9f"] = Attribute(true, "Cyborghina 1"); // 0
+        atts["0x630cf72f7f662f0e4ad0e59518468203238cfd411fb9c5b474e65247043ff6ff"] = Attribute(true, "Cyborghina 2"); // 0
+        atts["0x9c4d52ffba9e3fe6a536e1420a71503203fde6d50cc7dfd6dcffb18520ea92ac"] = Attribute(true, "Cyborghina 3"); // 0
+        atts["0xa85374c4f65c797073c8536e4d19c56b86127fd476a9b5a4b3fbf026a0a631e9"] = Attribute(true, "Cyborghina 4"); // 0
+        atts["0x53c4266e345ac07f4b1871310600f58edbc34ac584f94a14b301b73dab6f3eb7"] = Attribute(true, "Apexus 1"); // 0
+        atts["0x6528e7d7c1f35ff1569dd65b8801909e5792c388e4c77a81c2861b7dba7d3800"] = Attribute(true, "Apexus 2"); // 0
+        atts["0xbfaced9f8b3c58cbea8869f267e8c39500da9c86b500a8207a4f31667d37e9a4"] = Attribute(true, "Apexus 3"); // 0
+        atts["0xb9c52250f5eef12475dec466c74c2d2eab10a1010f3a86073b1d92086882fb9a"] = Attribute(true, "Apexus 4"); // 0
+
+        let all = [];
+        for (const [key, value] of Object.entries(atts)) {
+
+            console.log("key:", key);
+            let key32 = new Uint8Array(32);
+            for (let i = 0; i < 32; i++) {
+                key32[i] = parseInt(key[(i*2)+2]+""+key[(i*2)+3], 16); // hex to bytes, each two hex digits is one byte.
+            }
+            all.push([key32, value[0], value[1]]);
+        }
+        await badges.completeInitialization1(all);
+
+        const list = [
+            //"0xc43473fA66237e9AF3B2d886Ee1205b81B14b2C8",
+            "0xa80be8CAC8333330106585ee210C3F245D4f98Df",
+            "0x713282ECe7b1e34Bcb88c8f1922561A4EE369772",
+            "0x21077c224B7178b1Bb46af8dcd73F1EBAd869B0B",
+            "0xC088B1eEf1C08CE01A2aBF73531a61270481Fb0B",
+            "0x53B182152c57E37dde0E67675946169d44F3c005",
+            "0x614A61a3b7F2fd8750AcAAD63b2a0CFe8B8524F1",
+            "0xf20dC15A36D4E1Fdb3A767C6aB4A7e972574573d",
+            "0x0000000704dd12B781af73e9D7ac1f6BE3B46423",
+            "0x910E4220e1EDd15D4f5A6450521d0Cd06D275c00",
+            "0x64CB2f44AE5c5D4592920D49e57e9b3F005Da5dc",
+            "0x8C48b40dBa656187896147089545439E4fF4A01c",
+            "0xaf016eC2AfD326126d7f43498645A33a4aCf51F2",
+            "0x7539Eb7d68e49D4Ad65067577c47DfC92f5Fc1Ce",
+            "0xc50A0b4F31Cd5580c7a629178ff78CFF5973edB6",
+            "0xEE8dBE16568254450d890C1CB98180A770e82724",
+            "0x3E5a90F582d45Cf83e0446D53B3069E86162003b",
+            "0xB9CDEB51bD53fAF41Ea92c94526f40f15460c088",
+            "0x1CBa69a71c1D17a69Fc0cb9eD0945F9E7DeD702a",
+            "0x96aCe5Dc0404f2613ebCc5b04cD455b35b6Bf7c7",
+            "0x5B5b487aEd7D18ac677C73859270b0F6CF5bB69C",
+            "0xeb26E394da8d8AD5bEDDE97a281a9a9b63b3Eef3",
+            "0xACe239D889b5aceffC6F4ea7fF6DdCAFD3900936",
+            "0x17476d0Ed31f81d95b5ba8960b2D0b4dE4675e64",
+            "0x81c247e7923eb96Aeb908228A50eDec0dB8Ba09e",
+            "0x2A8bE03A5D65dE287648Ec176B74745ee9c164D2",
+            "0x1E0591255AdC9Cfb2cFbBfFF5AE48b7BeE6E253d"
+        ];
+
+
+
+        let ABI = [
+            "function completeInitialization2(address[])"
+        ];
+        // await badges.completeInitialization1(list); - didn't work, so we use a workaround
+        let iface = new ethers.utils.Interface(ABI);
+        let data = await iface.encodeFunctionData("completeInitialization2",[list]);
+
+        await owner.sendTransaction({
+            to: badges.address,
+            data: data
+        });
+
+        expect(await badges.totalSupply()).to.be.equal(31);
+
+        //let thirty = await badges.tokenURI(30);
+        //console.log(thirty);
+
+
+    });
+
     it("test enumeration", async function () {
 
         /*
