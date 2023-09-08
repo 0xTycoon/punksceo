@@ -61,8 +61,9 @@ describe("Cig", function () {
         nft = await NFTMock.deploy(ASSET_URL);
         await nft.deployed();
 
+        // new contract
         NFTMock2 = await ethers.getContractFactory("NonFungibleCEO");
-        nft2 = await NFTMock.deploy(ASSET_URL);
+        nft2 = await NFTMock2.deploy(ASSET_URL);
         await nft2.deployed();
 
         OldCigToken = await ethers.getContractFactory("OldCig");

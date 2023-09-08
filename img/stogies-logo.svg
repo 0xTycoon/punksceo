@@ -1,0 +1,25 @@
+<svg width="200" height="200" viewBox="0 0 300 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="150" cy="150" r="150" fill="url(#paint0_linear_609_349)"/>
+    <circle cx="150" cy="150" r="140" fill="url(#paint1_linear_609_349)"/>
+    <rect x="76" y="160" width="131" height="22" fill="black"/>
+    <rect x="55" y="182" width="21" height="22" fill="black"/>
+    <rect x="55" y="203" width="21" height="23" fill="black"/>
+    <rect x="76" y="182" width="87" height="22" fill="#80662a"/><!-- brown line top-->
+    <rect x="76" y="203" width="87" height="23" fill="#80662a"/><!-- brown line bot-->
+    <rect x="185" y="182" width="22" height="44" fill="#E25B26"/><!-- orange spark-->
+    <rect x="98" y="182" width="22" height="44" fill="#FFD700"/><!-- ribbon -->
+    <rect x="163" y="182" width="22" height="44" fill="#3d3d3d"/><!-- ash -->
+    <rect x="76" y="226" width="131" height="22" fill="black"/>
+    <rect x="207" y="182" width="22" height="44" fill="black"/>
+    <rect x="185" y="28" width="22" height="132" fill="#9e9e9e"/><!-- smoke -->
+    <defs>
+        <linearGradient id="paint0_linear_609_349" x1="150" y1="0" x2="150" y2="300" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#c0c0c0"/>
+            <stop offset="1" stop-color="#404040"/>
+        </linearGradient>
+        <linearGradient id="paint1_linear_609_349" x1="150" y1="10" x2="150" y2="290" gradientUnits="userSpaceOnUse">
+            <stop stop-color="white"/>
+            <stop offset="1" stop-color="#7a7a7a"/>
+        </linearGradient>
+    </defs>
+</svg>
