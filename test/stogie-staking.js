@@ -61,7 +61,6 @@ describe("Stogie", function () {
             CIG_ADDRESS, // cig on mainnet
             "0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed", // Sushi SLP
             "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F", // sushi router
-            "0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac", // sushi factory
             "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D", // uniswap router
             "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // weth
             cards.address

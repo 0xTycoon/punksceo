@@ -73,7 +73,6 @@ describe("ID Badges", function () {
             CIG_ADDRESS, // cig on mainnet
             "0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed", // Sushi SLP
             "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F", // sushi router
-            "0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac", // sushi factory
             "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D", // uniswap router
             "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // weth
             badges.address
@@ -86,7 +85,7 @@ describe("ID Badges", function () {
         });
         tycoon = await ethers.provider.getSigner(EOA);
 
-    owner.sendTransaction({
+        owner.sendTransaction({
             to: EOA,
             value: ethers.utils.parseEther("10.0")
         });
@@ -159,7 +158,7 @@ describe("ID Badges", function () {
         await expect(a[2]).to.equal(BigNumber.from("35500000000000000000")); // the sum
         //console.log(b);
         [a,b, c] = await badges.connect(tycoon).getStats(simp.address);
-       // console.log(a); // todo average should be 0
+        // console.log(a); // todo average should be 0
         await expect(a[2]).to.equal(BigNumber.from("00000000000000000000"));
 
     });
@@ -184,7 +183,7 @@ describe("ID Badges", function () {
         await expect(badges.reactivate(1)).to.be.revertedWith("not your token");
 
         await expect(badges.connect(tycoon).reactivate(1)).to.be.revertedWith("insert more STOG"); // cannot reactivate since no stogies
-       // expect(await stogie.connect(elizabeth).wrapAndDeposit(slpBal, false)).to.emit(stogie, 'Transfer'); // load stogies
+        // expect(await stogie.connect(elizabeth).wrapAndDeposit(slpBal, false)).to.emit(stogie, 'Transfer'); // load stogies
         let tx = {
             to: stogie.address,
             // Convert currency unit from ether to wei
@@ -208,7 +207,7 @@ describe("ID Badges", function () {
         await expect(await badges.connect(degen).reclaim(1)).to.be.emit(badges, "StateChanged").withArgs(1, degen.address, 3, 1); // 3=Expired, 1=Active
         expect(await badges.balanceOf(degen.address)).to.equal("1");
         expect(await badges.balanceOf(EXPIRED_ADDRESS)).to.equal("0");
-       // test reactivation. Degen withdraws, expiry is called, degen deposits and reactivates.
+        // test reactivation. Degen withdraws, expiry is called, degen deposits and reactivates.
         await expect(await stogie.connect(degen).withdraw(peth("20"))).to.emit(stogie, "Withdraw");
         await expect(badges.expire(1)).to.be.revertedWith("during grace period");// under a grace period because recently reclaimed
 
@@ -438,6 +437,8 @@ describe("ID Badges", function () {
         });
 
         expect(await badges.totalSupply()).to.be.equal(31);
+
+        expect(await badges.ownerOf(5)).to.be.equal("0xa80be8CAC8333330106585ee210C3F245D4f98Df");
 
         //let thirty = await badges.tokenURI(30);
         //console.log(thirty);
