@@ -35,14 +35,13 @@ contract Stogie {
     ILiquidityPool private immutable cigEthSLP;// 0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed (SLP, it's also an ERC20)
     address private immutable weth;            // 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
     IV2Router private immutable sushiRouter;   // 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F
-    address private immutable sushiFactory;    // 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac
     IV2Router private immutable uniswapRouter; // 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
     uint8 internal locked = 1;                 // reentrancy guard. 2 = entered, 1 not
     bytes32 public DOMAIN_SEPARATOR;           // EIP-2612 permit functionality
     // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
     bytes32 public constant PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
     mapping(address => uint) public nonces;    // EIP-2612 permit functionality
-    IIDBadges private immutable badges;        // id badges erc721
+    IIDBadges private immutable badges;        // id badges erc721 0xED9a438bD8E2F0e3F0Feb4DD397cBA4274609DBe
     modifier notReentrant() { // notReentrant is a reentrancy guard
         require(locked == 1, "already entered");
         locked = 2; // enter
@@ -50,18 +49,16 @@ contract Stogie {
         locked = 1; // exit
     }
     constructor(
-        address _cig,
-        address _cigEthSLP,
-        address _sushiRouter,
-        address _sushiFactory,
-        address _uniswapRouter,
-        address _weth,
-        address _badges
+        address _cig,          // 0xCB56b52316041A62B6b5D0583DcE4A8AE7a3C629
+        address _cigEthSLP,    // 0x22b15c7ee1186a7c7cffb2d942e20fc228f6e4ed
+        address _sushiRouter,  // 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F
+        address _uniswapRouter,// 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
+        address _weth,         // 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+        address _badges        // 0xED9a438bD8E2F0e3F0Feb4DD397cBA4274609DBe
     ) {
         cig = ICigToken(_cig);
         cigEthSLP = ILiquidityPool(_cigEthSLP);
         sushiRouter = IV2Router(_sushiRouter);
-        sushiFactory = _sushiFactory;
         uniswapRouter = IV2Router(_uniswapRouter);
         weth = _weth;
         badges = IIDBadges(_badges);

@@ -4,7 +4,8 @@
 // Project: Cigarette Token
 // About: ERC721 for Employee ID badges
 // 🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬🚬
-pragma solidity ^0.8.19;
+
+pragma solidity ^0.8.19; // compile contract with 10 optimization runs
 
 //import "hardhat/console.sol";
 /*
@@ -29,7 +30,7 @@ render their metadata:
 
 - 0xe91eb909203c8c8cad61f86fc44edee9023bda4d "Punk Blocks". A contract for
 storing PNG files of individual punk traits onchain. Categorized in layers,
-and rendering the layers according to a configuration. 
+and rendering the layers according to a configuration.
 
 - 0xc55C7913BE9E9748FF10a4A7af86A5Af25C46047  "Punk Identicons". A contract
 that contains a "punk picking function". it picks the traits from  a pool of
@@ -466,8 +467,11 @@ contract EmployeeIDBadges {
             ];
             */
         uint256 min = minSTOG;
+        uint id = employeeHeight;
         for (uint256 i = 0; i < _list.length; i++) {
             _issueID(_list[i], min);
+            _transfer(address(0), _list[i], id, min);
+            id++;
         }
     }
 

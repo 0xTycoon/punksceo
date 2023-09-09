@@ -97,6 +97,12 @@ branch name: `v2-currently-deployed`
 - changed _caclDiscount() back to old functionality, applying per block discount
 - update tests in test/full-test.js to point new contract
 
+# Employer badges
+
+Contract deployed at 0x1955D86f5b369Be4581Fb2D346B403d362883aC7
+
+
+
 # Dev notes
 
 To run tests
